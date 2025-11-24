@@ -39,7 +39,7 @@
            <groupId>net.ximatai.muyun.database</groupId>
             <artifactId>muyun-database-jdbi-jdk8</artifactId>
             <version>1.26.3</version>
-         </dependency>
+        </dependency>
        ```
 
 2. 标准用法
