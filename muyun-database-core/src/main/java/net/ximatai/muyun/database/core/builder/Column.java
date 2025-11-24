@@ -87,7 +87,7 @@ public class Column {
     }
 
     public Column setDefaultValue(String defaultValue) {
-        this.defaultValue = "'%s'".formatted(defaultValue);
+        this.defaultValue = "'" + defaultValue + "'";
         return this;
     }
 
@@ -97,17 +97,17 @@ public class Column {
     }
 
     public Column setDefaultValue(int defaultValue) {
-        this.defaultValue = "%s".formatted(defaultValue);
+        this.defaultValue = defaultValue + "";
         return this;
     }
 
     public Column setDefaultValue(double defaultValue) {
-        this.defaultValue = "%s".formatted(defaultValue);
+        this.defaultValue = defaultValue + "";
         return this;
     }
 
     public Column setDefaultValue(float defaultValue) {
-        this.defaultValue = "%s".formatted(defaultValue);
+        this.defaultValue = defaultValue + "";
         return this;
     }
 

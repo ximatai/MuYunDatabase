@@ -87,24 +87,36 @@ public class DBColumn {
             return null;
         }
 
-        String type = this.getType().toLowerCase(); // 转换为小写以便switch匹配
+        String type = this.getType().toLowerCase();
 
-        return switch (type) {
-            case "bit" -> input.equals("1");
-            case "bool" -> Boolean.parseBoolean(input);
-            case String t when t.equals("int") || t.startsWith("int") -> Integer.parseInt(input);
-            case "float", "double" -> Double.parseDouble(input);
-            case "decimal", "numeric" -> new java.math.BigDecimal(input);
-            case "date" -> java.sql.Date.valueOf(input);
-            case "time" -> java.sql.Time.valueOf(input);
-            default -> {
-                Matcher matcher = SINGLE_QUOTE_PATTERN.matcher(input);
-                if (matcher.find()) {
-                    yield matcher.group(1);  // 返回第一个括号中的匹配结果
-                }
-                yield input;  // 如果没有匹配的内容，返回原输入
-            }
-        };
+        switch (type) {
+            case "bit":
+                return input.equals("1");
+            case "bool":
+                return Boolean.parseBoolean(input);
+            case "float":
+            case "double":
+                return Double.parseDouble(input);
+            case "decimal":
+            case "numeric":
+                return new java.math.BigDecimal(input);
+            case "date":
+                return java.sql.Date.valueOf(input);
+            case "time":
+                return java.sql.Time.valueOf(input);
+        }
+
+        // 处理所有int类型（包括tinyint, smallint, mediumint, bigint等）
+        if (type.equals("int") || type.startsWith("int") || type.endsWith("int")) {
+            return Integer.parseInt(input);
+        }
+
+        // 默认处理
+        Matcher matcher = SINGLE_QUOTE_PATTERN.matcher(input);
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
+        return input;
     }
 
     public void setDefaultValue(String defaultValue) {
