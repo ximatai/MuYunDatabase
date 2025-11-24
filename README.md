@@ -14,7 +14,7 @@
 * `muyun-database-core` 纯 `Java` 项目，不依赖任何框架，主要用于定义标准接口和业务逻辑
 * `muyun-database-jdbi` 基于 `jdbi` 具体实现，通常项目依赖这个包即可
 * `muyun-database-jdbi-jdk8` 基于 `jdbi` 具体实现，兼容 `Java8`，仅存在于 `jdbi-jdk8` 分支
-* `muyun-database-test` 准本用来跑单元测试的包，项目部需要依赖
+* `muyun-database-test` 准本用来跑单元测试的包，实际项目不需要依赖
 
 ## 快速开始
 
