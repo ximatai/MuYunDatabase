@@ -1,5 +1,7 @@
 package net.ximatai.muyun.database.core.builder;
 
+import java.math.BigDecimal;
+
 /**
  * 数据库列定义类
  * 用于定义数据库表的结构信息，支持链式调用设置列属性
@@ -79,8 +81,53 @@ public class Column {
      * @param defaultValue 默认值字符串表示
      * @return 当前Column实例
      */
-    public Column setDefaultValue(String defaultValue) {
+    public Column setDefaultValueAny(String defaultValue) {
         this.defaultValue = defaultValue;
+        return this;
+    }
+
+    public Column setDefaultValue(String defaultValue) {
+        this.defaultValue = "'%s'".formatted(defaultValue);
+        return this;
+    }
+
+    public Column setDefaultValue(boolean defaultValue) {
+        this.defaultValue = Boolean.toString(defaultValue);
+        return this;
+    }
+
+    public Column setDefaultValue(int defaultValue) {
+        this.defaultValue = "%s".formatted(defaultValue);
+        return this;
+    }
+
+    public Column setDefaultValue(double defaultValue) {
+        this.defaultValue = "%s".formatted(defaultValue);
+        return this;
+    }
+
+    public Column setDefaultValue(float defaultValue) {
+        this.defaultValue = "%s".formatted(defaultValue);
+        return this;
+    }
+
+    public Column setDefaultValue(BigDecimal defaultValue) {
+        this.defaultValue = defaultValue.toString();
+        return this;
+    }
+
+    public Column setDefaultValue(java.sql.Date defaultValue) {
+        this.defaultValue = defaultValue.toString();
+        return this;
+    }
+
+    public Column setDefaultValue(java.sql.Time defaultValue) {
+        this.defaultValue = defaultValue.toString();
+        return this;
+    }
+
+    public Column setDefaultValue(java.sql.Timestamp defaultValue) {
+        this.defaultValue = defaultValue.toString();
         return this;
     }
 
