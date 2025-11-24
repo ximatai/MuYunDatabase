@@ -54,7 +54,7 @@
       DataSource dataSource = new HikariDataSource(config);
 
       // 创建 Jdbi 对象，当然也可以用其他参数的方法创建 Jdbi ，不过通常来说推荐基于数据源 DataSource 的方法 
-      Jdbi jdbi = Jdbi.create(getDataSource()).setSqlLogger(new Slf4JSqlLogger());
+      Jdbi jdbi = Jdbi.create(dataSource).setSqlLogger(new Slf4JSqlLogger());
 
       // 本项目需要的两个对象
       JdbiMetaDataLoader loader = new JdbiMetaDataLoader(jdbi);
