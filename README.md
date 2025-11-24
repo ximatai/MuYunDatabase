@@ -6,7 +6,7 @@
 
 ### 最新版本及兼容性
 
-* 版本 `2.26.5` 主要兼容 `Java21` 及以上
+* 版本 `2.26.5` 兼容 `Java21` 及以上
 * 版本 `1.26.5` 兼容 `Java8`
 
 ### 包说明
@@ -22,8 +22,8 @@
     * gradle
          ```groovy
        dependencies {
-           implementation("net.ximatai.muyun.database:muyun-database-jdbi:2.26.4") // 兼容 Java21
-           implementation("net.ximatai.muyun.database:muyun-database-jdbi-jdk8:1.26.3") // 兼容 Java8
+           implementation("net.ximatai.muyun.database:muyun-database-jdbi:2.26.+") // 兼容 Java21
+           implementation("net.ximatai.muyun.database:muyun-database-jdbi-jdk8:1.26.+") // 兼容 Java8
        }
          ```
     * maven
@@ -32,13 +32,13 @@
         <dependency>
            <groupId>net.ximatai.muyun.database</groupId>
            <artifactId>muyun-database-jdbi</artifactId>
-           <version>2.26.4</version>
+           <version>2.26.+</version>
         </dependency>
         <!-- Java 8 兼容版本  -->
         <dependency>
            <groupId>net.ximatai.muyun.database</groupId>
             <artifactId>muyun-database-jdbi-jdk8</artifactId>
-            <version>1.26.3</version>
+            <version>1.26.+</version>
         </dependency>
        ```
 
