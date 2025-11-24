@@ -195,7 +195,7 @@ public class TableBuilder {
 
         }
 
-        if ((!dbColumn.isSequence() && !Objects.equals(dbColumn.getDefaultValue(), defaultValue))) {
+        if ((!dbColumn.isSequence() && !Objects.equals(dbColumn.getDefaultValueWithString(), defaultValue))) {
             if (getDatabaseType().equals(POSTGRESQL)) {
                 db.execute("alter table " + dbTable.getSchemaDotTable() + " alter column " + name + " set default " + defaultValue);
             } else if (getDatabaseType().equals(MYSQL)) {

@@ -129,21 +129,21 @@ public class AnnotationProcessor {
                 if (defaultVal != null) {
 
                     if (!defaultVal.function().isEmpty()) {
-                        column.setDefaultValue(defaultVal.function());
+                        column.setDefaultValueAny(defaultVal.function());
                     } else if (!defaultVal.express().isEmpty()) {
-                        column.setDefaultValue(defaultVal.express());
+                        column.setDefaultValueAny(defaultVal.express());
                     } else if (!defaultVal.varchar().isEmpty()) {
-                        column.setDefaultValue("'" + defaultVal.varchar() + "'");
+                        column.setDefaultValueAny("'" + defaultVal.varchar() + "'");
                     } else if (defaultVal.number() > Long.MIN_VALUE) {
-                        column.setDefaultValue(String.valueOf(defaultVal.number()));
+                        column.setDefaultValueAny(String.valueOf(defaultVal.number()));
                     } else if (defaultVal.decimal() > Double.MIN_VALUE) {
-                        column.setDefaultValue(String.valueOf(defaultVal.decimal()));
+                        column.setDefaultValueAny(String.valueOf(defaultVal.decimal()));
                     } else if (defaultVal.trueVal()) {
-                        column.setDefaultValue("TRUE");
+                        column.setDefaultValueAny("TRUE");
                     } else if (defaultVal.falseVal()) {
-                        column.setDefaultValue("FALSE");
+                        column.setDefaultValueAny("FALSE");
                     } else if (defaultVal.nullVal()) {
-                        column.setDefaultValue("NULL");
+                        column.setDefaultValueAny("NULL");
                     }
 
                 }

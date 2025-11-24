@@ -95,12 +95,12 @@ public abstract class MuYunDatabaseBaseTest {
         TableWrapper basic = TableWrapper.withName("basic")
                 .setPrimaryKey(getPrimaryKey())
                 .setComment("测试表")
-                .addColumn(Column.of("v_name").setLength(20).setIndexed().setComment("名称").setDefaultValue("'test'"))
+                .addColumn(Column.of("v_name").setLength(20).setIndexed().setComment("名称").setDefaultValue("test"))
                 .addColumn(Column.of("i_age").setComment("年龄"))
                 .addColumn(Column.of("n_price").setPrecision(10).setScale(2))
                 .addColumn("b_flag")
                 .addColumn("d_date")
-                .addColumn(Column.of("t_create").setDefaultValue("CURRENT_TIMESTAMP"));
+                .addColumn(Column.of("t_create").setDefaultValueAny("CURRENT_TIMESTAMP"));
 
         new TableBuilder(db).build(basic);
 
@@ -125,12 +125,12 @@ public abstract class MuYunDatabaseBaseTest {
         TableWrapper basic = TableWrapper.withName("basic")
                 .setPrimaryKey(getPrimaryKey())
                 .setComment("测试表")
-                .addColumn(Column.of("v_name").setLength(20).setIndexed().setComment("名称").setDefaultValue("'test'"))
+                .addColumn(Column.of("v_name").setLength(20).setIndexed().setComment("名称").setDefaultValue("test"))
                 .addColumn(Column.of("i_age").setComment("年龄"))
                 .addColumn(Column.of("n_price").setPrecision(10).setScale(2))
                 .addColumn("b_flag")
                 .addColumn("d_date")
-                .addColumn(Column.of("t_create").setDefaultValue("CURRENT_TIMESTAMP"));
+                .addColumn(Column.of("t_create").setDefaultValueAny("CURRENT_TIMESTAMP"));
 
         new TableBuilder(db).build(basic);
 
@@ -144,7 +144,7 @@ public abstract class MuYunDatabaseBaseTest {
         String id = db.insertItem("basic", body);
 
         TableWrapper basic2 = TableWrapper.withName("basic")
-                .addColumn(Column.of("v_name").setLength(12).setIndexed().setComment("名称").setDefaultValue("'test'"));
+                .addColumn(Column.of("v_name").setLength(12).setIndexed().setComment("名称").setDefaultValue("test"));
 
         new TableBuilder(db).build(basic2);
 
@@ -163,12 +163,12 @@ public abstract class MuYunDatabaseBaseTest {
                 .setSchema(schema)
                 .setPrimaryKey(getPrimaryKey())
                 .setComment("测试表")
-                .addColumn(Column.of("v_name").setLength(20).setIndexed().setComment("名称").setDefaultValue("'test'"))
+                .addColumn(Column.of("v_name").setLength(20).setIndexed().setComment("名称").setDefaultValue("test"))
                 .addColumn(Column.of("i_age").setComment("年龄"))
                 .addColumn(Column.of("n_price").setPrecision(10).setScale(2))
                 .addColumn("b_flag")
                 .addColumn("d_date")
-                .addColumn(Column.of("t_create").setDefaultValue("CURRENT_TIMESTAMP"));
+                .addColumn(Column.of("t_create").setDefaultValueAny("CURRENT_TIMESTAMP"));
 
         new TableBuilder(db).build(basic);
 
@@ -355,7 +355,7 @@ public abstract class MuYunDatabaseBaseTest {
                 .addColumn(Column.of("v_name")
                         .setLength(20)
                         .setComment("名称")
-                        .setDefaultValue("'test'"));
+                        .setDefaultValue("test"));
 
         new TableBuilder(db).build(basic);
 
@@ -390,21 +390,21 @@ public abstract class MuYunDatabaseBaseTest {
                 .addColumn(Column.of("v_name")
                         .setLength(20)
                         .setComment("名称")
-                        .setDefaultValue("'test'"));
+                        .setDefaultValue("test"));
 
         new TableBuilder(db).build(basic);
 
         DBTable base = db.getDBInfo().getSchema(schema).getTable(baseTable);
 
         assertTrue(base.getColumn("id").isPrimaryKey());
-        assertNotNull(base.getColumn("id").getDefaultValue());
+        assertNotNull(base.getColumn("id").getDefaultValueWithString());
 
         TableWrapper child = TableWrapper.withName("test_inherit_child")
                 .setSchema(schema)
                 .addColumn(Column.of("v_name2")
                         .setLength(20)
                         .setComment("名称")
-                        .setDefaultValue("'test'"))
+                        .setDefaultValue("test"))
                 .setInherit(basic);
 
         new TableBuilder(db).build(child);
@@ -427,7 +427,7 @@ public abstract class MuYunDatabaseBaseTest {
                 .addColumn(Column.of("v_name")
                         .setLength(20)
                         .setComment("名称")
-                        .setDefaultValue("'test'"));
+                        .setDefaultValue("test"));
 
         new TableBuilder(db).build(basic);
 
@@ -436,7 +436,7 @@ public abstract class MuYunDatabaseBaseTest {
                 .addColumn(Column.of("v_name2")
                         .setLength(20)
                         .setComment("名称")
-                        .setDefaultValue("'test'"));
+                        .setDefaultValue("test"));
 
         new TableBuilder(db).build(child);
 
@@ -473,12 +473,12 @@ public abstract class MuYunDatabaseBaseTest {
 
         assertTrue(table.getColumn("id").isPrimaryKey());
 
-        assertEquals("12", table.getColumn("age").getDefaultValue());
-        assertEquals("true", table.getColumn("flag").getDefaultValue());
-        assertEquals("1.23", table.getColumn("price").getDefaultValue());
+        assertEquals(12, table.getColumn("age").getDefaultValue());
+        assertEquals(true, table.getColumn("flag").getDefaultValue());
+        assertEquals(new BigDecimal("1.23"), table.getColumn("price").getDefaultValue());
         assertEquals("CURRENT_TIMESTAMP", table.getColumn("create_time").getDefaultValue());
 
-        System.out.println(table.getColumn("id").getDefaultValue());
+        System.out.println(table.getColumn("id").getDefaultValueWithString());
 
         List<DBIndex> indexList = table.getIndexList();
         assertTrue(indexList.stream()
@@ -544,7 +544,7 @@ public abstract class MuYunDatabaseBaseTest {
                 .addColumn(Column.of("v_name")
                         .setLength(20)
                         .setComment("名称")
-                        .setDefaultValue("'test'"));
+                        .setDefaultValue("test"));
 
         new TableBuilder(db).build(basic);
 

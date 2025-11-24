@@ -3,6 +3,7 @@ package net.ximatai.muyun.database.core.metadata;
 import net.ximatai.muyun.database.core.builder.Column;
 import net.ximatai.muyun.database.core.builder.ColumnType;
 
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -20,6 +21,9 @@ public class DBColumn {
     private boolean primaryKey;   // 是否为主键
     private boolean sequence;     // 是否使用序列
     private Integer length;       // 字段长度
+
+    // 使用正则表达式来匹配单引号之间的内容
+    private static final Pattern SINGLE_QUOTE_PATTERN = Pattern.compile("'([^']*)'");
 
     // Getter和Setter方法
     public String getName() {
@@ -52,8 +56,55 @@ public class DBColumn {
      *
      * @return 格式化后的默认值
      */
-    public String getDefaultValue() {
-        return extractDefaultContent(defaultValue);
+    public String getDefaultValueWithString() {
+        String input = defaultValue;
+        if (input == null) {
+            return null;
+        }
+
+        // BIT类型处理：1->true, 0->false
+        if (this.getType().equalsIgnoreCase("bit")) {
+            if (input.equals("1")) {
+                return "true";
+            } else if (input.equals("0")) {
+                return "false";
+            }
+        }
+
+        // VARCHAR类型处理：为纯字符串值添加引号
+        if (this.getType().equalsIgnoreCase("varchar")
+                && !input.contains("::")          // 排除类型转换表达式
+                && !input.endsWith("()")) {       // 排除函数调用
+            return "'" + input + "'";
+        }
+
+        return input;
+    }
+
+    public Object getDefaultValue() {
+        String input = defaultValue;
+        if (input == null) {
+            return null;
+        }
+
+        String type = this.getType().toLowerCase(); // 转换为小写以便switch匹配
+
+        return switch (type) {
+            case "bit" -> input.equals("1");
+            case "bool" -> Boolean.parseBoolean(input);
+            case String t when t.equals("int") || t.startsWith("int") -> Integer.parseInt(input);
+            case "float", "double" -> Double.parseDouble(input);
+            case "decimal", "numeric" -> new java.math.BigDecimal(input);
+            case "date" -> java.sql.Date.valueOf(input);
+            case "time" -> java.sql.Time.valueOf(input);
+            default -> {
+                Matcher matcher = SINGLE_QUOTE_PATTERN.matcher(input);
+                if (matcher.find()) {
+                    yield matcher.group(1);  // 返回第一个括号中的匹配结果
+                }
+                yield input;  // 如果没有匹配的内容，返回原输入
+            }
+        };
     }
 
     public void setDefaultValue(String defaultValue) {
@@ -115,40 +166,6 @@ public class DBColumn {
         return getName();
     }
 
-    /**
-     * 提取并格式化默认值内容
-     * 对不同类型的默认值进行适当处理：
-     * - BIT类型：将1/0转换为true/false
-     * - VARCHAR类型：为字符串值添加单引号
-     * - 其他类型：保持原样
-     *
-     * @param input 原始默认值
-     * @return 格式化后的默认值
-     */
-    public String extractDefaultContent(String input) {
-        if (input == null) {
-            return null;
-        }
-
-        // BIT类型处理：1->true, 0->false
-        if (this.getType().equalsIgnoreCase("bit")) {
-            if (input.equals("1")) {
-                return "true";
-            } else if (input.equals("0")) {
-                return "false";
-            }
-        }
-
-        // VARCHAR类型处理：为纯字符串值添加引号
-        if (this.getType().equalsIgnoreCase("varchar")
-                && !input.contains("::")          // 排除类型转换表达式
-                && !input.endsWith("()")) {       // 排除函数调用
-            return "'" + input + "'";
-        }
-
-        return input;
-    }
-
     public Integer getLength() {
         return length;
     }
@@ -175,7 +192,7 @@ public class DBColumn {
         Column column = Column.of(this.getName());
         column.setComment(this.getDescription());
         column.setType(ColumnType.valueOf(this.getType().toUpperCase()));
-        column.setDefaultValue(this.getDefaultValue());
+        column.setDefaultValueAny(this.getDefaultValueWithString());
         column.setNullable(this.isNullable());
         column.setPrimaryKey(this.isPrimaryKey());
         column.setSequence(this.isSequence());
