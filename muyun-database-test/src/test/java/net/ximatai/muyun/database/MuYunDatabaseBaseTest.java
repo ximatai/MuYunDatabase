@@ -72,7 +72,7 @@ public abstract class MuYunDatabaseBaseTest {
         jdbi = Jdbi.create(getDataSource())
                 .setSqlLogger(new Slf4JSqlLogger());
         loader = new JdbiMetaDataLoader(jdbi);
-        db = new JdbiDatabaseOperations<String>(jdbi, loader,String.class);
+        db = new JdbiDatabaseOperations<>(jdbi, loader, String.class, "id");
     }
 
     @BeforeEach
@@ -209,6 +209,50 @@ public abstract class MuYunDatabaseBaseTest {
         assertEquals(true, item.get("b_flag"));
         assertEquals(0, BigDecimal.valueOf(10.2).compareTo((BigDecimal) item.get("n_price")));
         assertEquals(LocalDate.of(2024, 1, 1), ((Date) item.get("d_date")).toLocalDate());
+    }
+
+    @Test
+    void testUpsert() {
+
+        Map body = Map.of(
+                "v_name", "test_name",
+                "i_age", 5,
+                "b_flag", true,
+                "n_price", 10.2,
+                "d_date", "2024-01-01"
+        );
+
+        String id = db.insertItem("basic", body);
+        assertNotNull(id);
+
+        Map<String, Object> item = db.getItem("basic", id);
+
+        assertNotNull(item);
+        assertEquals("test_name", item.get("v_name"));
+        assertEquals(5, item.get("i_age"));
+        assertEquals(true, item.get("b_flag"));
+        assertEquals(0, BigDecimal.valueOf(10.2).compareTo((BigDecimal) item.get("n_price")));
+        assertEquals(LocalDate.of(2024, 1, 1), ((Date) item.get("d_date")).toLocalDate());
+
+        Map body2 = Map.of(
+                "id", id,
+                "v_name", "test_name2",
+                "i_age", 6,
+                "b_flag", true
+        );
+
+        int upserted2 = db.upsertItem("basic", body2);
+        assertEquals(1, upserted2);
+
+        item = db.getItem("basic", id);
+
+        assertNotNull(item);
+        assertEquals("test_name2", item.get("v_name"));
+        assertEquals(6, item.get("i_age"));
+        assertEquals(true, item.get("b_flag"));
+        assertEquals(0, BigDecimal.valueOf(10.2).compareTo((BigDecimal) item.get("n_price")));
+        assertEquals(LocalDate.of(2024, 1, 1), ((Date) item.get("d_date")).toLocalDate());
+
     }
 
     @Test

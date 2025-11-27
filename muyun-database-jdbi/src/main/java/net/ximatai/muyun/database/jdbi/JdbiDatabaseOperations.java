@@ -41,6 +41,7 @@ public class JdbiDatabaseOperations<K> implements IDatabaseOperations<K> {
     private DBInfo dbInfo;
 
     private final Class<K> pkType;
+    private final String pkName;
 
     @Override
     public DBInfo getDBInfo() {
@@ -48,6 +49,11 @@ public class JdbiDatabaseOperations<K> implements IDatabaseOperations<K> {
             dbInfo = getMetaDataLoader().getDBInfo();
         }
         return dbInfo;
+    }
+
+    @Override
+    public String getPKName() {
+        return pkName;
     }
 
     public RowMapper getRowMapper() {
@@ -66,10 +72,11 @@ public class JdbiDatabaseOperations<K> implements IDatabaseOperations<K> {
         return this;
     }
 
-    public JdbiDatabaseOperations(Jdbi jdbi, JdbiMetaDataLoader metaDataLoader, Class<K> pkType) {
+    public JdbiDatabaseOperations(Jdbi jdbi, JdbiMetaDataLoader metaDataLoader, Class<K> pkType, String pkName) {
         this.jdbi = jdbi;
         this.metaDataLoader = metaDataLoader;
         this.pkType = pkType;
+        this.pkName = pkName;
     }
 
     public Jdbi getJdbi() {
@@ -113,12 +120,10 @@ public class JdbiDatabaseOperations<K> implements IDatabaseOperations<K> {
             }
 
             Object[] arrayValue;
-            if (value instanceof String) {
-                String string = (String) value;
-                arrayValue = string.split(",");
-            } else if (value instanceof List<?>) {
-                List<?> list = (List<?>) value;
-                arrayValue = list.toArray();
+            if (value instanceof String val) {
+                arrayValue = val.split(",");
+            } else if (value instanceof List<?> val) {
+                arrayValue = val.toArray();
             } else {
                 return value;
             }
@@ -166,26 +171,27 @@ public class JdbiDatabaseOperations<K> implements IDatabaseOperations<K> {
     }
 
     @Override
-    public int insert(String sql, Map<String, Object> params) {
-        return getJdbi().withHandle(handle ->
+    public K insertWithPK(String sql, Map<String, Object> params, K pk) {
+        getJdbi().withHandle(handle ->
                 handle.createUpdate(sql)
                         .attachToHandleForCleanup()
                         .bindMap(params)
                         .execute()
         );
+        return pk;
     }
 
     @Override
-    public K insert(String sql, Map<String, Object> params, String pk) {
+    public K insert(String sql, Map<String, Object> params) {
         return getJdbi().withHandle(handle ->
                 handle.createUpdate(sql)
                         .attachToHandleForCleanup()
                         .bindMap(params)
-                        .executeAndReturnGeneratedKeys(pk).mapTo(pkType).one());
+                        .executeAndReturnGeneratedKeys(getPKName()).mapTo(pkType).one());
     }
 
     @Override
-    public List<K> batchInsert(String sql, List<Map<String, Object>> paramsList, String pk) {
+    public List<K> batchInsert(String sql, List<Map<String, Object>> paramsList) {
         return getJdbi().withHandle(handle -> {
             List<K> generatedKeys = new ArrayList<>();
             PreparedBatch batch = handle.prepareBatch(sql);
@@ -195,7 +201,7 @@ public class JdbiDatabaseOperations<K> implements IDatabaseOperations<K> {
             }
 
             batch.attachToHandleForCleanup()
-                    .executePreparedBatch(pk)
+                    .executePreparedBatch(getPKName())
                     .mapTo(pkType)
                     .forEach(generatedKeys::add);
 
@@ -251,7 +257,7 @@ public class JdbiDatabaseOperations<K> implements IDatabaseOperations<K> {
     }
 
     @Override
-    public Integer update(String sql, Map<String, Object> params) {
+    public int update(String sql, Map<String, Object> params) {
         return getJdbi().withHandle(handle ->
                 handle.createUpdate(sql)
                         .attachToHandleForCleanup()
@@ -260,7 +266,7 @@ public class JdbiDatabaseOperations<K> implements IDatabaseOperations<K> {
     }
 
     @Override
-    public Integer update(String sql, List<Object> params) {
+    public int update(String sql, List<Object> params) {
         return getJdbi().withHandle(handle -> {
             Update query = handle.createUpdate(sql).attachToHandleForCleanup();
             if (params != null && !params.isEmpty()) {
@@ -273,17 +279,17 @@ public class JdbiDatabaseOperations<K> implements IDatabaseOperations<K> {
     }
 
     @Override
-    public Integer execute(String sql) {
+    public int execute(String sql) {
         return getJdbi().withHandle(handle -> handle.execute(sql));
     }
 
     @Override
-    public Integer execute(String sql, Object... params) {
+    public int execute(String sql, Object... params) {
         return getJdbi().withHandle(handle -> handle.execute(sql, params));
     }
 
     @Override
-    public Integer execute(String sql, List<Object> params) {
+    public int execute(String sql, List<Object> params) {
         return getJdbi().withHandle(handle -> handle.execute(sql, params.toArray()));
     }
 
@@ -307,35 +313,35 @@ public class JdbiDatabaseOperations<K> implements IDatabaseOperations<K> {
 
     // 数据类型转换辅助方法
     private BigInteger convertToBigInteger(Object value) {
-        if (value instanceof String) {
-            return new BigInteger((String) value);
-        } else if (value instanceof Number) {
-            return BigInteger.valueOf(((Number) value).longValue());
+        if (value instanceof String val) {
+            return new BigInteger(val);
+        } else if (value instanceof Number val) {
+            return BigInteger.valueOf(val.longValue());
         }
-        throw new IllegalArgumentException("Cannot convert to BigInteger: " + value);
+        throw new IllegalArgumentException("Cannot convert to Bigint: " + value);
     }
 
     private Integer convertToInteger(Object value) {
-        if (value instanceof String) {
-            return Integer.valueOf((String) value);
-        } else if (value instanceof Number) {
-            return ((Number) value).intValue();
+        if (value instanceof String val) {
+            return Integer.valueOf(val);
+        } else if (value instanceof Number val) {
+            return val.intValue();
         }
-        throw new IllegalArgumentException("Cannot convert to Integer: " + value);
+        throw new IllegalArgumentException("Cannot convert to int: " + value);
     }
 
     private BigDecimal convertToBigDecimal(Object value) {
-        if (value instanceof String && !isBlank((String) value)) {
-            return new BigDecimal((String) value);
-        } else if (value instanceof Number) {
-            return BigDecimal.valueOf(((Number) value).doubleValue());
+        if (value instanceof String val && !isBlank(val)) {
+            return new BigDecimal(val);
+        } else if (value instanceof Number val) {
+            return BigDecimal.valueOf(val.doubleValue());
         }
         return null;
     }
 
     private byte[] convertToByteArray(Object value) {
-        if (value instanceof byte[]) {
-            return (byte[]) value;
+        if (value instanceof byte[] val) {
+            return val;
         }
         return value.toString().getBytes();
     }
@@ -385,18 +391,18 @@ public class JdbiDatabaseOperations<K> implements IDatabaseOperations<K> {
      * 处理日期时间类型转换
      */
     public static Timestamp handleDateTimestamp(Object value) {
-        if (value instanceof Timestamp) {
-            return (Timestamp) value;
+        if (value instanceof Timestamp val) {
+            return val;
         } else if ("".equals(value)) {
             return null;
-        } else if (value instanceof LocalDate) {
-            return Timestamp.valueOf(((LocalDate) value).atStartOfDay());
-        } else if (value instanceof LocalDateTime) {
-            return Timestamp.valueOf((LocalDateTime) value);
-        } else if (value instanceof Date) {
-            return new Timestamp(((Date) value).getTime());
-        } else if (value instanceof String) {
-            return stringToSqlTimestamp((String) value);
+        } else if (value instanceof LocalDate val) {
+            return Timestamp.valueOf(val.atStartOfDay());
+        } else if (value instanceof LocalDateTime val) {
+            return Timestamp.valueOf(val);
+        } else if (value instanceof Date val) {
+            return new Timestamp(val.getTime());
+        } else if (value instanceof String val) {
+            return stringToSqlTimestamp(val);
         } else {
             throw new IllegalArgumentException("Unsupported type: " + value.getClass().getName());
         }

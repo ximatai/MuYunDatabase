@@ -1,5 +1,6 @@
 package net.ximatai.muyun.database.core;
 
+import net.ximatai.muyun.database.core.exception.MuYunDatabaseException;
 import net.ximatai.muyun.database.core.metadata.DBColumn;
 import net.ximatai.muyun.database.core.metadata.DBInfo;
 import net.ximatai.muyun.database.core.metadata.DBTable;
@@ -7,6 +8,7 @@ import net.ximatai.muyun.database.core.metadata.DBTable;
 import java.sql.Array;
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * 数据库操作接口
@@ -23,6 +25,11 @@ public interface IDatabaseOperations<K> {
      * 获取数据库信息
      */
     DBInfo getDBInfo();
+
+    /**
+     * 获取主键字段名
+     */
+    String getPKName();
 
     /**
      * 获取默认模式名称
@@ -106,13 +113,26 @@ public interface IDatabaseOperations<K> {
     default K insertItem(String schema, String tableName, Map<String, Object> params) {
         DBTable table = getDBInfo().getSchema(schema).getTable(tableName);
         Map<String, Object> transformed = transformDataForDB(table, params);
+        String sql = buildInsertSql(schema, tableName, transformed);
 
-        if (params.containsKey("id") || params.containsKey("ID")) {
-            this.insert(buildInsertSql(schema, tableName, transformed), transformed);
-            return params.get("id") != null ? (K) params.get("id") : (K) params.get("ID");
-        } else {
-            return this.insert(buildInsertSql(schema, tableName, transformed), transformed, "id");
-        }
+        // 使用Stream查找主键值
+        Optional<K> pkValue = findPrimaryKeyValue(params);
+
+        return pkValue.map(value -> this.insertWithPK(sql, transformed, value))
+                .orElseGet(() -> this.insert(sql, transformed));
+    }
+
+    /**
+     * 使用Stream优雅地查找主键值
+     */
+    @SuppressWarnings("unchecked")
+    private Optional<K> findPrimaryKeyValue(Map<String, Object> params) {
+        String pkName = getPKName();
+
+        return (Optional<K>) Stream.of(pkName, pkName.toUpperCase(), pkName.toLowerCase())
+                .map(params::get)
+                .filter(Objects::nonNull)
+                .findFirst();
     }
 
     /**
@@ -136,13 +156,13 @@ public interface IDatabaseOperations<K> {
         DBTable table = getDBInfo().getSchema(schema).getTable(tableName);
         List<Map<String, Object>> transformedList = list.stream().map(it -> transformDataForDB(table, it)).collect(Collectors.toList());
 
-        return this.batchInsert(buildInsertSql(schema, tableName, transformedList.get(0)), transformedList, "id");
+        return this.batchInsert(buildInsertSql(schema, tableName, transformedList.get(0)), transformedList);
     }
 
     /**
      * 更新记录（使用默认模式）
      */
-    default Integer updateItem(String tableName, Map<String, Object> params) {
+    default int updateItem(String tableName, Map<String, Object> params) {
         return this.updateItem(getDefaultSchemaName(), tableName, params);
     }
 
@@ -151,16 +171,49 @@ public interface IDatabaseOperations<K> {
      *
      * @return 影响的行数
      */
-    default Integer updateItem(String schema, String tableName, Map<String, Object> params) {
+    default int updateItem(String schema, String tableName, Map<String, Object> params) {
         DBTable table = getDBInfo().getSchema(schema).getTable(tableName);
         Map<String, Object> transformed = transformDataForDB(table, params);
-        return this.update(buildUpdateSql(schema, tableName, transformed, "id"), transformed);
+        return this.update(buildUpdateSql(schema, tableName, transformed, getPKName()), transformed);
+    }
+
+    /**
+     * 新增或修改记录
+     *
+     * @return 影响的行数
+     */
+    default int upsertItem(String schema, String tableName, Map<String, Object> params) {
+
+        Optional<K> pkValue = findPrimaryKeyValue(params);
+
+        if (pkValue.isEmpty()) {
+            throw new MuYunDatabaseException("The primary key value must not be null");
+        }
+
+        Map<String, Object> row = this.getItem(schema, tableName, pkValue.get());
+
+        if (row == null) {
+            this.insertItem(schema, tableName, params);
+            return 1;
+        } else {
+            return this.updateItem(schema, tableName, params);
+        }
+
+    }
+
+    /**
+     * 新增或修改记录
+     *
+     * @return 影响的行数
+     */
+    default int upsertItem(String tableName, Map<String, Object> params) {
+        return this.upsertItem(getDefaultSchemaName(), tableName, params);
     }
 
     /**
      * 删除记录（使用默认模式）
      */
-    default Integer deleteItem(String tableName, String id) {
+    default int deleteItem(String tableName, K id) {
         return this.deleteItem(getDefaultSchemaName(), tableName, id);
     }
 
@@ -169,17 +222,17 @@ public interface IDatabaseOperations<K> {
      *
      * @return 影响的行数
      */
-    default Integer deleteItem(String schema, String tableName, String id) {
+    default int deleteItem(String schema, String tableName, K id) {
         DBTable dbTable = getDBInfo().getSchema(schema).getTable(tableName);
         Objects.requireNonNull(dbTable);
 
-        return this.delete("DELETE FROM " + schema + "." + tableName + " WHERE id=:id", Collections.singletonMap("id", id));
+        return this.delete("DELETE FROM " + schema + "." + tableName + " WHERE " + getPKName() + "=:id", Collections.singletonMap("id", id));
     }
 
     /**
      * 查询单条记录（使用默认模式）
      */
-    default Map<String, Object> getItem(String tableName, String id) {
+    default Map<String, Object> getItem(String tableName, K id) {
         return this.getItem(getDefaultSchemaName(), tableName, id);
     }
 
@@ -188,11 +241,11 @@ public interface IDatabaseOperations<K> {
      *
      * @return 记录映射，未找到时返回null
      */
-    default Map<String, Object> getItem(String schema, String tableName, String id) {
+    default Map<String, Object> getItem(String schema, String tableName, K id) {
         DBTable dbTable = getDBInfo().getSchema(schema).getTable(tableName);
         Objects.requireNonNull(dbTable);
 
-        return this.row("SELECT * FROM " + schema + "." + tableName + " WHERE id=:id", Collections.singletonMap("id", id));
+        return this.row("SELECT * FROM " + schema + "." + tableName + " WHERE " + getPKName() + "=:id", Collections.singletonMap("id", id));
     }
 
     // 基础CRUD操作方法
@@ -200,17 +253,17 @@ public interface IDatabaseOperations<K> {
     /**
      * 插入记录并返回主键
      */
-    K insert(String sql, Map<String, Object> params, String pk);
+    K insert(String sql, Map<String, Object> params);
 
     /**
-     * 插入记录
+     * 插入记录并返回主键
      */
-    int insert(String sql, Map<String, Object> params);
+    K insertWithPK(String sql, Map<String, Object> params, K pk);
 
     /**
      * 批量插入记录
      */
-    List<K> batchInsert(String sql, List<Map<String, Object>> paramsList, String pk);
+    List<K> batchInsert(String sql, List<Map<String, Object>> paramsList);
 
     /**
      * 查询单行（可变参数）
@@ -263,55 +316,55 @@ public interface IDatabaseOperations<K> {
     /**
      * 更新操作（映射参数）
      */
-    Integer update(String sql, Map<String, Object> params);
+    int update(String sql, Map<String, Object> params);
 
     /**
      * 更新操作（可变参数）
      */
-    default Integer update(String sql, Object... params) {
+    default int update(String sql, Object... params) {
         return this.update(sql, Arrays.stream(params).collect(Collectors.toList()));
     }
 
     /**
      * 更新操作（列表参数）
      */
-    Integer update(String sql, List<Object> params);
+    int update(String sql, List<Object> params);
 
     /**
      * 删除操作（映射参数）
      */
-    default Integer delete(String sql, Map<String, Object> params) {
+    default int delete(String sql, Map<String, Object> params) {
         return this.update(sql, params);
     }
 
     /**
      * 删除操作（可变参数）
      */
-    default Integer delete(String sql, Object... params) {
+    default int delete(String sql, Object... params) {
         return this.update(sql, params);
     }
 
     /**
      * 删除操作（列表参数）
      */
-    default Integer delete(String sql, List<?> params) {
+    default int delete(String sql, List<?> params) {
         return this.update(sql, params);
     }
 
     /**
      * 执行SQL语句（无参数）
      */
-    Integer execute(String sql);
+    int execute(String sql);
 
     /**
      * 执行SQL语句（可变参数）
      */
-    Integer execute(String sql, Object... params);
+    int execute(String sql, Object... params);
 
     /**
      * 执行SQL语句（列表参数）
      */
-    Integer execute(String sql, List<Object> params);
+    int execute(String sql, List<Object> params);
 
     /**
      * 创建数据库数组对象
