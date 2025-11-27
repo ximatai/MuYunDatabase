@@ -12,7 +12,7 @@ import java.util.stream.Collectors;
  * 数据库操作接口
  * 定义数据库的CRUD操作和SQL构建方法
  */
-public interface IDatabaseOperations {
+public interface IDatabaseOperations<K> {
 
     /**
      * 获取元数据加载器
@@ -35,16 +35,16 @@ public interface IDatabaseOperations {
      * 转换数据为数据库格式
      * 根据表结构对数据进行类型转换
      */
-    default Map<String, ?> transformDataForDB(DBTable dbTable, Map<String, ?> data) {
+    default Map<String, Object> transformDataForDB(DBTable dbTable, Map<String, Object> data) {
         return data;
     }
 
     /**
      * 构建插入SQL语句
      *
-     * @param schema 模式名
+     * @param schema    模式名
      * @param tableName 表名
-     * @param params 参数映射
+     * @param params    参数映射
      * @return 插入SQL语句
      */
     default String buildInsertSql(String schema, String tableName, Map<String, ?> params) {
@@ -68,13 +68,13 @@ public interface IDatabaseOperations {
     /**
      * 构建更新SQL语句
      *
-     * @param schema 模式名
+     * @param schema    模式名
      * @param tableName 表名
-     * @param params 参数映射
-     * @param pk 主键字段名
+     * @param params    参数映射
+     * @param pkName    主键字段名
      * @return 更新SQL语句
      */
-    default String buildUpdateSql(String schema, String tableName, Map<String, ?> params, String pk) {
+    default String buildUpdateSql(String schema, String tableName, Map<String, Object> params, String pkName) {
         DBTable dbTable = getDBInfo().getSchema(schema).getTable(tableName);
         Objects.requireNonNull(dbTable);
 
@@ -87,13 +87,13 @@ public interface IDatabaseOperations {
             }
         });
 
-        return "update " + schema + "." + tableName + " set " + setClause + " where " + pk + " = :" + pk;
+        return "update " + schema + "." + tableName + " set " + setClause + " where " + pkName + " = :" + pkName;
     }
 
     /**
      * 插入单条记录（使用默认模式）
      */
-    default String insertItem(String tableName, Map<String, ?> params) {
+    default K insertItem(String tableName, Map<String, Object> params) {
         return this.insertItem(getDefaultSchemaName(), tableName, params);
     }
 
@@ -103,22 +103,22 @@ public interface IDatabaseOperations {
      *
      * @return 插入记录的主键ID
      */
-    default String insertItem(String schema, String tableName, Map<String, ?> params) {
+    default K insertItem(String schema, String tableName, Map<String, Object> params) {
         DBTable table = getDBInfo().getSchema(schema).getTable(tableName);
-        Map<String, ?> transformed = transformDataForDB(table, params);
+        Map<String, Object> transformed = transformDataForDB(table, params);
 
         if (params.containsKey("id") || params.containsKey("ID")) {
             this.insert(buildInsertSql(schema, tableName, transformed), transformed);
-            return params.get("id") != null ? (String) params.get("id") : (String) params.get("ID");
+            return params.get("id") != null ? (K) params.get("id") : (K) params.get("ID");
         } else {
-            return this.insert(buildInsertSql(schema, tableName, transformed), transformed, "id", String.class);
+            return this.insert(buildInsertSql(schema, tableName, transformed), transformed, "id");
         }
     }
 
     /**
      * 批量插入记录（使用默认模式）
      */
-    default List<String> insertList(String tableName, List<? extends Map<String, ?>> list) {
+    default List<K> insertList(String tableName, List<Map<String, Object>> list) {
         return this.insertList(getDefaultSchemaName(), tableName, list);
     }
 
@@ -127,22 +127,22 @@ public interface IDatabaseOperations {
      *
      * @return 插入记录的主键ID列表
      */
-    default List<String> insertList(String schema, String tableName, List<? extends Map<String, ?>> list) {
+    default List<K> insertList(String schema, String tableName, List<Map<String, Object>> list) {
         Objects.requireNonNull(list, "The list must not be null");
         if (list.isEmpty()) {
             throw new IllegalArgumentException("The list must not be empty");
         }
 
         DBTable table = getDBInfo().getSchema(schema).getTable(tableName);
-        List<? extends Map<String, ?>> transformedList = list.stream().map(it -> transformDataForDB(table, it)).collect(Collectors.toList());
+        List<Map<String, Object>> transformedList = list.stream().map(it -> transformDataForDB(table, it)).collect(Collectors.toList());
 
-        return this.batchInsert(buildInsertSql(schema, tableName, transformedList.get(0)), transformedList, "id", String.class);
+        return this.batchInsert(buildInsertSql(schema, tableName, transformedList.get(0)), transformedList, "id");
     }
 
     /**
      * 更新记录（使用默认模式）
      */
-    default Integer updateItem(String tableName, Map<String, ?> params) {
+    default Integer updateItem(String tableName, Map<String, Object> params) {
         return this.updateItem(getDefaultSchemaName(), tableName, params);
     }
 
@@ -151,9 +151,9 @@ public interface IDatabaseOperations {
      *
      * @return 影响的行数
      */
-    default Integer updateItem(String schema, String tableName, Map<String, ?> params) {
+    default Integer updateItem(String schema, String tableName, Map<String, Object> params) {
         DBTable table = getDBInfo().getSchema(schema).getTable(tableName);
-        Map<String, ?> transformed = transformDataForDB(table, params);
+        Map<String, Object> transformed = transformDataForDB(table, params);
         return this.update(buildUpdateSql(schema, tableName, transformed, "id"), transformed);
     }
 
@@ -200,17 +200,17 @@ public interface IDatabaseOperations {
     /**
      * 插入记录并返回主键
      */
-    <T> T insert(String sql, Map<String, ?> params, String pk, Class<T> idType);
+    K insert(String sql, Map<String, Object> params, String pk);
 
     /**
      * 插入记录
      */
-    int insert(String sql, Map<String, ?> params);
+    int insert(String sql, Map<String, Object> params);
 
     /**
      * 批量插入记录
      */
-    <T> List<T> batchInsert(String sql, List<? extends Map<String, ?>> paramsList, String pk, Class<T> idType);
+    List<K> batchInsert(String sql, List<Map<String, Object>> paramsList, String pk);
 
     /**
      * 查询单行（可变参数）
@@ -222,12 +222,12 @@ public interface IDatabaseOperations {
     /**
      * 查询单行（列表参数）
      */
-    Map<String, Object> row(String sql, List<?> params);
+    Map<String, Object> row(String sql, List<Object> params);
 
     /**
      * 查询单行（映射参数）
      */
-    Map<String, Object> row(String sql, Map<String, ?> params);
+    Map<String, Object> row(String sql, Map<String, Object> params);
 
     /**
      * 查询单行（无参数）
@@ -239,12 +239,12 @@ public interface IDatabaseOperations {
     /**
      * 查询多行（映射参数）
      */
-    List<Map<String, Object>> query(String sql, Map<String, ?> params);
+    List<Map<String, Object>> query(String sql, Map<String, Object> params);
 
     /**
      * 查询多行（列表参数）
      */
-    List<Map<String, Object>> query(String sql, List<?> params);
+    List<Map<String, Object>> query(String sql, List<Object> params);
 
     /**
      * 查询多行（可变参数）
@@ -263,7 +263,7 @@ public interface IDatabaseOperations {
     /**
      * 更新操作（映射参数）
      */
-    Integer update(String sql, Map<String, ?> params);
+    Integer update(String sql, Map<String, Object> params);
 
     /**
      * 更新操作（可变参数）
@@ -275,12 +275,12 @@ public interface IDatabaseOperations {
     /**
      * 更新操作（列表参数）
      */
-    Integer update(String sql, List<?> params);
+    Integer update(String sql, List<Object> params);
 
     /**
      * 删除操作（映射参数）
      */
-    default Integer delete(String sql, Map<String, ?> params) {
+    default Integer delete(String sql, Map<String, Object> params) {
         return this.update(sql, params);
     }
 
@@ -311,10 +311,10 @@ public interface IDatabaseOperations {
     /**
      * 执行SQL语句（列表参数）
      */
-    Integer execute(String sql, List<?> params);
+    Integer execute(String sql, List<Object> params);
 
     /**
      * 创建数据库数组对象
      */
-    Array createArray(List list, String type);
+    Array createArray(List<Object> list, String type);
 }

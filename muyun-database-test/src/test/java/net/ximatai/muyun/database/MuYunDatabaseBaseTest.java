@@ -45,7 +45,7 @@ public abstract class MuYunDatabaseBaseTest {
 
     Jdbi jdbi;
     JdbiMetaDataLoader loader;
-    JdbiDatabaseOperations db;
+    JdbiDatabaseOperations<String> db;
 
     abstract DatabaseType getDatabaseType();
 
@@ -72,7 +72,7 @@ public abstract class MuYunDatabaseBaseTest {
         jdbi = Jdbi.create(getDataSource())
                 .setSqlLogger(new Slf4JSqlLogger());
         loader = new JdbiMetaDataLoader(jdbi);
-        db = new JdbiDatabaseOperations(jdbi, loader);
+        db = new JdbiDatabaseOperations<String>(jdbi, loader,String.class);
     }
 
     @BeforeEach
@@ -214,13 +214,13 @@ public abstract class MuYunDatabaseBaseTest {
     @Test
     void testBatchInsert() {
         String schema = loader.getDBInfo().getDefaultSchemaName();
-        Map<String, ?> body = Map.of("v_name", "test_name1",
+        Map<String, Object> body = Map.of("v_name", "test_name1",
                 "i_age", 5,
                 "b_flag", true,
                 "n_price", 10.2,
                 "d_date", "2024-01-01"
         );
-        Map<String, ?> body2 = Map.of("v_name", "test_name2",
+        Map<String, Object> body2 = Map.of("v_name", "test_name2",
                 "i_age", 5,
                 "b_flag", true,
                 "n_price", 10.2,

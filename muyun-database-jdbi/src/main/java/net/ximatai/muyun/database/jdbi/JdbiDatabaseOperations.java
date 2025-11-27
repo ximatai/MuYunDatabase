@@ -29,7 +29,7 @@ import java.util.*;
  * JDBI数据库操作实现类
  * 基于JDBI框架实现数据库的CRUD操作和数据类型转换
  */
-public class JdbiDatabaseOperations implements IDatabaseOperations {
+public class JdbiDatabaseOperations<K> implements IDatabaseOperations<K> {
 
     // 日期时间格式化器
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
@@ -39,6 +39,8 @@ public class JdbiDatabaseOperations implements IDatabaseOperations {
     private JdbiMetaDataLoader metaDataLoader;
     private RowMapper rowMapper = new MapMapper();
     private DBInfo dbInfo;
+
+    private final Class<K> pkType;
 
     @Override
     public DBInfo getDBInfo() {
@@ -64,9 +66,10 @@ public class JdbiDatabaseOperations implements IDatabaseOperations {
         return this;
     }
 
-    public JdbiDatabaseOperations(Jdbi jdbi, JdbiMetaDataLoader metaDataLoader) {
+    public JdbiDatabaseOperations(Jdbi jdbi, JdbiMetaDataLoader metaDataLoader, Class<K> pkType) {
         this.jdbi = jdbi;
         this.metaDataLoader = metaDataLoader;
+        this.pkType = pkType;
     }
 
     public Jdbi getJdbi() {
@@ -79,7 +82,7 @@ public class JdbiDatabaseOperations implements IDatabaseOperations {
     }
 
     @Override
-    public Map<String, ?> transformDataForDB(DBTable dbTable, Map<String, ?> data) {
+    public Map<String, Object> transformDataForDB(DBTable dbTable, Map<String, Object> data) {
         Map<String, Object> transformedData = new HashMap<>(data);
         transformedData.forEach((k, v) -> {
             DBColumn dbColumn = dbTable.getColumn(k);
@@ -95,7 +98,7 @@ public class JdbiDatabaseOperations implements IDatabaseOperations {
      * 支持数组、数值、布尔、日期时间等类型转换
      *
      * @param value Java对象值
-     * @param type 数据库类型名称
+     * @param type  数据库类型名称
      * @return 转换后的数据库值
      */
     public Object getDBValue(Object value, String type) {
@@ -163,7 +166,7 @@ public class JdbiDatabaseOperations implements IDatabaseOperations {
     }
 
     @Override
-    public int insert(String sql, Map<String, ?> params) {
+    public int insert(String sql, Map<String, Object> params) {
         return getJdbi().withHandle(handle ->
                 handle.createUpdate(sql)
                         .attachToHandleForCleanup()
@@ -173,27 +176,27 @@ public class JdbiDatabaseOperations implements IDatabaseOperations {
     }
 
     @Override
-    public <T> T insert(String sql, Map<String, ?> params, String pk, Class<T> idType) {
+    public K insert(String sql, Map<String, Object> params, String pk) {
         return getJdbi().withHandle(handle ->
                 handle.createUpdate(sql)
                         .attachToHandleForCleanup()
                         .bindMap(params)
-                        .executeAndReturnGeneratedKeys(pk).mapTo(idType).one());
+                        .executeAndReturnGeneratedKeys(pk).mapTo(pkType).one());
     }
 
     @Override
-    public <T> List<T> batchInsert(String sql, List<? extends Map<String, ?>> paramsList, String pk, Class<T> idType) {
+    public List<K> batchInsert(String sql, List<Map<String, Object>> paramsList, String pk) {
         return getJdbi().withHandle(handle -> {
-            List<T> generatedKeys = new ArrayList<>();
+            List<K> generatedKeys = new ArrayList<>();
             PreparedBatch batch = handle.prepareBatch(sql);
 
-            for (Map<String, ?> params : paramsList) {
+            for (Map<String, Object> params : paramsList) {
                 batch.bindMap(params).add();
             }
 
             batch.attachToHandleForCleanup()
                     .executePreparedBatch(pk)
-                    .mapTo(idType)
+                    .mapTo(pkType)
                     .forEach(generatedKeys::add);
 
             return generatedKeys;
@@ -201,7 +204,7 @@ public class JdbiDatabaseOperations implements IDatabaseOperations {
     }
 
     @Override
-    public Map<String, Object> row(String sql, Map<String, ?> params) {
+    public Map<String, Object> row(String sql, Map<String, Object> params) {
         return getJdbi().withHandle(handle -> (Map<String, Object>) handle.createQuery(sql)
                 .attachToHandleForCleanup()
                 .bindMap(params)
@@ -211,7 +214,7 @@ public class JdbiDatabaseOperations implements IDatabaseOperations {
     }
 
     @Override
-    public Map<String, Object> row(String sql, List<?> params) {
+    public Map<String, Object> row(String sql, List<Object> params) {
         Object row = getJdbi().withHandle(handle -> {
             Query query = handle.createQuery(sql).attachToHandleForCleanup();
             if (params != null && !params.isEmpty()) {
@@ -225,7 +228,7 @@ public class JdbiDatabaseOperations implements IDatabaseOperations {
     }
 
     @Override
-    public List<Map<String, Object>> query(String sql, Map<String, ?> params) {
+    public List<Map<String, Object>> query(String sql, Map<String, Object> params) {
         return getJdbi().withHandle(handle ->
                 handle.createQuery(sql)
                         .attachToHandleForCleanup()
@@ -235,7 +238,7 @@ public class JdbiDatabaseOperations implements IDatabaseOperations {
     }
 
     @Override
-    public List<Map<String, Object>> query(String sql, List<?> params) {
+    public List<Map<String, Object>> query(String sql, List<Object> params) {
         return getJdbi().withHandle(handle -> {
             Query query = handle.createQuery(sql).attachToHandleForCleanup();
             if (params != null && !params.isEmpty()) {
@@ -248,7 +251,7 @@ public class JdbiDatabaseOperations implements IDatabaseOperations {
     }
 
     @Override
-    public Integer update(String sql, Map<String, ?> params) {
+    public Integer update(String sql, Map<String, Object> params) {
         return getJdbi().withHandle(handle ->
                 handle.createUpdate(sql)
                         .attachToHandleForCleanup()
@@ -257,7 +260,7 @@ public class JdbiDatabaseOperations implements IDatabaseOperations {
     }
 
     @Override
-    public Integer update(String sql, List<?> params) {
+    public Integer update(String sql, List<Object> params) {
         return getJdbi().withHandle(handle -> {
             Update query = handle.createUpdate(sql).attachToHandleForCleanup();
             if (params != null && !params.isEmpty()) {
@@ -280,7 +283,7 @@ public class JdbiDatabaseOperations implements IDatabaseOperations {
     }
 
     @Override
-    public Integer execute(String sql, List<?> params) {
+    public Integer execute(String sql, List<Object> params) {
         return getJdbi().withHandle(handle -> handle.execute(sql, params.toArray()));
     }
 
