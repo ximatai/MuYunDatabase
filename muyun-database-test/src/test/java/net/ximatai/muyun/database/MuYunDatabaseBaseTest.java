@@ -17,6 +17,8 @@ import net.ximatai.muyun.database.jdbi.JdbiDatabaseOperations;
 import net.ximatai.muyun.database.jdbi.JdbiMetaDataLoader;
 import org.jdbi.v3.core.Handle;
 import org.jdbi.v3.core.Jdbi;
+import org.jdbi.v3.core.mapper.CaseStrategy;
+import org.jdbi.v3.core.mapper.MapMappers;
 import org.jdbi.v3.core.statement.Slf4JSqlLogger;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -71,6 +73,7 @@ public abstract class MuYunDatabaseBaseTest {
     void setUp() {
         jdbi = Jdbi.create(getDataSource())
                 .setSqlLogger(new Slf4JSqlLogger());
+        jdbi.getConfig(MapMappers.class).setCaseChange(CaseStrategy.NOP);
         loader = new JdbiMetaDataLoader(jdbi);
         db = new JdbiDatabaseOperations<>(jdbi, loader, String.class, "id");
     }

@@ -54,12 +54,9 @@ public class JdbiMetaDataLoader implements IMetaDataLoader {
                 if (info.getDatabaseType().equals(DBInfo.Type.MYSQL)) {
                     // MySQL：通过show databases获取数据库列表
                     handle.createQuery("show databases;")
-                            .attachToHandleForCleanup()
-                            .mapToMap()
-                            .stream()
-                            .forEach(map -> {
-                                info.addSchema(new DBSchema((String) map.get("database")));
-                            });
+                            .mapTo(String.class)  // 直接将第一列映射为 String，忽略列名
+                            .list()               // 立即执行查询并关闭资源，返回 List<String>
+                            .forEach(dbName -> info.addSchema(new DBSchema(dbName)));
                 } else {
                     // PostgreSQL：通过JDBC元数据获取模式列表
                     try (ResultSet schemasRs = metaData.getSchemas()) {
