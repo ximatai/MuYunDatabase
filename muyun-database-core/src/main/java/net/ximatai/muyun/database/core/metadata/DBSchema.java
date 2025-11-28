@@ -25,6 +25,11 @@ public class DBSchema {
         return this.tables.get(name);
     }
 
+    public DBSchema removeTable(String name) {
+        this.tables.remove(name);
+        return this;
+    }
+
     public String getName() {
         return name;
     }
