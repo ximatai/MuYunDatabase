@@ -31,11 +31,12 @@ public class TableBuilder {
     }
 
     public boolean build(TableWrapper wrapper) {
-        logger.info("building table " + wrapper.getSchemaDotTable());
 
         boolean result = false;
         String schema = wrapper.getSchema() != null ? wrapper.getSchema() : info.getDefaultSchemaName();
         String name = wrapper.getName();
+
+        logger.info("Table %s.%s build initiated".formatted(schema, name));
 
         String inheritSQL = "";
 
@@ -100,7 +101,7 @@ public class TableBuilder {
 
         fixTableInherits(dbTable, inherits);
 
-        logger.info("table " + wrapper.getSchemaDotTable() + " built");
+        logger.info("Table %s.%s build finished".formatted(schema, name));
 
         return result;
     }
@@ -303,21 +304,17 @@ public class TableBuilder {
 
     private DBInfo.Type getDatabaseType() {
         String dbName = info.getTypeName().toUpperCase();
-        switch (dbName) {
-            case "POSTGRESQL":
-                return POSTGRESQL;
-            default:
-                return MYSQL;
-        }
+        return switch (dbName) {
+            case "POSTGRESQL" -> POSTGRESQL;
+            default -> MYSQL;
+        };
     }
 
     private IColumnTypeTransform getColumnTypeTransform() {
-        switch (getDatabaseType()) {
-            case POSTGRESQL:
-                return IColumnTypeTransform.POSTGRESQL;
-            default:
-                return IColumnTypeTransform.DEFAULT;
-        }
+        return switch (getDatabaseType()) {
+            case POSTGRESQL -> IColumnTypeTransform.POSTGRESQL;
+            default -> IColumnTypeTransform.DEFAULT;
+        };
     }
 
 }
