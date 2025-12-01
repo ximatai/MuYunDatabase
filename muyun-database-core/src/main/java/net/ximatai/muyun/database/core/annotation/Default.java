@@ -15,9 +15,7 @@ public @interface Default {
 
     String varchar() default "";
 
-    boolean trueVal() default false;
-
-    boolean falseVal() default false;
+    TrueOrFalse bool() default TrueOrFalse.UNSET;
 
     long number() default Long.MIN_VALUE;
 
@@ -26,4 +24,6 @@ public @interface Default {
     String function() default "";
 
     String express() default "";
+
 }
+

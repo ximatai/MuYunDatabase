@@ -135,9 +135,9 @@ public class AnnotationProcessor {
                         column.setDefaultValueAny(String.valueOf(defaultVal.number()));
                     } else if (defaultVal.decimal() > Double.MIN_VALUE) {
                         column.setDefaultValueAny(String.valueOf(defaultVal.decimal()));
-                    } else if (defaultVal.trueVal()) {
+                    } else if (defaultVal.bool().equals(TrueOrFalse.TRUE)) {
                         column.setDefaultValueAny("TRUE");
-                    } else if (defaultVal.falseVal()) {
+                    } else if (defaultVal.bool().equals(TrueOrFalse.FALSE)) {
                         column.setDefaultValueAny("FALSE");
                     } else if (defaultVal.nullVal()) {
                         column.setDefaultValueAny("NULL");

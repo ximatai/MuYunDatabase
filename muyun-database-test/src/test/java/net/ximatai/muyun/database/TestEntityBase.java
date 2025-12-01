@@ -26,7 +26,7 @@ public class TestEntityBase {
     public float price2;
 
     @Indexed
-    @Column(defaultVal = @Default(trueVal = true))
+    @Column(defaultVal = @Default(bool = TrueOrFalse.TRUE))
     public boolean flag;
 
     @Column(name = "create_time", defaultVal = @Default(express = "CURRENT_TIMESTAMP"))
