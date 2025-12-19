@@ -8,7 +8,7 @@ import java.util.Map;
 import java.util.Objects;
 
 public class DBTable extends TableBase {
-    private IMetaDataLoader iMetaDataLoader;
+    private final IMetaDataLoader iMetaDataLoader;
 
     private Map<String, DBColumn> columnMap;
 

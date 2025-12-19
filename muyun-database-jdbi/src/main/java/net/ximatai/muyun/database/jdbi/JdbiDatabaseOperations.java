@@ -3,7 +3,6 @@ package net.ximatai.muyun.database.jdbi;
 import net.ximatai.muyun.database.core.IDatabaseOperations;
 import net.ximatai.muyun.database.core.IMetaDataLoader;
 import net.ximatai.muyun.database.core.metadata.DBColumn;
-import net.ximatai.muyun.database.core.metadata.DBInfo;
 import net.ximatai.muyun.database.core.metadata.DBTable;
 import org.jdbi.v3.core.Jdbi;
 import org.jdbi.v3.core.mapper.MapMapper;
@@ -35,28 +34,23 @@ public class JdbiDatabaseOperations<K> implements IDatabaseOperations<K> {
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    private Jdbi jdbi;
-    private JdbiMetaDataLoader metaDataLoader;
-    private RowMapper rowMapper = new MapMapper();
-    private DBInfo dbInfo;
+    private final Jdbi jdbi;
+    private final JdbiMetaDataLoader metaDataLoader;
+    private RowMapper<Map<String, Object>> rowMapper;
+    private final static MapMapper MAP_MAPPER = new MapMapper();
 
     private final Class<K> pkType;
     private final String pkName;
-
-    @Override
-    public DBInfo getDBInfo() {
-        if (dbInfo == null) {
-            dbInfo = getMetaDataLoader().getDBInfo();
-        }
-        return dbInfo;
-    }
 
     @Override
     public String getPKName() {
         return pkName;
     }
 
-    public RowMapper getRowMapper() {
+    public RowMapper<Map<String, Object>> getRowMapper() {
+        if (rowMapper == null) {
+            return MAP_MAPPER;
+        }
         return rowMapper;
     }
 
@@ -66,7 +60,7 @@ public class JdbiDatabaseOperations<K> implements IDatabaseOperations<K> {
      * @param rowMapper 行映射器实例
      * @return 当前操作实例
      */
-    public JdbiDatabaseOperations setRowMapper(RowMapper rowMapper) {
+    public JdbiDatabaseOperations<K> setRowMapper(RowMapper<Map<String, Object>> rowMapper) {
         Objects.requireNonNull(rowMapper);
         this.rowMapper = rowMapper;
         return this;
@@ -129,45 +123,31 @@ public class JdbiDatabaseOperations<K> implements IDatabaseOperations<K> {
             }
 
             String subType = type.substring(1);
-            switch (subType) {
-                case "varchar":
-                    return Arrays.stream(arrayValue)
-                            .map(Object::toString)
-                            .toArray(String[]::new);
-                case "int4":
-                    return Arrays.stream(arrayValue)
-                            .map(val -> Integer.parseInt(val.toString()))
-                            .toArray(Integer[]::new);
-                case "bool":
-                    return Arrays.stream(arrayValue)
-                            .map(val -> Boolean.parseBoolean(val.toString()))
-                            .toArray(Boolean[]::new);
-                default:
-                    return value;
-            }
+            return switch (subType) {
+                case "varchar" -> Arrays.stream(arrayValue)
+                        .map(Object::toString)
+                        .toArray(String[]::new);
+                case "int4" -> Arrays.stream(arrayValue)
+                        .map(val -> Integer.parseInt(val.toString()))
+                        .toArray(Integer[]::new);
+                case "bool" -> Arrays.stream(arrayValue)
+                        .map(val -> Boolean.parseBoolean(val.toString()))
+                        .toArray(Boolean[]::new);
+                default -> value;
+            };
         }
 
         // 处理标量类型
-        switch (type) {
-            case "varchar":
-                return value.toString();
-            case "int8":
-                return convertToBigInteger(value);
-            case "int4":
-            case "int2":
-                return convertToInteger(value);
-            case "bool":
-                return isTrue(value);
-            case "date":
-            case "timestamp":
-                return handleDateTimestamp(value);
-            case "numeric":
-                return convertToBigDecimal(value);
-            case "bytea":
-                return convertToByteArray(value);
-            default:
-                return value;
-        }
+        return switch (type) {
+            case "varchar" -> value.toString();
+            case "int8" -> convertToBigInteger(value);
+            case "int4", "int2" -> convertToInteger(value);
+            case "bool" -> isTrue(value);
+            case "date", "timestamp" -> handleDateTimestamp(value);
+            case "numeric" -> convertToBigDecimal(value);
+            case "bytea" -> convertToByteArray(value);
+            default -> value;
+        };
     }
 
     @Override
@@ -221,7 +201,7 @@ public class JdbiDatabaseOperations<K> implements IDatabaseOperations<K> {
 
     @Override
     public Map<String, Object> row(String sql, List<Object> params) {
-        Object row = getJdbi().withHandle(handle -> {
+        return getJdbi().withHandle(handle -> {
             Query query = handle.createQuery(sql).attachToHandleForCleanup();
             if (params != null && !params.isEmpty()) {
                 for (int i = 0; i < params.size(); i++) {
@@ -230,7 +210,6 @@ public class JdbiDatabaseOperations<K> implements IDatabaseOperations<K> {
             }
             return query.map(getRowMapper()).findOne().orElse(null);
         });
-        return (Map<String, Object>) row;
     }
 
     @Override

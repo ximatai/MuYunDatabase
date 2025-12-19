@@ -22,9 +22,18 @@ public interface IDatabaseOperations<K> {
     IMetaDataLoader getMetaDataLoader();
 
     /**
-     * 获取数据库信息
+     * 获取数据库元数据信息
      */
-    DBInfo getDBInfo();
+    default DBInfo getDBInfo() {
+        return getMetaDataLoader().getDBInfo();
+    }
+
+    /**
+     * 重置数据库元数据信息
+     */
+    default void resetDBInfo() {
+        getMetaDataLoader().resetInfo();
+    }
 
     /**
      * 获取主键字段名

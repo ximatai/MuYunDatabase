@@ -18,9 +18,9 @@ public class TableBuilder {
     private static final Logger logger = LoggerFactory.getLogger(TableBuilder.class);
 
     private final DBInfo info;
-    private final IDatabaseOperations db;
+    private final IDatabaseOperations<?> db;
 
-    public TableBuilder(IDatabaseOperations db) {
+    public TableBuilder(IDatabaseOperations<?> db) {
         this.db = db;
         this.info = db.getDBInfo();
     }

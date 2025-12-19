@@ -11,6 +11,8 @@ public interface IMetaDataLoader {
 
     DBInfo getDBInfo();
 
+    void resetInfo();
+
     List<DBIndex> getIndexList(String schema, String table);
 
     Map<String, DBColumn> getColumnMap(String schema, String table);

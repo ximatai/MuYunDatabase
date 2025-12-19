@@ -123,8 +123,7 @@ public class AnnotationProcessor {
 
                 Default defaultVal = columnAnnotation.defaultVal();
 
-                if (defaultVal != null) {
-
+                if (defaultVal != null && !defaultVal.unset()) {
                     if (!defaultVal.function().isEmpty()) {
                         column.setDefaultValueAny(defaultVal.function());
                     } else if (!defaultVal.express().isEmpty()) {
@@ -142,7 +141,6 @@ public class AnnotationProcessor {
                     } else if (defaultVal.nullVal()) {
                         column.setDefaultValueAny("NULL");
                     }
-
                 }
 
                 if (idAnnotation != null) {

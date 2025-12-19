@@ -20,7 +20,7 @@ import static net.ximatai.muyun.database.core.exception.MuYunDatabaseException.T
 public class JdbiMetaDataLoader implements IMetaDataLoader {
 
     private DBInfo info;
-    private Jdbi jdbi;
+    private final Jdbi jdbi;
 
     public Jdbi getJdbi() {
         return jdbi;
@@ -32,7 +32,6 @@ public class JdbiMetaDataLoader implements IMetaDataLoader {
      */
     public JdbiMetaDataLoader(Jdbi jdbi) {
         this.jdbi = jdbi;
-        initInfo();
     }
 
     /**
@@ -106,7 +105,14 @@ public class JdbiMetaDataLoader implements IMetaDataLoader {
 
     @Override
     public DBInfo getDBInfo() {
+        if (info == null) {
+            initInfo();
+        }
         return info;
+    }
+
+    public void resetInfo(){
+        info = null;
     }
 
     @Override
