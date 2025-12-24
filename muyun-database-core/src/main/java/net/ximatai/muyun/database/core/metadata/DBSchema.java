@@ -1,5 +1,7 @@
 package net.ximatai.muyun.database.core.metadata;
 
+import net.ximatai.muyun.database.core.exception.TableNotFound;
+
 import java.util.HashMap;
 import java.util.Map;
 
@@ -22,6 +24,9 @@ public class DBSchema {
     }
 
     public DBTable getTable(String name) {
+        if (!containsTable(name)) {
+            throw new TableNotFound(name, this.name);
+        }
         return this.tables.get(name);
     }
 
