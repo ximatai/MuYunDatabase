@@ -5,6 +5,12 @@ plugins {
     id("io.github.jeadyx.sonatype-uploader") version "2.8"
 }
 
+val releasePublishModules = listOf(
+    "muyun-database-core",
+    "muyun-database-jdbi",
+    "muyun-database-spring-boot-starter"
+)
+
 allprojects {
     group = "net.ximatai.muyun.database"
 //    version = "1.0.0-SNAPSHOT"
@@ -13,6 +19,32 @@ allprojects {
     repositories {
         maven { url = uri("https://mirrors.cloud.tencent.com/repository/maven") }
         mavenCentral()
+    }
+}
+
+tasks.register("publishReleaseToSonatype") {
+    group = "publishing"
+    description = "Publish release modules (core/jdbi/starter) to Sonatype."
+
+    dependsOn(releasePublishModules.map { ":$it:clean" })
+    dependsOn("cleanLocalDeploymentDir")
+    dependsOn(releasePublishModules.map { ":$it:publishToSonatype" })
+
+    doFirst {
+        val requiredKeys = listOf(
+            "sonatype.token",
+            "sonatype.password",
+            "signing.keyId",
+            "signing.secretKey",
+            "signing.password"
+        )
+        val missing = requiredKeys.filter { key ->
+            val value = findProperty(key)?.toString()?.trim()
+            value.isNullOrEmpty() || value == "null"
+        }
+        require(missing.isEmpty()) {
+            "Missing required Gradle properties for Sonatype publish: ${missing.joinToString(", ")}"
+        }
     }
 }
 
@@ -90,5 +122,11 @@ subprojects {
         options.addStringOption("Xdoclint:none", "-quiet")
         options.addBooleanOption("Xwerror", false)
     }
-}
 
+    tasks.matching { it.name == "publishToSonatype" }.configureEach {
+        dependsOn("publishAllPublicationsToMavenRepository")
+    }
+    tasks.matching { it.name == "1.createDeploymentDir" || it.name == "2.uploadDeploymentDir" }.configureEach {
+        dependsOn("publishAllPublicationsToMavenRepository")
+    }
+}
