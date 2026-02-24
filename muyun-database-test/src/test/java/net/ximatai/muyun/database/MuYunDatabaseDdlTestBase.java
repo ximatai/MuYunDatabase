@@ -63,4 +63,10 @@ public abstract class MuYunDatabaseDdlTestBase extends MuYunDatabaseCoreOpsTestB
     protected void testIndexChange() {
         super.testIndexChange();
     }
+
+    @Test
+    @Override
+    protected void testSpecialTableNameSupport() {
+        super.testSpecialTableNameSupport();
+    }
 }

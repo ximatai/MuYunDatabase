@@ -93,8 +93,41 @@ public class SimpleEntityManagerUnitTest {
         assertTrue(result.isDryRun());
         assertTrue(result.isChanged());
         assertFalse(result.getStatements().isEmpty());
-        assertTrue(result.getStatements().stream().anyMatch(sql -> sql.contains("create table public.demo_user")));
+        assertTrue(result.getStatements().stream().anyMatch(sql ->
+                sql.toLowerCase().contains("create table") && sql.contains("demo_user")));
         assertTrue(operations.getExecutedSql().isEmpty());
+    }
+
+    @Test
+    void testBuildUpdateSqlKeepsOriginalNamedParams() {
+        InMemoryOperations operations = InMemoryOperations.withExistingStrictTable();
+        String sql = operations.buildUpdateSql(
+                "public",
+                "demo_user_strict",
+                Map.of("id", "u-1", "v_name", "alice", "age", 18),
+                "id"
+        );
+
+        assertTrue(sql.contains(":v_name"));
+        assertTrue(sql.contains(":age"));
+        assertTrue(sql.contains(":id"));
+        assertFalse(sql.contains(":p_0"));
+    }
+
+    @Test
+    void testBuildPatchUpdateSqlKeepsOriginalNamedParams() {
+        InMemoryOperations operations = InMemoryOperations.withExistingStrictTable();
+        String sql = operations.buildPatchUpdateSql(
+                "public",
+                "demo_user_strict",
+                Map.of("v_name", "alice"),
+                "id",
+                "__pk"
+        );
+
+        assertTrue(sql.contains(":v_name"));
+        assertTrue(sql.contains(":__pk"));
+        assertFalse(sql.contains(":p_0"));
     }
 
     @Test

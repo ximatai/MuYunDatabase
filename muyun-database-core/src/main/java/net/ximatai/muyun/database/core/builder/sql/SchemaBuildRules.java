@@ -21,6 +21,30 @@ public final class SchemaBuildRules {
         return identifier != null && SAFE_IDENTIFIER.matcher(identifier).matches();
     }
 
+    public static boolean isValidIdentifier(String identifier) {
+        if (identifier == null || identifier.isBlank()) {
+            return false;
+        }
+        if (!identifier.equals(identifier.trim())) {
+            return false;
+        }
+        return identifier.indexOf('\0') < 0;
+    }
+
+    public static String quoteIdentifier(String identifier, DBInfo.Type dbType) {
+        if (!isValidIdentifier(identifier)) {
+            throw new IllegalArgumentException("Invalid SQL identifier: " + identifier);
+        }
+        if (dbType == DBInfo.Type.MYSQL) {
+            return "`" + identifier.replace("`", "``") + "`";
+        }
+        return "\"" + identifier.replace("\"", "\"\"") + "\"";
+    }
+
+    public static String qualifiedName(String schema, String table, DBInfo.Type dbType) {
+        return quoteIdentifier(schema, dbType) + "." + quoteIdentifier(table, dbType);
+    }
+
     public static IColumnTypeTransform columnTypeTransform(DBInfo.Type dbType) {
         return dbType == POSTGRESQL ? IColumnTypeTransform.POSTGRESQL : IColumnTypeTransform.DEFAULT;
     }
@@ -41,7 +65,7 @@ public final class SchemaBuildRules {
         return length;
     }
 
-    public static String columnDefinition(Column column, String mappedType) {
+    public static String columnDefinition(Column column, String mappedType, DBInfo.Type dbType) {
         String defaultValue = column.getDefaultValue();
         String defaultValueString = defaultValue == null
                 ? ""
@@ -52,7 +76,7 @@ public final class SchemaBuildRules {
             primaryKeyString = " PRIMARY KEY ";
         }
 
-        return column.getName()
+        return quoteIdentifier(column.getName(), dbType)
                 + " "
                 + mappedType
                 + columnLength(column)

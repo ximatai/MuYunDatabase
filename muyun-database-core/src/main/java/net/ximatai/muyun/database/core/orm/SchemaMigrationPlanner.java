@@ -28,14 +28,14 @@ class SchemaMigrationPlanner {
                 : wrapper.getSchema();
 
         String table = wrapper.getName();
-        assertSafeIdentifier(schema, "schema");
-        assertSafeIdentifier(table, "table");
+        assertValidIdentifier(schema, "schema");
+        assertValidIdentifier(table, "table");
 
         PlanBuilder builder = new PlanBuilder();
 
         DBSchema dbSchema = info.getSchema(schema);
         if (dbSchema == null) {
-            builder.addAdditive(dialect.createSchemaIfNotExists(schema));
+            builder.addAdditive(dialect.createSchemaIfNotExists(SchemaBuildRules.quoteIdentifier(schema, getDatabaseType())));
         }
 
         if (dbSchema == null || !dbSchema.containsTable(table)) {
@@ -48,7 +48,7 @@ class SchemaMigrationPlanner {
     }
 
     private void planForNewTable(String schema, String table, TableWrapper wrapper, PlanBuilder builder) {
-        String schemaDotTable = schema + "." + table;
+        String schemaDotTable = SchemaBuildRules.qualifiedName(schema, table, getDatabaseType());
         builder.addAdditive(dialect.createTableWithTempColumn(schemaDotTable));
 
         if (wrapper.getComment() != null) {
@@ -74,7 +74,7 @@ class SchemaMigrationPlanner {
 
     private void planForExistingTable(String schema, String tableName, TableWrapper wrapper, PlanBuilder builder) {
         DBTable table = info.getSchema(schema).getTable(tableName);
-        String schemaDotTable = schema + "." + tableName;
+        String schemaDotTable = SchemaBuildRules.qualifiedName(schema, tableName, getDatabaseType());
 
         if (wrapper.getComment() != null) {
             builder.addAdditive(dialect.setTableComment(schemaDotTable, wrapper.getComment()));
@@ -94,8 +94,9 @@ class SchemaMigrationPlanner {
     }
 
     private void checkAndPlanColumn(DBTable table, Column column, PlanBuilder builder) {
-        String schemaDotTable = table.getSchemaDotTable();
-        assertSafeIdentifier(column.getName(), "column");
+        String schemaDotTable = SchemaBuildRules.qualifiedName(table.getSchema(), table.getName(), getDatabaseType());
+        String quotedColumnName = SchemaBuildRules.quoteIdentifier(column.getName(), getDatabaseType());
+        assertValidIdentifier(column.getName(), "column");
 
         String type = resolveColumnType(column);
 
@@ -109,19 +110,19 @@ class SchemaMigrationPlanner {
         DBColumn dbColumn = table.getColumn(column.getName());
 
         if (!type.equalsIgnoreCase(dbColumn.getType()) || (column.getLength() != null && !column.getLength().equals(dbColumn.getLength()))) {
-            builder.addNonAdditive(dialect.alterColumnType(schemaDotTable, column.getName(), type + SchemaBuildRules.columnLength(column), baseColumnString));
+            builder.addNonAdditive(dialect.alterColumnType(schemaDotTable, quotedColumnName, type + SchemaBuildRules.columnLength(column), baseColumnString));
         }
 
         if (column.isPrimaryKey() && !dbColumn.isPrimaryKey()) {
-            builder.addNonAdditive("alter table " + schemaDotTable + " add primary key (" + column.getName() + ")");
+            builder.addNonAdditive("alter table " + schemaDotTable + " add primary key (" + quotedColumnName + ")");
         }
 
         if (dbColumn.isNullable() != column.isNullable()) {
-            builder.addNonAdditive(dialect.alterColumnNullable(schemaDotTable, column.getName(), column.isNullable(), baseColumnString));
+            builder.addNonAdditive(dialect.alterColumnNullable(schemaDotTable, quotedColumnName, column.isNullable(), baseColumnString));
         }
 
         if (!dbColumn.isSequence() && !Objects.equals(dbColumn.getDefaultValueWithString(), column.getDefaultValue())) {
-            builder.addNonAdditive(dialect.alterColumnDefault(schemaDotTable, column.getName(), column.getDefaultValue(), baseColumnString));
+            builder.addNonAdditive(dialect.alterColumnDefault(schemaDotTable, quotedColumnName, column.getDefaultValue(), baseColumnString));
         }
 
         if (dbColumn.isSequence() != column.isSequence()) {
@@ -130,13 +131,13 @@ class SchemaMigrationPlanner {
         }
 
         if (column.getComment() != null && !Objects.equals(dbColumn.getDescription(), column.getComment())) {
-            builder.addAdditive(dialect.setColumnComment(schemaDotTable, column.getName(), column.getComment(), baseColumnString));
+            builder.addAdditive(dialect.setColumnComment(schemaDotTable, quotedColumnName, column.getComment(), baseColumnString));
         }
     }
 
     private void checkAndPlanIndex(DBTable table, Index index, PlanBuilder builder) {
         Set<String> targetColumns = new LinkedHashSet<>(index.getColumns());
-        targetColumns.forEach(name -> assertSafeIdentifier(name, "index column"));
+        targetColumns.forEach(name -> assertValidIdentifier(name, "index column"));
         Optional<DBIndex> hit = table.getIndexList().stream()
                 .filter(i -> new HashSet<>(i.getColumns()).equals(targetColumns))
                 .findFirst();
@@ -147,25 +148,41 @@ class SchemaMigrationPlanner {
                 return;
             }
 
-            builder.addNonAdditive(dialect.dropIndex(table.getSchema(), table.getSchemaDotTable(), dbIndex.getName()));
+            builder.addNonAdditive(dialect.dropIndex(
+                    SchemaBuildRules.quoteIdentifier(table.getSchema(), getDatabaseType()),
+                    SchemaBuildRules.qualifiedName(table.getSchema(), table.getName(), getDatabaseType()),
+                    SchemaBuildRules.quoteIdentifier(dbIndex.getName(), getDatabaseType())
+            ));
         }
 
-        builder.addAdditive(buildCreateIndexSql(table.getSchemaDotTable(), table.getName(), index));
+        builder.addAdditive(buildCreateIndexSql(
+                SchemaBuildRules.qualifiedName(table.getSchema(), table.getName(), getDatabaseType()),
+                table.getName(),
+                index
+        ));
     }
 
     private String buildCreateIndexSql(String schemaDotTable, String tableName, Index index) {
         List<String> columns = new ArrayList<>(index.getColumns());
-        columns.forEach(name -> assertSafeIdentifier(name, "index column"));
+        columns.forEach(name -> assertValidIdentifier(name, "index column"));
         String indexName = SchemaBuildRules.indexName(tableName, index);
-        assertSafeIdentifier(indexName, "index");
+        assertValidIdentifier(indexName, "index");
 
-        return dialect.createIndex(schemaDotTable, indexName, columns, index.isUnique());
+        List<String> quotedColumns = columns.stream()
+                .map(column -> SchemaBuildRules.quoteIdentifier(column, getDatabaseType()))
+                .toList();
+        return dialect.createIndex(
+                schemaDotTable,
+                SchemaBuildRules.quoteIdentifier(indexName, getDatabaseType()),
+                quotedColumns,
+                index.isUnique()
+        );
     }
 
     private String buildColumnString(Column column, String type) {
         String name = column.getName();
-        assertSafeIdentifier(name, "column");
-        return SchemaBuildRules.columnDefinition(column, type);
+        assertValidIdentifier(name, "column");
+        return SchemaBuildRules.columnDefinition(column, type, getDatabaseType());
     }
 
     private String resolveColumnType(Column column) {
@@ -176,8 +193,8 @@ class SchemaMigrationPlanner {
         return type;
     }
 
-    private void assertSafeIdentifier(String identifier, String type) {
-        if (!SchemaBuildRules.isSafeIdentifier(identifier)) {
+    private void assertValidIdentifier(String identifier, String type) {
+        if (!SchemaBuildRules.isValidIdentifier(identifier)) {
             throw new OrmException(OrmException.Code.INVALID_MAPPING, "Invalid " + type + " identifier: " + identifier);
         }
     }

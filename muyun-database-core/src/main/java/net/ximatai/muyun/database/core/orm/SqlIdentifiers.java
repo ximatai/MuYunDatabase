@@ -1,12 +1,9 @@
 package net.ximatai.muyun.database.core.orm;
 
 import net.ximatai.muyun.database.core.metadata.DBInfo;
-
-import java.util.regex.Pattern;
+import net.ximatai.muyun.database.core.builder.sql.SchemaBuildRules;
 
 final class SqlIdentifiers {
-
-    private static final Pattern IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
 
     private SqlIdentifiers() {
     }
@@ -15,10 +12,7 @@ final class SqlIdentifiers {
         if (!isSafe(identifier)) {
             throw new OrmException(OrmException.Code.INVALID_CRITERIA, "Invalid SQL identifier: " + identifier);
         }
-        if (dbType == DBInfo.Type.MYSQL) {
-            return "`" + identifier + "`";
-        }
-        return "\"" + identifier + "\"";
+        return SchemaBuildRules.quoteIdentifier(identifier, dbType);
     }
 
     static String qualified(String schema, String table, DBInfo.Type dbType) {
@@ -26,6 +20,6 @@ final class SqlIdentifiers {
     }
 
     static boolean isSafe(String identifier) {
-        return identifier != null && IDENTIFIER.matcher(identifier).matches();
+        return SchemaBuildRules.isValidIdentifier(identifier);
     }
 }

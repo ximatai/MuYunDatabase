@@ -4,7 +4,6 @@ import net.ximatai.muyun.database.core.IDatabaseOperations;
 import net.ximatai.muyun.database.core.orm.DefaultSimpleEntityManager;
 import net.ximatai.muyun.database.core.orm.MigrationOptions;
 import net.ximatai.muyun.database.core.orm.SimpleEntityManager;
-import net.ximatai.muyun.database.jdbi.JdbiDatabaseOperations;
 import net.ximatai.muyun.database.jdbi.JdbiMetaDataLoader;
 import net.ximatai.muyun.database.jdbi.JdbiRecommendedPlugins;
 import net.ximatai.muyun.database.jdbi.JdbiTransactionRunner;
@@ -67,10 +66,13 @@ public class MuYunDatabaseAutoConfiguration {
         String pkName = properties.getPrimaryKeyName();
         String defaultSchema = properties.getDefaultSchema();
         return switch (properties.getPrimaryKeyType()) {
-            case STRING -> new StarterJdbiDatabaseOperations<>(jdbi, metaDataLoader, String.class, pkName, defaultSchema);
+            case STRING ->
+                    new StarterJdbiDatabaseOperations<>(jdbi, metaDataLoader, String.class, pkName, defaultSchema);
             case LONG -> new StarterJdbiDatabaseOperations<>(jdbi, metaDataLoader, Long.class, pkName, defaultSchema);
-            case INTEGER -> new StarterJdbiDatabaseOperations<>(jdbi, metaDataLoader, Integer.class, pkName, defaultSchema);
-            case UUID -> new StarterJdbiDatabaseOperations<>(jdbi, metaDataLoader, java.util.UUID.class, pkName, defaultSchema);
+            case INTEGER ->
+                    new StarterJdbiDatabaseOperations<>(jdbi, metaDataLoader, Integer.class, pkName, defaultSchema);
+            case UUID ->
+                    new StarterJdbiDatabaseOperations<>(jdbi, metaDataLoader, java.util.UUID.class, pkName, defaultSchema);
         };
     }
 

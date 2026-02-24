@@ -791,6 +791,55 @@ public abstract class MuYunDatabaseBaseTest {
 
     }
 
+    protected void testSpecialTableNameSupport() {
+        String tableName = "测试-Order_表-01";
+        String nameColumn = "姓名-Name";
+        String ageColumn = "年龄_Age";
+        TableWrapper specialTable = TableWrapper.withName(tableName)
+                .setPrimaryKey(getPrimaryKey())
+                .addColumn(Column.of(nameColumn).setType(ColumnType.VARCHAR).setLength(20))
+                .addColumn(Column.of(ageColumn).setType(ColumnType.INT));
+
+        new TableBuilder(db).build(specialTable);
+
+        String id = db.insertItem(tableName, Map.of(nameColumn, "special_name", ageColumn, 7));
+        assertNotNull(id);
+
+        Map<String, Object> row = db.getItem(tableName, id);
+        assertNotNull(row);
+        assertEquals("special_name", row.get(nameColumn));
+        assertEquals(7, row.get(ageColumn));
+
+        int updated = db.patchUpdateItem(tableName, id, Map.of(nameColumn, "special_name_v2"));
+        assertEquals(1, updated);
+        Map<String, Object> patched = db.getItem(tableName, id);
+        assertNotNull(patched);
+        assertEquals("special_name_v2", patched.get(nameColumn));
+
+        orm.ensureTable(OrmSpecialTableEntity.class);
+        OrmSpecialTableEntity entity = new OrmSpecialTableEntity();
+        entity.id = UUID.randomUUID().toString();
+        entity.name = "orm_special";
+        entity.age = 9;
+
+        Object ormId = orm.insert(entity);
+        assertNotNull(ormId);
+
+        OrmSpecialTableEntity loaded = orm.findById(OrmSpecialTableEntity.class, ormId);
+        assertNotNull(loaded);
+        assertEquals("orm_special", loaded.name);
+        assertEquals(9, loaded.age);
+
+        List<OrmSpecialTableEntity> rows = orm.query(
+                OrmSpecialTableEntity.class,
+                Criteria.of().eq("name", "orm_special"),
+                PageRequest.of(1, 10),
+                Sort.desc("age")
+        );
+        assertFalse(rows.isEmpty());
+        assertEquals("orm_special", rows.getFirst().name);
+    }
+
     abstract Class<?> getEntityClass();
 }
 
@@ -860,6 +909,19 @@ class OrmJsonEntity {
 
     @net.ximatai.muyun.database.core.annotation.Column(name = "j_payload", type = net.ximatai.muyun.database.core.builder.ColumnType.JSON)
     public String payload;
+}
+
+@Table(name = "orm-特殊表")
+class OrmSpecialTableEntity {
+    @Id
+    @net.ximatai.muyun.database.core.annotation.Column(length = 64)
+    public String id;
+
+    @net.ximatai.muyun.database.core.annotation.Column(name = "姓名-Name", length = 20)
+    public String name;
+
+    @net.ximatai.muyun.database.core.annotation.Column(name = "年龄_Age")
+    public Integer age;
 }
 
 interface SqlObjectBasicDao {

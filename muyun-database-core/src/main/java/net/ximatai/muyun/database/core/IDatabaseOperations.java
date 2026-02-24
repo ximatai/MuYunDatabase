@@ -2,9 +2,10 @@ package net.ximatai.muyun.database.core;
 
 import net.ximatai.muyun.database.core.exception.MuYunDatabaseException;
 import net.ximatai.muyun.database.core.exception.TableNotFound;
-import net.ximatai.muyun.database.core.metadata.DBColumn;
+import net.ximatai.muyun.database.core.builder.sql.SchemaBuildRules;
 import net.ximatai.muyun.database.core.metadata.DBInfo;
 import net.ximatai.muyun.database.core.metadata.DBTable;
+import net.ximatai.muyun.database.core.sql.SqlPlanBuilder;
 
 import java.sql.Array;
 import java.util.*;
@@ -79,19 +80,7 @@ public interface IDatabaseOperations<K> {
     default String buildInsertSql(String schema, String tableName, Map<String, ?> params) {
         DBTable dbTable = resolveTable(schema, tableName);
         Objects.requireNonNull(dbTable);
-
-        Map<String, DBColumn> columnMap = dbTable.getColumnMap();
-
-        StringJoiner columns = new StringJoiner(", ", "(", ")");
-        StringJoiner values = new StringJoiner(", ", "(", ")");
-        params.keySet().forEach(key -> {
-            if (columnMap.containsKey(key)) {
-                columns.add(key);
-                values.add(":" + key);
-            }
-        });
-
-        return "insert into " + schema + "." + tableName + " " + columns + " values " + values;
+        return SqlPlanBuilder.buildInsertSql(schema, tableName, params, dbTable.getColumnMap(), getDBInfo().getDatabaseType());
     }
 
     /**
@@ -106,17 +95,14 @@ public interface IDatabaseOperations<K> {
     default String buildUpdateSql(String schema, String tableName, Map<String, Object> params, String pkName) {
         DBTable dbTable = resolveTable(schema, tableName);
         Objects.requireNonNull(dbTable);
-
-        Map<String, DBColumn> columnMap = dbTable.getColumnMap();
-
-        StringJoiner setClause = new StringJoiner(", ");
-        params.keySet().forEach(key -> {
-            if (columnMap.containsKey(key)) {
-                setClause.add(key + "=:" + key);
-            }
-        });
-
-        return "update " + schema + "." + tableName + " set " + setClause + " where " + pkName + " = :" + pkName;
+        return SqlPlanBuilder.buildUpdateSql(
+                schema,
+                tableName,
+                params,
+                dbTable.getColumnMap(),
+                pkName,
+                getDBInfo().getDatabaseType()
+        );
     }
 
     /**
@@ -135,13 +121,20 @@ public interface IDatabaseOperations<K> {
     default K insertItem(String schema, String tableName, Map<String, Object> params) {
         DBTable table = resolveTable(schema, tableName);
         Map<String, Object> transformed = transformDataForDB(table, params);
-        String sql = buildInsertSql(schema, tableName, transformed);
+        SqlPlanBuilder.InsertPlan plan = SqlPlanBuilder.prepareInsertPlan(
+                schema,
+                tableName,
+                transformed,
+                table.getColumnMap(),
+                getDBInfo().getDatabaseType()
+        );
+        Map<String, Object> bindParams = SqlPlanBuilder.toBindMap(transformed, plan.columns(), plan.bindNames());
 
         // 使用Stream查找主键值
         Optional<K> pkValue = findPrimaryKeyValue(params);
 
-        return pkValue.map(value -> this.insertWithPK(sql, transformed, value))
-                .orElseGet(() -> this.insert(sql, transformed));
+        return pkValue.map(value -> this.insertWithPK(plan.sql(), bindParams, value))
+                .orElseGet(() -> this.insert(plan.sql(), bindParams));
     }
 
     /**
@@ -177,8 +170,17 @@ public interface IDatabaseOperations<K> {
 
         DBTable table = resolveTable(schema, tableName);
         List<Map<String, Object>> transformedList = list.stream().map(it -> transformDataForDB(table, it)).collect(Collectors.toList());
-
-        return this.batchInsert(buildInsertSql(schema, tableName, transformedList.get(0)), transformedList);
+        SqlPlanBuilder.InsertPlan plan = SqlPlanBuilder.prepareInsertPlan(
+                schema,
+                tableName,
+                transformedList.getFirst(),
+                table.getColumnMap(),
+                getDBInfo().getDatabaseType()
+        );
+        List<Map<String, Object>> bindParamsList = transformedList.stream()
+                .map(row -> SqlPlanBuilder.toBindMap(row, plan.columns(), plan.bindNames()))
+                .toList();
+        return this.batchInsert(plan.sql(), bindParamsList);
     }
 
     /**
@@ -196,7 +198,15 @@ public interface IDatabaseOperations<K> {
     default int updateItem(String schema, String tableName, Map<String, Object> params) {
         DBTable table = resolveTable(schema, tableName);
         Map<String, Object> transformed = transformDataForDB(table, params);
-        return this.update(buildUpdateSql(schema, tableName, transformed, getPKName()), transformed);
+        SqlPlanBuilder.PreparedSql plan = SqlPlanBuilder.prepareUpdateSql(
+                schema,
+                tableName,
+                transformed,
+                table.getColumnMap(),
+                getPKName(),
+                getDBInfo().getDatabaseType()
+        );
+        return this.update(plan.sql(), plan.params());
     }
 
     /**
@@ -210,20 +220,15 @@ public interface IDatabaseOperations<K> {
                                        String pkBindName) {
         DBTable dbTable = resolveTable(schema, tableName);
         Objects.requireNonNull(dbTable);
-
-        Map<String, DBColumn> columnMap = dbTable.getColumnMap();
-        StringJoiner setClause = new StringJoiner(", ");
-        patchParams.keySet().forEach(key -> {
-            if (columnMap.containsKey(key) && !key.equalsIgnoreCase(pkName)) {
-                setClause.add(key + "=:" + key);
-            }
-        });
-
-        String renderedSetClause = setClause.toString();
-        if (renderedSetClause.isBlank()) {
-            throw new MuYunDatabaseException("No updatable fields were provided for patch update");
-        }
-        return "update " + schema + "." + tableName + " set " + renderedSetClause + " where " + pkName + " = :" + pkBindName;
+        return SqlPlanBuilder.buildPatchUpdateSql(
+                schema,
+                tableName,
+                patchParams,
+                dbTable.getColumnMap(),
+                pkName,
+                pkBindName,
+                getDBInfo().getDatabaseType()
+        );
     }
 
     /**
@@ -245,10 +250,18 @@ public interface IDatabaseOperations<K> {
         Map<String, Object> transformedPatch = transformDataForDB(table, safePatch);
 
         String pkBindName = "__pk";
-        String sql = buildPatchUpdateSql(schema, tableName, transformedPatch, getPKName(), pkBindName);
-        Map<String, Object> execParams = new HashMap<>(transformedPatch);
+        SqlPlanBuilder.PreparedSql plan = SqlPlanBuilder.preparePatchUpdateSql(
+                schema,
+                tableName,
+                transformedPatch,
+                table.getColumnMap(),
+                getPKName(),
+                pkBindName,
+                getDBInfo().getDatabaseType()
+        );
+        Map<String, Object> execParams = new HashMap<>(plan.params());
         execParams.put(pkBindName, id);
-        return this.update(sql, execParams);
+        return this.update(plan.sql(), execParams);
     }
 
     /**
@@ -318,7 +331,7 @@ public interface IDatabaseOperations<K> {
         DBTable dbTable = resolveTable(schema, tableName);
         Objects.requireNonNull(dbTable);
 
-        return this.delete("DELETE FROM " + schema + "." + tableName + " WHERE " + getPKName() + "=:id", Collections.singletonMap("id", id));
+        return this.delete("DELETE FROM " + quoteSchemaTable(schema, tableName) + " WHERE " + quoteIdentifier(getPKName()) + "=:id", Collections.singletonMap("id", id));
     }
 
     /**
@@ -337,7 +350,7 @@ public interface IDatabaseOperations<K> {
         DBTable dbTable = resolveTable(schema, tableName);
         Objects.requireNonNull(dbTable);
 
-        return this.row("SELECT * FROM " + schema + "." + tableName + " WHERE " + getPKName() + "=:id", Collections.singletonMap("id", id));
+        return this.row("SELECT * FROM " + quoteSchemaTable(schema, tableName) + " WHERE " + quoteIdentifier(getPKName()) + "=:id", Collections.singletonMap("id", id));
     }
 
     // 基础CRUD操作方法
@@ -462,4 +475,12 @@ public interface IDatabaseOperations<K> {
      * 创建数据库数组对象
      */
     Array createArray(List<Object> list, String type);
+
+    private String quoteIdentifier(String identifier) {
+        return SchemaBuildRules.quoteIdentifier(identifier, getDBInfo().getDatabaseType());
+    }
+
+    private String quoteSchemaTable(String schema, String tableName) {
+        return SchemaBuildRules.qualifiedName(schema, tableName, getDBInfo().getDatabaseType());
+    }
 }

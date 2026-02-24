@@ -40,15 +40,16 @@ public class TableBuilder {
         boolean result = false;
         String schema = wrapper.getSchema() != null ? wrapper.getSchema() : info.getDefaultSchemaName();
         String name = wrapper.getName();
-        requireSafeIdentifier(schema, "schema");
-        requireSafeIdentifier(name, "table");
+        requireValidIdentifier(schema, "schema");
+        requireValidIdentifier(name, "table");
+        String schemaDotTable = qualifiedName(schema, name);
 
         logger.info("Table %s.%s build initiated".formatted(schema, name));
 
         String inheritSQL = "";
 
         if (info.getSchema(schema) == null) {
-            db.execute(dialect.createSchemaIfNotExists(schema));
+            db.execute(dialect.createSchemaIfNotExists(SchemaBuildRules.quoteIdentifier(schema, getDatabaseType())));
             info.addSchema(new DBSchema(schema));
             logger.info("create schema " + schema);
         }
@@ -57,8 +58,8 @@ public class TableBuilder {
 
         // 检查继承的父表是否存在
         inherits.forEach(inherit -> {
-            requireSafeIdentifier(inherit.getSchema(), "inherit schema");
-            requireSafeIdentifier(inherit.getName(), "inherit table");
+            requireValidIdentifier(inherit.getSchema(), "inherit schema");
+            requireValidIdentifier(inherit.getName(), "inherit table");
             DBSchema parentSchema = info.getSchema(inherit.getSchema());
             if (parentSchema == null || !parentSchema.containsTable(inherit.getName())) {
                 throw new MuYunDatabaseException("Table " + inherit + " does not exist");
@@ -70,8 +71,8 @@ public class TableBuilder {
         }
 
         if (!info.getSchema(schema).containsTable(wrapper.getName())) {
-            db.execute(dialect.createTableWithTempColumn(schema + "." + name, inheritSQL));
-            logger.info("create table " + schema + "." + name);
+            db.execute(dialect.createTableWithTempColumn(schemaDotTable, inheritSQL));
+            logger.info("create table " + schemaDotTable);
             result = true;
             info.getSchema(schema).addTable(new DBTable(db.getMetaDataLoader()).setName(name).setSchema(schema));
         }
@@ -81,7 +82,7 @@ public class TableBuilder {
         buildInheritColumns(dbTable, inherits);
 
         if (wrapper.getComment() != null) {
-            db.execute(dialect.setTableComment(schema + "." + name, wrapper.getComment()));
+            db.execute(dialect.setTableComment(schemaDotTable, wrapper.getComment()));
         }
 
         if (wrapper.getPrimaryKey() != null) {
@@ -94,7 +95,7 @@ public class TableBuilder {
         });
 
         if (result) {
-            db.execute(dialect.dropTempColumn(schema + "." + name));
+            db.execute(dialect.dropTempColumn(schemaDotTable));
         }
 
         dbTable.resetColumns();
@@ -117,11 +118,11 @@ public class TableBuilder {
             inherits.forEach(inherit -> {
 
                 Map<String, Object> row = db.row("SELECT * FROM pg_inherits\n" +
-                        "WHERE inhparent = ?::regclass AND inhrelid = ?::regclass;", inherit.getSchemaDotTable(), dbTable.getSchemaDotTable());
+                        "WHERE inhparent = ?::regclass AND inhrelid = ?::regclass;", qualifiedName(inherit.getSchema(), inherit.getName()), qualifiedName(dbTable.getSchema(), dbTable.getName()));
 
                 if (row == null) {
-                    db.execute("alter table " + dbTable.getSchemaDotTable() + " inherit " + inherit.getSchemaDotTable() + ";");
-                    logger.info("table " + dbTable.getSchemaDotTable() + " inherit " + inherit.getSchemaDotTable());
+                    db.execute("alter table " + qualifiedName(dbTable.getSchema(), dbTable.getName()) + " inherit " + qualifiedName(inherit.getSchema(), inherit.getName()) + ";");
+                    logger.info("table " + qualifiedName(dbTable.getSchema(), dbTable.getName()) + " inherit " + qualifiedName(inherit.getSchema(), inherit.getName()));
                 }
             });
         }
@@ -146,7 +147,7 @@ public class TableBuilder {
     private boolean checkAndBuildColumn(DBTable dbTable, Column column) {
         boolean isNew = false;
         String name = column.getName();
-        requireSafeIdentifier(name, "column");
+        requireValidIdentifier(name, "column");
         ColumnType dataType = column.getType();
         String type = SchemaBuildRules.columnTypeTransform(getDatabaseType()).transform(dataType);
 
@@ -164,10 +165,12 @@ public class TableBuilder {
         boolean primaryKey = column.isPrimaryKey();
         String defaultValue = column.getDefaultValue();
 
-        String baseColumnString = SchemaBuildRules.columnDefinition(column, type);
+        String baseColumnString = SchemaBuildRules.columnDefinition(column, type, getDatabaseType());
+        String quotedSchemaDotTable = qualifiedName(dbTable.getSchema(), dbTable.getName());
+        String quotedName = SchemaBuildRules.quoteIdentifier(name, getDatabaseType());
 
         if (!dbTable.contains(name)) {
-            db.execute(dialect.addColumn(dbTable.getSchemaDotTable(), baseColumnString));
+            db.execute(dialect.addColumn(quotedSchemaDotTable, baseColumnString));
             dbTable.resetColumns();
             isNew = true;
             logger.info("column " + dbTable.getSchemaDotTable() + "." + name + " built");
@@ -176,29 +179,29 @@ public class TableBuilder {
         DBColumn dbColumn = dbTable.getColumn(name);
 
         if (!type.equalsIgnoreCase(dbColumn.getType()) || column.getLength() != null && !column.getLength().equals(dbColumn.getLength())) {
-            db.execute(dialect.alterColumnType(dbTable.getSchemaDotTable(), name, type + length, baseColumnString));
+            db.execute(dialect.alterColumnType(quotedSchemaDotTable, quotedName, type + length, baseColumnString));
         }
 
         if (primaryKey && !dbColumn.isPrimaryKey()) {
-            db.execute("alter table " + dbTable.getSchemaDotTable() + " add primary key (" + name + ")");
+            db.execute("alter table " + quotedSchemaDotTable + " add primary key (" + quotedName + ")");
         }
 
         if (dbColumn.isNullable() != nullable) {
-            db.execute(dialect.alterColumnNullable(dbTable.getSchemaDotTable(), name, nullable, baseColumnString));
+            db.execute(dialect.alterColumnNullable(quotedSchemaDotTable, quotedName, nullable, baseColumnString));
 
         }
 
         if ((!dbColumn.isSequence() && !Objects.equals(dbColumn.getDefaultValueWithString(), defaultValue))) {
-            db.execute(dialect.alterColumnDefault(dbTable.getSchemaDotTable(), name, defaultValue, baseColumnString));
+            db.execute(dialect.alterColumnDefault(quotedSchemaDotTable, quotedName, defaultValue, baseColumnString));
         }
 
         if (dbColumn.isSequence() != sequence) {
-            dialect.alterColumnSequence(dbTable.getSchemaDotTable(), dbTable.getSchema(), dbTable.getName(), name, sequence)
+            dialect.alterColumnSequence(quotedSchemaDotTable, dbTable.getSchema(), dbTable.getName(), name, sequence)
                     .forEach(db::execute);
         }
 
         if (comment != null && !Objects.equals(dbColumn.getDescription(), comment)) {
-            db.execute(dialect.setColumnComment(dbTable.getSchemaDotTable(), name, comment, baseColumnString));
+            db.execute(dialect.setColumnComment(quotedSchemaDotTable, quotedName, comment, baseColumnString));
         }
 
         return isNew;
@@ -206,7 +209,7 @@ public class TableBuilder {
 
     private boolean checkAndBuildIndex(DBTable dbTable, Index index) {
         List<String> columns = new ArrayList<>(index.getColumns());
-        columns.forEach(columnName -> requireSafeIdentifier(columnName, "index column"));
+        columns.forEach(columnName -> requireValidIdentifier(columnName, "index column"));
         Set<String> columnSet = new HashSet<>(columns);
         List<DBIndex> indexList = dbTable.getIndexList();
         Optional<DBIndex> dbIndexOptional = indexList.stream().filter(i -> new HashSet<>(i.getColumns()).equals(columnSet)).findFirst();
@@ -216,16 +219,25 @@ public class TableBuilder {
             if (dbIndex.isUnique() == index.isUnique()) {
                 return false;
             } else {
-                db.execute(dialect.dropIndex(dbTable.getSchema(), dbTable.getSchemaDotTable(), dbIndex.getName()));
+                db.execute(dialect.dropIndex(
+                        SchemaBuildRules.quoteIdentifier(dbTable.getSchema(), getDatabaseType()),
+                        qualifiedName(dbTable.getSchema(), dbTable.getName()),
+                        SchemaBuildRules.quoteIdentifier(dbIndex.getName(), getDatabaseType())
+                ));
                 logger.info("index " + dbTable.getSchemaDotTable() + "." + dbIndex.getName() + " dropped");
             }
 
         }
 
         String indexName = SchemaBuildRules.indexName(dbTable.getName(), index);
-        requireSafeIdentifier(indexName, "index");
+        requireValidIdentifier(indexName, "index");
+        String quotedSchemaDotTable = qualifiedName(dbTable.getSchema(), dbTable.getName());
+        String quotedIndexName = SchemaBuildRules.quoteIdentifier(indexName, getDatabaseType());
+        List<String> quotedColumns = columns.stream()
+                .map(column -> SchemaBuildRules.quoteIdentifier(column, getDatabaseType()))
+                .toList();
 
-        db.execute(dialect.createIndex(dbTable.getSchemaDotTable(), indexName, columns, index.isUnique()));
+        db.execute(dialect.createIndex(quotedSchemaDotTable, quotedIndexName, quotedColumns, index.isUnique()));
 
         logger.info("index " + dbTable.getSchemaDotTable() + "." + indexName + " created");
 
@@ -239,10 +251,10 @@ public class TableBuilder {
 
         List<String> parents = inherits.stream()
                 .peek(inherit -> {
-                    requireSafeIdentifier(inherit.getSchema(), "inherit schema");
-                    requireSafeIdentifier(inherit.getName(), "inherit table");
+                    requireValidIdentifier(inherit.getSchema(), "inherit schema");
+                    requireValidIdentifier(inherit.getName(), "inherit table");
                 })
-                .map(inherit -> inherit.getSchema() + "." + inherit.getName())
+                .map(inherit -> qualifiedName(inherit.getSchema(), inherit.getName()))
                 .toList();
         return "inherits (" + String.join(", ", parents) + ")";
     }
@@ -258,10 +270,14 @@ public class TableBuilder {
         };
     }
 
-    private void requireSafeIdentifier(String identifier, String type) {
-        if (!SchemaBuildRules.isSafeIdentifier(identifier)) {
+    private void requireValidIdentifier(String identifier, String type) {
+        if (!SchemaBuildRules.isValidIdentifier(identifier)) {
             throw new MuYunDatabaseException("Invalid " + type + " identifier: " + identifier);
         }
+    }
+
+    private String qualifiedName(String schema, String table) {
+        return SchemaBuildRules.qualifiedName(schema, table, getDatabaseType());
     }
 
 }

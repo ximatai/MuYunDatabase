@@ -43,16 +43,17 @@ public class PostgresTableBuilderSqlDialect implements TableBuilderSqlDialect {
     @Override
     public List<String> alterColumnSequence(String schemaDotTable, String schema, String tableName, String columnName, boolean sequence) {
         String seq = tableName + "_" + columnName + "_sql";
+        String sequenceName = quoteIdentifier(schema) + "." + quoteIdentifier(seq);
         if (sequence) {
             return List.of(
-                    "create sequence if not exists " + schema + "." + seq,
-                    "alter table " + schemaDotTable + " alter column " + columnName + " set default nextval('" + schema + "." + seq + "')"
+                    "create sequence if not exists " + sequenceName,
+                    "alter table " + schemaDotTable + " alter column " + columnName + " set default nextval('" + sequenceName + "')"
             );
         }
 
         return List.of(
                 "alter table " + schemaDotTable + " alter column " + columnName + " drop default",
-                "drop sequence if exists " + schema + "." + seq + ";"
+                "drop sequence if exists " + sequenceName + ";"
         );
     }
 
@@ -75,5 +76,9 @@ public class PostgresTableBuilderSqlDialect implements TableBuilderSqlDialect {
     @Override
     public String dropTempColumn(String schemaDotTable) {
         return "alter table " + schemaDotTable + " drop column a_temp_column;";
+    }
+
+    private String quoteIdentifier(String identifier) {
+        return "\"" + identifier.replace("\"", "\"\"") + "\"";
     }
 }

@@ -5,6 +5,7 @@ import net.ximatai.muyun.database.core.IMetaDataLoader;
 import net.ximatai.muyun.database.core.metadata.DBColumn;
 import net.ximatai.muyun.database.core.metadata.DBInfo;
 import net.ximatai.muyun.database.core.metadata.DBTable;
+import net.ximatai.muyun.database.core.sql.SqlPlanBuilder;
 import org.jdbi.v3.core.mapper.MapMapper;
 import org.jdbi.v3.core.mapper.RowMapper;
 
@@ -82,7 +83,7 @@ abstract class AbstractJdbiDatabaseOperations<K> implements IDatabaseOperations<
         DBTable table = getDBInfo().getSchema(schema).getTable(tableName);
         Map<String, Object> transformed = transformDataForDB(table, params);
         String pk = getPKName();
-        Object pkValue = Stream.of(pk, pk.toUpperCase(), pk.toLowerCase())
+        Stream.of(pk, pk.toUpperCase(), pk.toLowerCase())
                 .map(transformed::get)
                 .filter(Objects::nonNull)
                 .findFirst()
@@ -96,41 +97,15 @@ abstract class AbstractJdbiDatabaseOperations<K> implements IDatabaseOperations<
         }
 
         DBInfo.Type dbType = getDBInfo().getDatabaseType();
-        String sql = switch (dbType) {
-            case MYSQL -> buildMySqlAtomicUpsert(schema, tableName, columns, pk);
-            case POSTGRESQL -> buildPostgresAtomicUpsert(schema, tableName, columns, pk);
-            default -> throw new UnsupportedOperationException("Atomic upsert is not supported for database type: " + dbType);
-        };
-        transformed.put(pk, pkValue);
-        return update(sql, transformed);
-    }
-
-    private String buildMySqlAtomicUpsert(String schema, String tableName, List<String> columns, String pk) {
-        String columnSql = String.join(", ", columns);
-        String valueSql = columns.stream().map(col -> ":" + col).collect(java.util.stream.Collectors.joining(", "));
-        List<String> updateColumns = columns.stream()
-                .filter(col -> !col.equalsIgnoreCase(pk))
-                .toList();
-        String updateSql = updateColumns.isEmpty()
-                ? pk + "=" + pk
-                : updateColumns.stream()
-                .map(col -> col + "=VALUES(" + col + ")")
-                .collect(java.util.stream.Collectors.joining(", "));
-        return "insert into " + schema + "." + tableName + " (" + columnSql + ") values (" + valueSql + ") on duplicate key update " + updateSql;
-    }
-
-    private String buildPostgresAtomicUpsert(String schema, String tableName, List<String> columns, String pk) {
-        String columnSql = String.join(", ", columns);
-        String valueSql = columns.stream().map(col -> ":" + col).collect(java.util.stream.Collectors.joining(", "));
-        List<String> updateColumns = columns.stream()
-                .filter(col -> !col.equalsIgnoreCase(pk))
-                .toList();
-        String updateSql = updateColumns.isEmpty()
-                ? pk + "=EXCLUDED." + pk
-                : updateColumns.stream()
-                .map(col -> col + "=EXCLUDED." + col)
-                .collect(java.util.stream.Collectors.joining(", "));
-        return "insert into " + schema + "." + tableName + " (" + columnSql + ") values (" + valueSql + ") on conflict (" + pk + ") do update set " + updateSql;
+        SqlPlanBuilder.PreparedSql plan = SqlPlanBuilder.prepareAtomicUpsertSql(
+                schema,
+                tableName,
+                columns,
+                pk,
+                transformed,
+                dbType
+        );
+        return update(plan.sql(), plan.params());
     }
 
     public Object getDBValue(Object value, String type) {
