@@ -7,6 +7,13 @@
 
 推荐阅读顺序：`README -> QUICKSTART -> API_CONTRACT -> REFACTOR_GUIDE -> ROADMAP`
 
+按目标直达：
+
+- 我想先跑通一个最小示例：看 [`docs/QUICKSTART.md`](docs/QUICKSTART.md)
+- 我想确认哪些行为是稳定契约：看 [`docs/API_CONTRACT.md`](docs/API_CONTRACT.md)
+- 我在做存量项目迁移：看 [`docs/REFACTOR_GUIDE.md`](docs/REFACTOR_GUIDE.md)
+- 我想了解演进方向与优先级：看 [`docs/ROADMAP.md`](docs/ROADMAP.md)
+
 主文档：
 
 - 快速上手（初始化与最小可运行示例）：[`docs/QUICKSTART.md`](docs/QUICKSTART.md)
@@ -24,7 +31,7 @@
 
 ## 5 分钟上手
 
-目标：在 Spring 项目中以一个统一 DAO 接口完成 `CRUD + 特例 SQL + 表结构拉齐`。
+目标：在 Spring 项目中以一个统一 DAO 接口完成 `CRUD + 特例 SQL（显式 SQL 注解）+ 表结构拉齐`。
 
 ```groovy
 dependencies {
@@ -44,6 +51,9 @@ class DaoConfig {
 // Step 2) 统一 DAO：开箱 CRUD + 特例 SQL
 @MuYunRepository(alignTable = MuYunRepository.AlignTable.DEFAULT)
 interface UserRepository extends EntityDao<UserEntity, String> {
+    @org.jdbi.v3.sqlobject.statement.SqlQuery("select id, v_name as name, i_age as age from public.demo_user where id = :id")
+    UserEntity findViaSql(@org.jdbi.v3.sqlobject.customizer.Bind("id") String id);
+
     @org.jdbi.v3.sqlobject.statement.SqlUpdate("update public.demo_user set v_name = :name where id = :id")
     int rename(@org.jdbi.v3.sqlobject.customizer.Bind("id") String id,
                @org.jdbi.v3.sqlobject.customizer.Bind("name") String name);
@@ -77,6 +87,9 @@ class UserService {
     }
 }
 ```
+
+说明：当仓库继承 `EntityDao<T, ID>` 时，框架会自动为实体 `T` 注册 Jdbi BeanMapper，`@SqlQuery` 返回 `T`（或 `List<T>`）默认无需再写 `@RegisterBeanMapper(T.class)`。
+字段命名建议：若数据库列名与实体属性名不一致（如 `v_name` vs `name`），请在 SQL 中使用别名对齐（如 `v_name as name`）。
 
 > 完整初始化、配置项与更多示例见 [`docs/QUICKSTART.md`](docs/QUICKSTART.md)。
 

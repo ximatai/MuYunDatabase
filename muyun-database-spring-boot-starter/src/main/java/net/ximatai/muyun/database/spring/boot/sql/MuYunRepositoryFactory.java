@@ -11,6 +11,7 @@ import net.ximatai.muyun.database.core.orm.Sort;
 import net.ximatai.muyun.database.core.orm.DefaultSimpleEntityManager;
 import net.ximatai.muyun.database.spring.boot.sql.annotation.MuYunRepository;
 import org.jdbi.v3.core.Jdbi;
+import org.jdbi.v3.core.mapper.reflect.BeanMapper;
 import org.jdbi.v3.sqlobject.statement.SqlQuery;
 import org.jdbi.v3.sqlobject.statement.SqlUpdate;
 import org.springframework.core.env.Environment;
@@ -131,6 +132,24 @@ public class MuYunRepositoryFactory {
 
         private Object invokeViaJdbi(Method method, Object[] args) throws Throwable {
             try {
+                if (entityDaoDelegate != null) {
+                    Class<?> entityType = entityDaoDelegate.entityType();
+                    return jdbi.withHandle(handle -> {
+                        handle.registerRowMapper(BeanMapper.factory(entityType));
+                        Object extension = handle.attach(daoType);
+                        try {
+                            return method.invoke(extension, args);
+                        } catch (InvocationTargetException ex) {
+                            Throwable cause = ex.getCause();
+                            if (cause instanceof RuntimeException runtime) {
+                                throw runtime;
+                            }
+                            throw new RuntimeException(cause);
+                        } catch (IllegalAccessException ex) {
+                            throw new RuntimeException(ex);
+                        }
+                    });
+                }
                 return jdbi.withExtension(daoType, extension -> {
                     try {
                         return method.invoke(extension, args);
@@ -380,6 +399,10 @@ public class MuYunRepositoryFactory {
                 case "upsert" -> "int upsert(T entity)";
                 default -> "see EntityDao<T, ID>";
             };
+        }
+
+        private Class<?> entityType() {
+            return entityType;
         }
 
         private Object invoke(EntityDaoMethodType type, Object[] args) {

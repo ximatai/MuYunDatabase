@@ -1,5 +1,11 @@
 # 快速开始
 
+阅读提示：
+
+- 适合对象：首次接入、需要最小可运行示例的同学
+- 建议前置：先浏览 [`../README.md`](../README.md) 了解模块边界
+- 若关注稳定语义与约束：继续阅读 [`API_CONTRACT.md`](API_CONTRACT.md)
+
 ## 0. 前置条件
 
 1. Java 21+（若使用 `1.26.+` 版本可兼容 Java 8）。
@@ -114,7 +120,7 @@ orm.ensureTable(UserEntity.class, MigrationOptions.dryRunStrict());
 
 ## 2. 场景 B：耦合 Spring Boot（`@Transactional`）
 
-目标：以 `@MuYunRepository + EntityDao` 作为默认主路径，在 Spring 管理事务下统一处理 `CRUD + 特例 SQL + 表结构拉齐`。
+目标：以 `@MuYunRepository + EntityDao` 作为默认主路径，在 Spring 管理事务下统一处理 `CRUD + 特例 SQL（显式 SQL 注解）+ 表结构拉齐`。
 
 ### 2.1 依赖
 
@@ -153,8 +159,8 @@ class DaoConfig {
 
 @MuYunRepository(alignTable = MuYunRepository.AlignTable.DEFAULT)
 interface UserRepository extends EntityDao<UserEntity, String> {
-    @org.jdbi.v3.sqlobject.statement.SqlQuery("select id, v_name, i_age from public.demo_user where id = :id")
-    Map<String, Object> findRawById(@org.jdbi.v3.sqlobject.customizer.Bind("id") String id);
+    @org.jdbi.v3.sqlobject.statement.SqlQuery("select id, v_name as name, i_age as age from public.demo_user where id = :id")
+    UserEntity findByIdViaSql(@org.jdbi.v3.sqlobject.customizer.Bind("id") String id);
 
     @org.jdbi.v3.sqlobject.statement.SqlUpdate("update public.demo_user set v_name = :name where id = :id")
     int rename(@org.jdbi.v3.sqlobject.customizer.Bind("id") String id,
@@ -181,6 +187,8 @@ class UserService {
     }
 }
 ```
+
+说明：当仓库继承 `EntityDao<T, ID>` 时，框架会自动为 `T` 注册 Jdbi BeanMapper，因此 `@SqlQuery` 返回 `T` / `List<T>` 默认无需显式 `@RegisterBeanMapper`。若列名与属性名不一致，请在 SQL 中使用别名对齐（例如 `v_name as name`）。
 
 ### 2.4 事务演示（同一 DAO 内混合 CRUD + 特例 SQL）
 
@@ -266,3 +274,8 @@ RawSqlGuard denyLike = sql -> {
 1. 重构指南（DB 直调 / MyBatis-Plus）：[`REFACTOR_GUIDE.md`](REFACTOR_GUIDE.md)
 2. Starter 样板：[`../samples/starter-minimal`](../samples/starter-minimal)
 3. 用法示例测试：[`../muyun-database-test/src/test/java/net/ximatai/muyun/database/MuYunDatabaseUsageExamplesTestBase.java`](../muyun-database-test/src/test/java/net/ximatai/muyun/database/MuYunDatabaseUsageExamplesTestBase.java)
+
+下一步：
+
+1. 确认稳定契约与失败边界：[`API_CONTRACT.md`](API_CONTRACT.md)
+2. 开始存量代码迁移：[`REFACTOR_GUIDE.md`](REFACTOR_GUIDE.md)

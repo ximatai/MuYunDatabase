@@ -1,5 +1,11 @@
 # 重构指南（DB 直调 / MyBatis-Plus -> MuYun Repository）
 
+阅读提示：
+
+- 适合对象：正在将存量 DAO/Mapper 迁移到统一 Repository 的项目
+- 建议前置：先阅读 [`API_CONTRACT.md`](API_CONTRACT.md) 明确稳定语义
+- 若还未跑通最小示例：先看 [`QUICKSTART.md`](QUICKSTART.md)
+
 ## 目标
 
 将历史 `IDatabaseOperations` 直调代码与 MyBatis-Plus 仓储调用，统一重构为 `@MuYunRepository + EntityDao`。
@@ -7,7 +13,7 @@
 适用边界：
 
 1. 单表高频 CRUD / 条件查询 / 分页。
-2. 特例 SQL 使用同一仓库接口中的 Jdbi SQL Object 注解（`@SqlQuery/@SqlUpdate`）。
+2. 特例 SQL（显式 SQL 注解方法）使用同一仓库接口中的 Jdbi SQL Object 注解（`@SqlQuery/@SqlUpdate`）。
 3. 多表复杂 SQL 不强行抽象为 `EntityDao`。
 
 ---
@@ -19,6 +25,8 @@
 3. 替换单表 CRUD、查询、分页、count、exists。
 4. 将特例 SQL 迁到同一仓库接口的 Jdbi 注解方法（`@SqlQuery/@SqlUpdate`）。
 5. 配置并验证表结构拉齐策略（全局 + 仓库覆盖）。
+
+说明：若仓库继承 `EntityDao<T, ID>`，特例 SQL 的 `@SqlQuery` 返回 `T` / `List<T>` 默认会自动映射，无需再加 `@RegisterBeanMapper(T.class)`。若列名与属性名不一致，请在 SQL 中使用别名对齐。
 
 ---
 
@@ -104,3 +112,5 @@ interface UserDao extends EntityDao<UserEntity, String> {
 1. MySQL/PostgreSQL 均跑通 `ensureTable + CRUD + query/pageQuery/count`。
 2. `@Transactional` 中 `EntityDao` 与 Jdbi SQL 注解方法同边界回滚。
 3. `repository-schema-mode` 与 `alignTable` 组合行为符合预期。
+
+下一步：迁移完成后，回到 [`ROADMAP.md`](ROADMAP.md) 对齐后续能力优先级与技术债计划。

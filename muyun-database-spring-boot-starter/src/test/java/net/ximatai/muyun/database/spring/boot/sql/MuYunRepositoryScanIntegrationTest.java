@@ -8,8 +8,9 @@ import net.ximatai.muyun.database.core.orm.EntityDao;
 import net.ximatai.muyun.database.spring.boot.MuYunDatabaseAutoConfiguration;
 import net.ximatai.muyun.database.spring.boot.sql.annotation.EnableMuYunRepositories;
 import net.ximatai.muyun.database.spring.boot.sql.annotation.MuYunRepository;
+import org.jdbi.v3.core.Handle;
+import org.jdbi.v3.core.HandleCallback;
 import org.jdbi.v3.core.Jdbi;
-import org.jdbi.v3.core.extension.ExtensionCallback;
 import org.jdbi.v3.sqlobject.customizer.Bind;
 import org.jdbi.v3.sqlobject.statement.SqlQuery;
 import org.junit.jupiter.api.Test;
@@ -79,12 +80,14 @@ class MuYunRepositoryScanIntegrationTest {
         @Bean
         Jdbi jdbi() {
             Jdbi jdbi = Mockito.mock(Jdbi.class);
+            Handle handle = Mockito.mock(Handle.class);
             ScanHybridRepository extension = Mockito.mock(ScanHybridRepository.class);
             when(extension.countByName("alice")).thenReturn(1);
-            when(jdbi.withExtension(eq(ScanHybridRepository.class), any())).thenAnswer(invocation -> {
+            when(handle.attach(ScanHybridRepository.class)).thenReturn(extension);
+            when(jdbi.withHandle(any())).thenAnswer(invocation -> {
                 @SuppressWarnings("unchecked")
-                ExtensionCallback<Object, ScanHybridRepository, RuntimeException> callback = invocation.getArgument(1);
-                return callback.withExtension(extension);
+                HandleCallback<Object, RuntimeException> callback = invocation.getArgument(0);
+                return callback.withHandle(handle);
             });
             return jdbi;
         }

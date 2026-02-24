@@ -10,8 +10,11 @@ import net.ximatai.muyun.database.core.orm.PageRequest;
 import net.ximatai.muyun.database.core.orm.PageResult;
 import net.ximatai.muyun.database.core.orm.Sort;
 import net.ximatai.muyun.database.spring.boot.sql.annotation.MuYunRepository;
+import org.jdbi.v3.core.Handle;
+import org.jdbi.v3.core.HandleCallback;
 import org.jdbi.v3.core.Jdbi;
 import org.jdbi.v3.core.extension.ExtensionCallback;
+import org.jdbi.v3.core.mapper.RowMapperFactory;
 import org.jdbi.v3.sqlobject.customizer.Bind;
 import org.jdbi.v3.sqlobject.statement.SqlQuery;
 import org.jdbi.v3.sqlobject.statement.SqlUpdate;
@@ -75,12 +78,14 @@ class MuYunRepositoryFactoryTest {
         when(operations.query(anyString(), anyMap())).thenReturn(List.of(Map.of("id", "r-10", "roleName", "hybrid-role")));
 
         Jdbi jdbi = mock(Jdbi.class);
+        Handle handle = mock(Handle.class);
         HybridDao extension = mock(HybridDao.class);
         when(extension.rename("r-10", "hybrid-role-v2")).thenReturn(1);
-        when(jdbi.withExtension(eq(HybridDao.class), any())).thenAnswer(invocation -> {
+        when(handle.attach(HybridDao.class)).thenReturn(extension);
+        when(jdbi.withHandle(any())).thenAnswer(invocation -> {
             @SuppressWarnings("unchecked")
-            ExtensionCallback<Object, HybridDao, RuntimeException> callback = invocation.getArgument(1);
-            return callback.withExtension(extension);
+            HandleCallback<Object, RuntimeException> callback = invocation.getArgument(0);
+            return callback.withHandle(handle);
         });
 
         MuYunRepositoryFactory factory = new MuYunRepositoryFactory(operations, new MockEnvironment(), jdbi);
@@ -110,7 +115,34 @@ class MuYunRepositoryFactoryTest {
 
         verify(operations, times(1)).insertItem(anyString(), anyString(), anyMap());
         verify(operations, times(2)).getItem(anyString(), anyString(), any());
-        verify(jdbi, times(1)).withExtension(eq(HybridDao.class), any());
+        verify(jdbi, times(1)).withHandle(any());
+    }
+
+    @Test
+    void shouldAutoRegisterEntityBeanMapperForHybridEntityDaoSqlMethods() {
+        @SuppressWarnings("unchecked")
+        IDatabaseOperations<Object> operations = (IDatabaseOperations<Object>) mock(IDatabaseOperations.class);
+        Jdbi jdbi = mock(Jdbi.class);
+        Handle handle = mock(Handle.class);
+        HybridDao extension = mock(HybridDao.class);
+
+        when(extension.rename("r-20", "name-2")).thenReturn(1);
+        when(handle.attach(HybridDao.class)).thenReturn(extension);
+        when(jdbi.withHandle(any())).thenAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            HandleCallback<Object, RuntimeException> callback = invocation.getArgument(0);
+            return callback.withHandle(handle);
+        });
+
+        MuYunRepositoryFactory factory = new MuYunRepositoryFactory(operations, new MockEnvironment(), jdbi);
+        HybridDao dao = factory.create(HybridDao.class);
+
+        int affected = dao.rename("r-20", "name-2");
+        assertEquals(1, affected);
+
+        verify(handle, times(1)).registerRowMapper(any(RowMapperFactory.class));
+        verify(handle, times(1)).attach(HybridDao.class);
+        verify(jdbi, times(1)).withHandle(any());
     }
 
     @Test

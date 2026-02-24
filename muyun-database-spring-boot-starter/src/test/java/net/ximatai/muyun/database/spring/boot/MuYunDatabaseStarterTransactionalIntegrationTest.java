@@ -4,6 +4,8 @@ import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import net.ximatai.muyun.database.core.IDatabaseOperations;
 import net.ximatai.muyun.database.core.orm.SimpleEntityManager;
+import net.ximatai.muyun.database.spring.boot.txprobe.TxProbeBeanEntity;
+import net.ximatai.muyun.database.spring.boot.txprobe.TxProbeBeanRepository;
 import net.ximatai.muyun.database.spring.boot.txprobe.TxProbeOrmEntity;
 import net.ximatai.muyun.database.spring.boot.txprobe.TxProbeRepository;
 import net.ximatai.muyun.database.spring.boot.sql.annotation.EnableMuYunRepositories;
@@ -23,6 +25,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @Testcontainers(disabledWithoutDocker = true)
@@ -51,6 +54,22 @@ class MuYunDatabaseStarterTransactionalIntegrationTest {
         });
     }
 
+    @Test
+    void shouldMapEntityFromSqlQueryWithoutRegisterBeanMapper() {
+        contextRunner.run(context -> {
+            TxProbeService service = context.getBean(TxProbeService.class);
+            service.prepareSchema();
+
+            String id = UUID.randomUUID().toString();
+            service.insertBean(id, "bean_row");
+            TxProbeBeanEntity loaded = service.findBeanByIdViaSql(id);
+
+            assertNotNull(loaded);
+            assertEquals(id, loaded.getId());
+            assertEquals("bean_row", loaded.getName());
+        });
+    }
+
     @Configuration(proxyBeanMethods = false)
     static class PostgresDataSourceConfig {
         @Bean(destroyMethod = "close")
@@ -72,8 +91,9 @@ class MuYunDatabaseStarterTransactionalIntegrationTest {
         @Bean
         TxProbeService txProbeService(IDatabaseOperations<?> operations,
                                       SimpleEntityManager entityManager,
-                                      TxProbeRepository repository) {
-            return new TxProbeService(operations, entityManager, repository);
+                                      TxProbeRepository repository,
+                                      TxProbeBeanRepository beanRepository) {
+            return new TxProbeService(operations, entityManager, repository, beanRepository);
         }
     }
 
@@ -81,20 +101,25 @@ class MuYunDatabaseStarterTransactionalIntegrationTest {
         private final IDatabaseOperations<?> operations;
         private final SimpleEntityManager entityManager;
         private final TxProbeRepository repository;
+        private final TxProbeBeanRepository beanRepository;
 
         TxProbeService(IDatabaseOperations<?> operations,
                        SimpleEntityManager entityManager,
-                       TxProbeRepository repository) {
+                       TxProbeRepository repository,
+                       TxProbeBeanRepository beanRepository) {
             this.operations = operations;
             this.entityManager = entityManager;
             this.repository = repository;
+            this.beanRepository = beanRepository;
         }
 
         void prepareSchema() {
             operations.execute("create table if not exists tx_probe_sql(id varchar(64) primary key, v_name varchar(64))");
             entityManager.ensureTable(TxProbeOrmEntity.class);
+            entityManager.ensureTable(TxProbeBeanEntity.class);
             operations.execute("delete from tx_probe_sql");
             operations.execute("delete from tx_probe_orm");
+            operations.execute("delete from tx_probe_bean");
         }
 
         @Transactional
@@ -116,6 +141,17 @@ class MuYunDatabaseStarterTransactionalIntegrationTest {
         int countOrmRows() {
             Map<String, Object> row = operations.row("select count(*) as c from tx_probe_orm", Map.of());
             return ((Number) row.get("c")).intValue();
+        }
+
+        void insertBean(String id, String name) {
+            TxProbeBeanEntity entity = new TxProbeBeanEntity();
+            entity.setId(id);
+            entity.setName(name);
+            beanRepository.insert(entity);
+        }
+
+        TxProbeBeanEntity findBeanByIdViaSql(String id) {
+            return beanRepository.findBeanByIdViaSql(id);
         }
     }
 }
