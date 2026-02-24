@@ -18,6 +18,7 @@
 
 - 测试架构（测试分层与隔离规则）：[`docs/TESTING_ARCHITECTURE.md`](docs/TESTING_ARCHITECTURE.md)
 - 性能基线模板：[`docs/PERFORMANCE_BASELINE.md`](docs/PERFORMANCE_BASELINE.md)
+- 迁移反馈需求池（待评估）：[`docs/MIGRATION_FEEDBACK_BACKLOG.md`](docs/MIGRATION_FEEDBACK_BACKLOG.md)
 - starter 最小样板：[`samples/starter-minimal`](samples/starter-minimal)
 - 用法示例测试：[`muyun-database-test/src/test/java/net/ximatai/muyun/database/MuYunDatabaseUsageExamplesTestBase.java`](muyun-database-test/src/test/java/net/ximatai/muyun/database/MuYunDatabaseUsageExamplesTestBase.java)
 
@@ -43,8 +44,9 @@ class DaoConfig {
 // Step 2) 统一 DAO：开箱 CRUD + 特例 SQL
 @MuYunRepository(alignTable = MuYunRepository.AlignTable.DEFAULT)
 interface UserRepository extends EntityDao<UserEntity, String> {
-    @Update("update ${app.db}.demo_user set v_name = #{name} where id = #{id}")
-    int rename(@Param("id") String id, @Param("name") String name);
+    @org.jdbi.v3.sqlobject.statement.SqlUpdate("update public.demo_user set v_name = :name where id = :id")
+    int rename(@org.jdbi.v3.sqlobject.customizer.Bind("id") String id,
+               @org.jdbi.v3.sqlobject.customizer.Bind("name") String name);
 }
 
 // Step 2.1) 如需覆盖全局，可在仓库级单独控制

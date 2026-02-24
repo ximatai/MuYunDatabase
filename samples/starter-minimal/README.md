@@ -3,7 +3,7 @@
 这个样板演示如何在 Spring Boot 中最小接入 `muyun-database-spring-boot-starter`，并用一个 `@MuYunRepository` 同时完成：
 
 1. 开箱 CRUD（`EntityDao`）
-2. 特例 SQL（注解 SQL）
+2. 特例 SQL（Jdbi SQL Object 注解）
 3. `@Transactional` 下统一回滚
 
 ## 1. 运行环境
@@ -33,7 +33,7 @@ muyun:
 ## 3. 启动
 
 ```bash
-./gradlew bootRun
+./gradlew -p samples/starter-minimal bootRun
 ```
 
 启动后会自动执行一次事务示例，流程如下：

@@ -153,11 +153,12 @@ class DaoConfig {
 
 @MuYunRepository(alignTable = MuYunRepository.AlignTable.DEFAULT)
 interface UserRepository extends EntityDao<UserEntity, String> {
-    @Select("select id, v_name, i_age from ${app.db.schema}.demo_user where id = #{id}")
-    Map<String, Object> findRawById(@Param("id") String id);
+    @org.jdbi.v3.sqlobject.statement.SqlQuery("select id, v_name, i_age from public.demo_user where id = :id")
+    Map<String, Object> findRawById(@org.jdbi.v3.sqlobject.customizer.Bind("id") String id);
 
-    @Update("update ${app.db.schema}.demo_user set v_name = #{name} where id = #{id}")
-    int rename(@Param("id") String id, @Param("name") String name);
+    @org.jdbi.v3.sqlobject.statement.SqlUpdate("update public.demo_user set v_name = :name where id = :id")
+    int rename(@org.jdbi.v3.sqlobject.customizer.Bind("id") String id,
+               @org.jdbi.v3.sqlobject.customizer.Bind("name") String name);
 }
 
 @Service
@@ -179,13 +180,6 @@ class UserService {
         userRepository.rename("u_20", "neo_v2"); // 特例 SQL
     }
 }
-```
-
-```yaml
-# 占位符 ${app.db.schema} 的来源（也可改成你自己的 key）
-app:
-  db:
-    schema: public
 ```
 
 ### 2.4 事务演示（同一 DAO 内混合 CRUD + 特例 SQL）

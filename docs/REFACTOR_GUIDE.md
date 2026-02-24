@@ -7,7 +7,7 @@
 适用边界：
 
 1. 单表高频 CRUD / 条件查询 / 分页。
-2. 特例 SQL 使用同一仓库接口中的注解 SQL。
+2. 特例 SQL 使用同一仓库接口中的 Jdbi SQL Object 注解（`@SqlQuery/@SqlUpdate`）。
 3. 多表复杂 SQL 不强行抽象为 `EntityDao`。
 
 ---
@@ -17,7 +17,7 @@
 1. 先定义 `@MuYunRepository` 接口并继承 `EntityDao<T, ID>`。
 2. 将 service 对 `mapper/db` 的依赖替换为 `entityDao`。
 3. 替换单表 CRUD、查询、分页、count、exists。
-4. 将特例 SQL 迁到同一仓库接口的注解方法。
+4. 将特例 SQL 迁到同一仓库接口的 Jdbi 注解方法（`@SqlQuery/@SqlUpdate`）。
 5. 配置并验证表结构拉齐策略（全局 + 仓库覆盖）。
 
 ---
@@ -35,7 +35,7 @@
 | `db.getItem("table", id) != null` | `entityDao.existsById(id)` |
 | 手工分页查询 SQL | `entityDao.query(...) / entityDao.pageQuery(...)` |
 | 手工 `count(*)` SQL | `entityDao.count(criteria)` |
-| `db.query(sql, params)`（复杂场景） | 同一仓库内注解 SQL 方法 |
+| `db.query(sql, params)`（复杂场景） | 同一仓库内 Jdbi SQL 注解方法 |
 
 ---
 
@@ -102,5 +102,5 @@ interface UserDao extends EntityDao<UserEntity, String> {
 ## 5. 回归清单
 
 1. MySQL/PostgreSQL 均跑通 `ensureTable + CRUD + query/pageQuery/count`。
-2. `@Transactional` 中 `EntityDao` 与注解 SQL 同边界回滚。
+2. `@Transactional` 中 `EntityDao` 与 Jdbi SQL 注解方法同边界回滚。
 3. `repository-schema-mode` 与 `alignTable` 组合行为符合预期。

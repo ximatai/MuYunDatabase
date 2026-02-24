@@ -8,8 +8,10 @@ import net.ximatai.muyun.database.core.orm.EntityDao;
 import net.ximatai.muyun.database.spring.boot.MuYunDatabaseAutoConfiguration;
 import net.ximatai.muyun.database.spring.boot.sql.annotation.EnableMuYunRepositories;
 import net.ximatai.muyun.database.spring.boot.sql.annotation.MuYunRepository;
-import net.ximatai.muyun.database.spring.boot.sql.annotation.Param;
-import net.ximatai.muyun.database.spring.boot.sql.annotation.Select;
+import org.jdbi.v3.core.Jdbi;
+import org.jdbi.v3.core.extension.ExtensionCallback;
+import org.jdbi.v3.sqlobject.customizer.Bind;
+import org.jdbi.v3.sqlobject.statement.SqlQuery;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -25,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 class MuYunRepositoryScanIntegrationTest {
@@ -32,7 +35,6 @@ class MuYunRepositoryScanIntegrationTest {
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(MuYunDatabaseAutoConfiguration.class))
             .withPropertyValues(
-                    "sample.db.schema=public",
                     "muyun.database.repository-schema-mode=NONE"
             )
             .withUserConfiguration(RepositoryScanConfig.class);
@@ -71,8 +73,20 @@ class MuYunRepositoryScanIntegrationTest {
                 Map<String, Object> body = invocation.getArgument(2);
                 return body.get("id");
             });
-            when(ops.row(anyString(), anyMap())).thenReturn(Map.of("cnt", 1));
             return ops;
+        }
+
+        @Bean
+        Jdbi jdbi() {
+            Jdbi jdbi = Mockito.mock(Jdbi.class);
+            ScanHybridRepository extension = Mockito.mock(ScanHybridRepository.class);
+            when(extension.countByName("alice")).thenReturn(1);
+            when(jdbi.withExtension(eq(ScanHybridRepository.class), any())).thenAnswer(invocation -> {
+                @SuppressWarnings("unchecked")
+                ExtensionCallback<Object, ScanHybridRepository, RuntimeException> callback = invocation.getArgument(1);
+                return callback.withExtension(extension);
+            });
+            return jdbi;
         }
     }
 }
@@ -80,8 +94,8 @@ class MuYunRepositoryScanIntegrationTest {
 @MuYunRepository
 interface ScanHybridRepository extends EntityDao<ScanUser, String> {
 
-    @Select("select count(*) as cnt from ${sample.db.schema}.demo_user where v_name = #{name}")
-    Integer countByName(@Param("name") String name);
+    @SqlQuery("select count(*) from demo_user where v_name = :name")
+    Integer countByName(@Bind("name") String name);
 }
 
 @Table(name = "demo_user")

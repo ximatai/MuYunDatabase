@@ -3,7 +3,7 @@
 ## 范围边界
 
 1. 聚焦单表高频能力：DDL、CRUD、条件查询、分页、事务一致性。
-2. 复杂查询和多表联查优先走 `@MuYunRepository` 注解 SQL，必要时使用原生 SQL。
+2. 复杂查询和多表联查优先走 `@MuYunRepository` 中的 Jdbi SQL Object 注解方法，必要时使用原生 SQL。
 3. 不提供关系映射 ORM（`1:N/N:N`、级联、延迟加载）。
 
 ## 当前稳定能力
@@ -13,7 +13,7 @@
 3. `Criteria` 动态条件（含 `EXISTS/NOT_EXISTS/IN_SUBQUERY/NOT_IN_SUBQUERY`）。
 4. 方言级原子 upsert（MySQL/PostgreSQL）。
 5. `MigrationOptions`（`APPLY`、`DRY_RUN`、`DRY_RUN_STRICT`）。
-6. Spring 声明式事务：`EntityDao` 方法与注解 SQL 方法同边界回滚。
+6. Spring 声明式事务：`EntityDao` 方法与 Jdbi SQL 注解方法同边界回滚。
 7. 表结构拉齐策略：全局 `repository-schema-mode` + 仓库级 `alignTable` 覆盖。
 
 ## 近期优先级
@@ -21,15 +21,15 @@
 ### P0
 
 1. 双库回归矩阵：同一组用例覆盖 MySQL/PostgreSQL，确保 `insert/update/delete/find/query/pageQuery/count/upsert` 行为一致。
-2. 事务回滚矩阵：`@Transactional` 下 `EntityDao` 方法与注解 SQL 方法统一回滚。
+2. 事务回滚矩阵：`@Transactional` 下 `EntityDao` 方法与 Jdbi SQL 注解方法统一回滚。
 3. 拉齐策略矩阵：覆盖全局 `repository-schema-mode` 与仓库 `alignTable` 组合优先级。
-4. 契约门禁：`README/QUICKSTART/API_CONTRACT/MIGRATION` 与代码行为保持一致。
+4. 契约门禁：`README/QUICKSTART/API_CONTRACT/REFACTOR_GUIDE` 与代码行为保持一致。
 
 ### P1
 
 目标：开发体验。验收标准是“新成员 30 分钟可完成一个合格 DAO + Service”。
 
-1. 注解 SQL 报错可读：参数名、方法签名、SQL 片段、建议修复动作清晰可见。
+1. Jdbi SQL 注解报错可读：参数名、方法签名、SQL 片段、建议修复动作清晰可见。
 2. 示例可照抄：提供 3 组标准样板（开箱 CRUD、事务回滚、特例 SQL）。
 3. 文档一致性：示例代码与仓库 sample 保持可编译一致。
 
@@ -45,3 +45,14 @@
 1. `core/jdbi/starter/test` 全部通过。
 2. 双库回归（MySQL/PostgreSQL）核心场景通过。
 3. 文档同步更新：`README.md`、`docs/API_CONTRACT.md`、`docs/QUICKSTART.md`、`docs/REFACTOR_GUIDE.md`。
+
+## 迁移反馈需求池
+
+来自存量项目迁移过程的功能/API 升级想法已整理在：
+
+- [`docs/MIGRATION_FEEDBACK_BACKLOG.md`](MIGRATION_FEEDBACK_BACKLOG.md)
+
+说明：
+
+1. 该文档仅作为候选需求池，不等同于已承诺版本计划。
+2. 一旦需求进入正式版本排期，应回收到本 `ROADMAP` 的 P0/P1/P2 并补充验收标准。

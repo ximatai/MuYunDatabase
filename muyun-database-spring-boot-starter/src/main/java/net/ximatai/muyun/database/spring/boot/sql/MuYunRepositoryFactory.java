@@ -2,45 +2,48 @@ package net.ximatai.muyun.database.spring.boot.sql;
 
 import net.ximatai.muyun.database.core.IDatabaseOperations;
 import net.ximatai.muyun.database.core.orm.Criteria;
-import net.ximatai.muyun.database.core.orm.CrudRepository;
-import net.ximatai.muyun.database.core.orm.DefaultSimpleEntityManager;
 import net.ximatai.muyun.database.core.orm.EntityDao;
-import net.ximatai.muyun.database.core.orm.EntityMapper;
 import net.ximatai.muyun.database.core.orm.EntityMetaResolver;
-import net.ximatai.muyun.database.core.orm.PageResult;
 import net.ximatai.muyun.database.core.orm.PageRequest;
-import net.ximatai.muyun.database.core.orm.SimpleOrm;
+import net.ximatai.muyun.database.core.orm.PageResult;
 import net.ximatai.muyun.database.core.orm.SimpleEntityManager;
 import net.ximatai.muyun.database.core.orm.Sort;
-import net.ximatai.muyun.database.spring.boot.sql.annotation.Delete;
-import net.ximatai.muyun.database.spring.boot.sql.annotation.Insert;
+import net.ximatai.muyun.database.core.orm.DefaultSimpleEntityManager;
 import net.ximatai.muyun.database.spring.boot.sql.annotation.MuYunRepository;
-import net.ximatai.muyun.database.spring.boot.sql.annotation.Param;
-import net.ximatai.muyun.database.spring.boot.sql.annotation.Select;
-import net.ximatai.muyun.database.spring.boot.sql.annotation.Update;
+import org.jdbi.v3.core.Jdbi;
+import org.jdbi.v3.sqlobject.statement.SqlQuery;
+import org.jdbi.v3.sqlobject.statement.SqlUpdate;
 import org.springframework.core.env.Environment;
 
-import java.beans.Introspector;
-import java.beans.PropertyDescriptor;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
-import java.lang.reflect.*;
-import java.util.*;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Proxy;
+import java.lang.reflect.Type;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 public class MuYunRepositoryFactory {
 
-    private static final Pattern TOKEN_PATTERN = Pattern.compile("([#$])\\{([^}]+)}");
-
     private final IDatabaseOperations<?> operations;
+    @SuppressWarnings("unused")
     private final Environment environment;
-    private final EntityMetaResolver entityMetaResolver = new EntityMetaResolver();
+    private final Jdbi jdbi;
 
     public MuYunRepositoryFactory(IDatabaseOperations<?> operations, Environment environment) {
+        this(operations, environment, null);
+    }
+
+    public MuYunRepositoryFactory(IDatabaseOperations<?> operations, Environment environment, Jdbi jdbi) {
         this.operations = Objects.requireNonNull(operations, "operations");
         this.environment = Objects.requireNonNull(environment, "environment");
+        this.jdbi = jdbi;
     }
 
     @SuppressWarnings("unchecked")
@@ -60,153 +63,94 @@ public class MuYunRepositoryFactory {
     private final class DaoInvocationHandler implements InvocationHandler {
 
         private final Class<?> daoType;
-        private final Map<Method, MethodPlan> plans = new ConcurrentHashMap<>();
+        private final Map<Method, EntityDaoMethodType> entityDaoMethodTypes = new ConcurrentHashMap<>();
         private final EntityDaoDelegate entityDaoDelegate;
 
         private DaoInvocationHandler(Class<?> daoType) {
             this.daoType = daoType;
             this.entityDaoDelegate = resolveEntityDaoDelegate(daoType);
-            // fail fast: validate all abstract methods at creation time
+
             for (Method method : daoType.getMethods()) {
                 if (method.getDeclaringClass() == Object.class || method.isDefault() || Modifier.isStatic(method.getModifiers())) {
                     continue;
                 }
-                plans.put(method, buildPlan(method));
+                validateMethod(method);
             }
         }
 
         @Override
         public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+            Object[] safeArgs = args == null ? new Object[0] : args;
+
             if (method.getDeclaringClass() == Object.class) {
-                return method.invoke(this, args);
+                return method.invoke(this, safeArgs);
             }
             if (method.isDefault()) {
-                return invokeDefault(proxy, method, args == null ? new Object[0] : args);
+                return invokeDefault(proxy, method, safeArgs);
             }
-            MethodPlan plan = plans.computeIfAbsent(method, this::buildPlan);
-            if (plan.entityDaoMethodType() != EntityDaoMethodType.NONE) {
-                return entityDaoDelegate.invoke(plan.entityDaoMethodType(), args == null ? new Object[0] : args);
+
+            EntityDaoMethodType type = entityDaoMethodTypes.computeIfAbsent(
+                    method,
+                    m -> entityDaoDelegate == null ? EntityDaoMethodType.NONE : entityDaoDelegate.resolve(m)
+            );
+            if (type != EntityDaoMethodType.NONE) {
+                return entityDaoDelegate.invoke(type, safeArgs);
             }
-            Map<String, Object> argMap = plan.bindArgs(args == null ? new Object[0] : args);
-            RenderedSql rendered = renderSql(plan.sqlTemplate(), argMap);
-            return execute(plan, rendered);
+            return invokeViaJdbi(method, safeArgs);
         }
 
-        private MethodPlan buildPlan(Method method) {
-            EntityDaoMethodType entityDaoMethodType = entityDaoDelegate == null
-                    ? EntityDaoMethodType.NONE
-                    : entityDaoDelegate.resolve(method);
-            if (entityDaoDelegate != null) {
-                entityDaoDelegate.validate(method, entityDaoMethodType);
-            }
-            if (entityDaoMethodType != EntityDaoMethodType.NONE) {
-                if (hasSqlAnnotation(method)) {
-                    throw new IllegalStateException(
-                            "CRUD method is reserved by EntityDao and must not use @Select/@Insert/@Update/@Delete: " + method
-                    );
-                }
-                return MethodPlan.forEntityDao(method, entityDaoMethodType);
-            }
-
-            QueryType type;
-            String sql = null;
-
-            Select select = method.getAnnotation(Select.class);
-            if (select != null) {
-                type = QueryType.SELECT;
-                sql = select.value();
-            } else {
-                Insert insert = method.getAnnotation(Insert.class);
-                Update update = method.getAnnotation(Update.class);
-                Delete delete = method.getAnnotation(Delete.class);
-                if (insert != null) {
-                    type = QueryType.UPDATE;
-                    sql = insert.value();
-                } else if (update != null) {
-                    type = QueryType.UPDATE;
-                    sql = update.value();
-                } else if (delete != null) {
-                    type = QueryType.UPDATE;
-                    sql = delete.value();
-                } else {
-                    if (entityDaoDelegate != null) {
-                        throw new IllegalStateException("Non-CRUD method must use @Select/@Insert/@Update/@Delete: " + method);
-                    }
-                    throw new IllegalStateException("Method must use @Select/@Insert/@Update/@Delete: " + method);
-                }
-            }
-
+        private void validateMethod(Method method) {
             if (!daoType.isAnnotationPresent(MuYunRepository.class)) {
                 throw new IllegalStateException("DAO interface must be annotated with @MuYunRepository: " + daoType.getName());
             }
 
-            Set<String> tokenRoots = parseBindTokenRoots(sql);
-            return new MethodPlan(type, sql, method, tokenRoots);
-        }
-
-        private Object execute(MethodPlan plan, RenderedSql rendered) {
-            if (plan.type() == QueryType.UPDATE) {
-                int affected = operations.update(rendered.sql(), rendered.params());
-                return castUpdateResult(affected, plan.method().getReturnType());
+            EntityDaoMethodType type = entityDaoDelegate == null ? EntityDaoMethodType.NONE : entityDaoDelegate.resolve(method);
+            entityDaoMethodTypes.put(method, type);
+            if (entityDaoDelegate != null) {
+                entityDaoDelegate.validate(method, type);
             }
-            return executeSelect(plan, rendered);
-        }
 
-        private Object executeSelect(MethodPlan plan, RenderedSql rendered) {
-            Class<?> returnType = plan.method().getReturnType();
-            if (returnType == List.class || returnType == Set.class) {
-                Class<?> elementType = plan.collectionElementType();
-                List<Map<String, Object>> rows = operations.query(rendered.sql(), rendered.params());
-                List<Object> mapped = mapRows(rows, elementType);
-                if (returnType == Set.class) {
-                    return new LinkedHashSet<>(mapped);
+            if (type != EntityDaoMethodType.NONE) {
+                if (hasJdbiSqlAnnotation(method)) {
+                    throw new IllegalStateException("CRUD method is reserved by EntityDao and must not use SQL annotations: " + method);
                 }
-                return mapped;
+                return;
             }
 
-            Map<String, Object> row = operations.row(rendered.sql(), rendered.params());
-            if (row == null) {
-                return null;
-            }
-            return mapSingle(row, returnType);
-        }
-
-        private Object castUpdateResult(int affected, Class<?> returnType) {
-            if (returnType == void.class || returnType == Void.class) {
-                return null;
-            }
-            if (returnType == int.class || returnType == Integer.class) {
-                return affected;
-            }
-            if (returnType == long.class || returnType == Long.class) {
-                return (long) affected;
-            }
-            if (returnType == boolean.class || returnType == Boolean.class) {
-                return affected > 0;
-            }
-            throw new IllegalStateException("Unsupported update return type: " + returnType.getName());
-        }
-
-        private List<Object> mapRows(List<Map<String, Object>> rows, Class<?> elementType) {
-            List<Object> list = new ArrayList<>(rows.size());
-            for (Map<String, Object> row : rows) {
-                list.add(mapSingle(row, elementType));
-            }
-            return list;
-        }
-
-        private Object mapSingle(Map<String, Object> row, Class<?> targetType) {
-            if (targetType == Map.class) {
-                return row;
-            }
-            if (isScalar(targetType)) {
-                Object first = null;
-                if (!row.isEmpty()) {
-                    first = row.values().iterator().next();
+            if (!hasJdbiSqlAnnotation(method)) {
+                if (entityDaoDelegate != null) {
+                    throw new IllegalStateException("Non-CRUD method must use Jdbi SQL annotations: " + method);
                 }
-                return convertScalar(first, targetType);
+                throw new IllegalStateException("Method must use Jdbi SQL annotations: " + method);
             }
-            return EntityMapper.fromMap(entityMetaResolver.resolve(targetType), row, targetType);
+
+            if (jdbi == null) {
+                throw new IllegalStateException("Jdbi SQL Object annotations require Jdbi bean: " + method);
+            }
+        }
+
+        private Object invokeViaJdbi(Method method, Object[] args) throws Throwable {
+            try {
+                return jdbi.withExtension(daoType, extension -> {
+                    try {
+                        return method.invoke(extension, args);
+                    } catch (InvocationTargetException ex) {
+                        Throwable cause = ex.getCause();
+                        if (cause instanceof RuntimeException runtime) {
+                            throw runtime;
+                        }
+                        throw new RuntimeException(cause);
+                    } catch (IllegalAccessException ex) {
+                        throw new RuntimeException(ex);
+                    }
+                });
+            } catch (RuntimeException ex) {
+                Throwable cause = ex.getCause();
+                if (cause != null && !(cause instanceof RuntimeException)) {
+                    throw cause;
+                }
+                throw ex;
+            }
         }
 
         private EntityDaoDelegate resolveEntityDaoDelegate(Class<?> type) {
@@ -262,175 +206,6 @@ public class MuYunRepositoryFactory {
         return null;
     }
 
-    private RenderedSql renderSql(String template, Map<String, Object> methodArgs) {
-        Map<String, Object> bindParams = new LinkedHashMap<>();
-        Matcher matcher = TOKEN_PATTERN.matcher(template);
-        StringBuffer buffer = new StringBuffer();
-        int bindSeq = 0;
-
-        while (matcher.find()) {
-            String tokenType = matcher.group(1);
-            String expression = matcher.group(2).trim();
-            Object value = resolveValue(expression, methodArgs);
-
-            if ("$".equals(tokenType)) {
-                if (value == null) {
-                    throw new IllegalArgumentException("Missing value for inline token ${" + expression + "}");
-                }
-                matcher.appendReplacement(buffer, Matcher.quoteReplacement(String.valueOf(value)));
-                continue;
-            }
-
-            if (value instanceof Iterable<?> iterable) {
-                bindSeq = appendSequenceBindParams(expression, iterable.iterator(), bindParams, matcher, buffer, bindSeq);
-            } else if (isExpandableArray(value)) {
-                bindSeq = appendSequenceBindParams(expression, arrayIterator(value), bindParams, matcher, buffer, bindSeq);
-            } else {
-                String key = "__p" + bindSeq++;
-                bindParams.put(key, normalizeBindableValue(value));
-                matcher.appendReplacement(buffer, Matcher.quoteReplacement(":" + key));
-            }
-        }
-
-        matcher.appendTail(buffer);
-        return new RenderedSql(buffer.toString(), bindParams);
-    }
-
-    private int appendSequenceBindParams(String expression,
-                                         Iterator<?> iterator,
-                                         Map<String, Object> bindParams,
-                                         Matcher matcher,
-                                         StringBuffer buffer,
-                                         int bindSeq) {
-        List<String> holders = new ArrayList<>();
-        while (iterator.hasNext()) {
-            String key = "__p" + bindSeq++;
-            bindParams.put(key, normalizeBindableValue(iterator.next()));
-            holders.add(":" + key);
-        }
-        if (holders.isEmpty()) {
-            throw new IllegalArgumentException("Empty collection/array is not allowed for token #{" + expression + "}");
-        }
-        matcher.appendReplacement(buffer, Matcher.quoteReplacement(String.join(", ", holders)));
-        return bindSeq;
-    }
-
-    private static boolean isExpandableArray(Object value) {
-        if (value == null) {
-            return false;
-        }
-        Class<?> type = value.getClass();
-        if (!type.isArray()) {
-            return false;
-        }
-        // Treat byte array as scalar to preserve common BLOB binding semantics.
-        return type != byte[].class && type != Byte[].class;
-    }
-
-    private static Iterator<Object> arrayIterator(Object array) {
-        int length = Array.getLength(array);
-        List<Object> values = new ArrayList<>(length);
-        for (int i = 0; i < length; i++) {
-            values.add(Array.get(array, i));
-        }
-        return values.iterator();
-    }
-
-    private Object normalizeBindableValue(Object value) {
-        if (value instanceof Enum<?> enumValue) {
-            return enumValue.name();
-        }
-        return value;
-    }
-
-    private Object resolveValue(String expression, Map<String, Object> methodArgs) {
-        if (expression.contains(".")) {
-            Object fromArgs = resolvePath(methodArgs, expression);
-            if (fromArgs != null) {
-                return fromArgs;
-            }
-            String env = environment.getProperty(expression);
-            if (env != null) {
-                return env;
-            }
-            return null;
-        }
-
-        if (methodArgs.containsKey(expression)) {
-            return methodArgs.get(expression);
-        }
-        if (methodArgs.containsKey("value")) {
-            Object value = methodArgs.get("value");
-            Object nested = resolvePath(value, expression);
-            if (nested != null) {
-                return nested;
-            }
-            if (methodArgs.size() <= 2) {
-                return value;
-            }
-        }
-        String env = environment.getProperty(expression);
-        if (env != null) {
-            return env;
-        }
-        return null;
-    }
-
-    private Object resolvePath(Object root, String path) {
-        String[] parts = path.split("\\.");
-        Object current = root;
-        for (String part : parts) {
-            current = readPart(current, part);
-            if (current == null) {
-                return null;
-            }
-        }
-        return current;
-    }
-
-    private Object readPart(Object source, String part) {
-        if (source == null) {
-            return null;
-        }
-        if (source instanceof Map<?, ?> map) {
-            if (map.containsKey(part)) {
-                return map.get(part);
-            }
-            for (Map.Entry<?, ?> entry : map.entrySet()) {
-                if (part.equalsIgnoreCase(String.valueOf(entry.getKey()))) {
-                    return entry.getValue();
-                }
-            }
-            return null;
-        }
-        try {
-            PropertyDescriptor[] descriptors = Introspector.getBeanInfo(source.getClass()).getPropertyDescriptors();
-            for (PropertyDescriptor descriptor : descriptors) {
-                if (descriptor.getReadMethod() != null && descriptor.getName().equals(part)) {
-                    return descriptor.getReadMethod().invoke(source);
-                }
-            }
-        } catch (Exception ignored) {
-            return null;
-        }
-        return null;
-    }
-
-    private Set<String> parseBindTokenRoots(String sql) {
-        Set<String> roots = new LinkedHashSet<>();
-        Matcher matcher = TOKEN_PATTERN.matcher(sql);
-        while (matcher.find()) {
-            String tokenType = matcher.group(1);
-            if (!"#".equals(tokenType)) {
-                continue;
-            }
-            String expression = matcher.group(2).trim();
-            int dot = expression.indexOf('.');
-            roots.add(dot > 0 ? expression.substring(0, dot) : expression);
-        }
-        return roots;
-    }
-
     private static Object invokeDefault(Object proxy, Method method, Object[] args) throws Throwable {
         Class<?> declaringClass = method.getDeclaringClass();
         MethodHandles.Lookup lookup = MethodHandles.privateLookupIn(declaringClass, MethodHandles.lookup());
@@ -445,213 +220,9 @@ public class MuYunRepositoryFactory {
                 .invokeWithArguments(args);
     }
 
-    private static boolean isScalar(Class<?> type) {
-        return type == String.class
-                || Number.class.isAssignableFrom(type)
-                || type.isPrimitive()
-                || type == Boolean.class
-                || type == Character.class
-                || type.isEnum();
-    }
-
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private static Object convertScalar(Object value, Class<?> targetType) {
-        if (value == null) {
-            return null;
-        }
-        if (targetType.isInstance(value)) {
-            return value;
-        }
-        if (targetType == String.class) {
-            return String.valueOf(value);
-        }
-        if (targetType == Integer.class || targetType == int.class) {
-            return toInt(value);
-        }
-        if (targetType == Long.class || targetType == long.class) {
-            return toLong(value);
-        }
-        if (targetType == Double.class || targetType == double.class) {
-            return toDouble(value);
-        }
-        if (targetType == Float.class || targetType == float.class) {
-            return toFloat(value);
-        }
-        if (targetType == Boolean.class || targetType == boolean.class) {
-            return toBoolean(value);
-        }
-        if (targetType.isEnum()) {
-            return Enum.valueOf((Class<? extends Enum>) targetType, String.valueOf(value));
-        }
-        return value;
-    }
-
-    private static int toInt(Object value) {
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        return Integer.parseInt(requireText(value));
-    }
-
-    private static long toLong(Object value) {
-        if (value instanceof Number number) {
-            return number.longValue();
-        }
-        return Long.parseLong(requireText(value));
-    }
-
-    private static double toDouble(Object value) {
-        if (value instanceof Number number) {
-            return number.doubleValue();
-        }
-        return Double.parseDouble(requireText(value));
-    }
-
-    private static float toFloat(Object value) {
-        if (value instanceof Number number) {
-            return number.floatValue();
-        }
-        return Float.parseFloat(requireText(value));
-    }
-
-    private static boolean toBoolean(Object value) {
-        if (value instanceof Boolean bool) {
-            return bool;
-        }
-        if (value instanceof Number number) {
-            return number.intValue() != 0;
-        }
-        String text = requireText(value).toLowerCase(Locale.ROOT);
-        if ("true".equals(text) || "1".equals(text) || "y".equals(text) || "yes".equals(text)) {
-            return true;
-        }
-        if ("false".equals(text) || "0".equals(text) || "n".equals(text) || "no".equals(text)) {
-            return false;
-        }
-        return Boolean.parseBoolean(text);
-    }
-
-    private static String requireText(Object value) {
-        String text = String.valueOf(value).trim();
-        if (text.isEmpty()) {
-            throw new IllegalArgumentException("Cannot convert blank value");
-        }
-        return text;
-    }
-
-    private enum QueryType {
-        SELECT,
-        UPDATE
-    }
-
-    private record RenderedSql(String sql, Map<String, Object> params) {
-    }
-
-    private static final class MethodPlan {
-        private final QueryType type;
-        private final String sqlTemplate;
-        private final Method method;
-        private final Class<?> collectionElementType;
-        private final List<ArgumentPlan> arguments;
-        private final EntityDaoMethodType entityDaoMethodType;
-
-        private MethodPlan(QueryType type, String sqlTemplate, Method method, Set<String> tokenRoots) {
-            this.type = type;
-            this.sqlTemplate = sqlTemplate;
-            this.method = method;
-            this.collectionElementType = resolveCollectionElementType(method);
-            this.arguments = resolveArguments(method, tokenRoots);
-            this.entityDaoMethodType = EntityDaoMethodType.NONE;
-        }
-
-        private MethodPlan(Method method, EntityDaoMethodType entityDaoMethodType) {
-            this.type = QueryType.SELECT;
-            this.sqlTemplate = "";
-            this.method = method;
-            this.collectionElementType = resolveCollectionElementType(method);
-            this.arguments = List.of();
-            this.entityDaoMethodType = entityDaoMethodType;
-        }
-
-        static MethodPlan forEntityDao(Method method, EntityDaoMethodType entityDaoMethodType) {
-            return new MethodPlan(method, entityDaoMethodType);
-        }
-
-        private static List<ArgumentPlan> resolveArguments(Method method, Set<String> tokenRoots) {
-            Parameter[] parameters = method.getParameters();
-            List<ArgumentPlan> plans = new ArrayList<>(parameters.length);
-
-            String singleName = null;
-            if (parameters.length == 1 && tokenRoots.size() == 1) {
-                singleName = tokenRoots.iterator().next();
-            }
-
-            for (int i = 0; i < parameters.length; i++) {
-                Parameter parameter = parameters[i];
-                Param param = parameter.getAnnotation(Param.class);
-                String name;
-                if (param != null && !param.value().isBlank()) {
-                    name = param.value();
-                } else if (singleName != null) {
-                    name = singleName;
-                } else if ("arg0".equals(parameter.getName()) || parameter.getName().startsWith("arg")) {
-                    name = "p" + i;
-                } else {
-                    name = parameter.getName();
-                }
-                plans.add(new ArgumentPlan(name));
-            }
-            return plans;
-        }
-
-        private static Class<?> resolveCollectionElementType(Method method) {
-            Class<?> raw = method.getReturnType();
-            if (raw != List.class && raw != Set.class) {
-                return raw;
-            }
-            Type generic = method.getGenericReturnType();
-            if (generic instanceof ParameterizedType pt && pt.getActualTypeArguments().length == 1) {
-                Type arg = pt.getActualTypeArguments()[0];
-                if (arg instanceof Class<?> clazz) {
-                    return clazz;
-                }
-            }
-            return Map.class;
-        }
-
-        private Map<String, Object> bindArgs(Object[] args) {
-            Map<String, Object> map = new LinkedHashMap<>();
-            if (args.length != arguments.size()) {
-                throw new IllegalArgumentException("Parameter count mismatch for method: " + method);
-            }
-            for (int i = 0; i < args.length; i++) {
-                map.put(arguments.get(i).name(), args[i]);
-            }
-            if (args.length == 1 && !map.containsKey("value")) {
-                map.put("value", args[0]);
-            }
-            return map;
-        }
-
-        QueryType type() {
-            return type;
-        }
-
-        String sqlTemplate() {
-            return sqlTemplate;
-        }
-
-        Method method() {
-            return method;
-        }
-
-        Class<?> collectionElementType() {
-            return collectionElementType;
-        }
-
-        EntityDaoMethodType entityDaoMethodType() {
-            return entityDaoMethodType;
-        }
+    private static boolean hasJdbiSqlAnnotation(Method method) {
+        return method.isAnnotationPresent(SqlQuery.class)
+                || method.isAnnotationPresent(SqlUpdate.class);
     }
 
     private record EntityDaoTypes(Class<?> entityType, Class<?> idType) {
@@ -688,17 +259,14 @@ public class MuYunRepositoryFactory {
                 "count",
                 "upsert"
         );
-        private final CrudRepository<Object, Object> repository;
-        private final SimpleEntityManager entityManager;
+
         private final Class<?> entityType;
+        private final SimpleEntityManager entityManager;
 
         private EntityDaoDelegate(Class<?> entityType) {
             this.entityType = entityType;
             this.entityManager = new DefaultSimpleEntityManager(operations);
-            this.repository = (CrudRepository<Object, Object>) SimpleOrm.repository(
-                    (Class<Object>) entityType,
-                    entityManager
-            );
+            new EntityMetaResolver().resolve(entityType);
         }
 
         private EntityDaoMethodType resolve(Method method) {
@@ -734,14 +302,14 @@ public class MuYunRepositoryFactory {
                     && (paramTypes.length == 2 || (paramTypes.length == 3 && paramTypes[2] == Sort[].class))
                     && paramTypes[0] == Criteria.class
                     && paramTypes[1] == PageRequest.class
-                    && List.class.isAssignableFrom(returnType)) {
+                    && java.util.List.class.isAssignableFrom(returnType)) {
                 return EntityDaoMethodType.QUERY;
             }
             if ("list".equals(name)
                     && (paramTypes.length == 2 || (paramTypes.length == 3 && paramTypes[2] == Sort[].class))
                     && paramTypes[0] == Criteria.class
                     && paramTypes[1] == PageRequest.class
-                    && List.class.isAssignableFrom(returnType)) {
+                    && java.util.List.class.isAssignableFrom(returnType)) {
                 return EntityDaoMethodType.LIST;
             }
             if ("pageQuery".equals(name)
@@ -817,17 +385,17 @@ public class MuYunRepositoryFactory {
         private Object invoke(EntityDaoMethodType type, Object[] args) {
             return switch (type) {
                 case ENSURE_TABLE -> entityManager.ensureTable((Class<Object>) entityType);
-                case INSERT -> repository.insert(args[0]);
-                case UPDATE_BY_ID -> repository.update(args[0]);
-                case DELETE_BY_ID -> repository.deleteById(args[0]);
-                case EXISTS_BY_ID -> repository.findById(args[0]) != null;
-                case FIND_BY_ID -> repository.findById(args[0]);
-                case QUERY -> repository.query((Criteria) args[0], (PageRequest) args[1], extractSorts(args, 2));
-                case LIST -> repository.query((Criteria) args[0], (PageRequest) args[1], extractSorts(args, 2));
-                case PAGE_QUERY -> repository.pageQuery((Criteria) args[0], (PageRequest) args[1], extractSorts(args, 2));
-                case PAGE -> repository.pageQuery((Criteria) args[0], (PageRequest) args[1], extractSorts(args, 2));
-                case COUNT -> repository.pageQuery((Criteria) args[0], PageRequest.of(1, 1)).getTotal();
-                case UPSERT -> repository.upsert(args[0]);
+                case INSERT -> entityManager.insert(args[0]);
+                case UPDATE_BY_ID -> entityManager.update(args[0]);
+                case DELETE_BY_ID -> entityManager.deleteById((Class<Object>) entityType, args[0]);
+                case EXISTS_BY_ID -> entityManager.findById((Class<Object>) entityType, args[0]) != null;
+                case FIND_BY_ID -> entityManager.findById((Class<Object>) entityType, args[0]);
+                case QUERY -> entityManager.query((Class<Object>) entityType, (Criteria) args[0], (PageRequest) args[1], extractSorts(args, 2));
+                case LIST -> entityManager.query((Class<Object>) entityType, (Criteria) args[0], (PageRequest) args[1], extractSorts(args, 2));
+                case PAGE_QUERY -> entityManager.pageQuery((Class<Object>) entityType, (Criteria) args[0], (PageRequest) args[1], extractSorts(args, 2));
+                case PAGE -> entityManager.pageQuery((Class<Object>) entityType, (Criteria) args[0], (PageRequest) args[1], extractSorts(args, 2));
+                case COUNT -> entityManager.pageQuery((Class<Object>) entityType, (Criteria) args[0], PageRequest.of(1, 1)).getTotal();
+                case UPSERT -> entityManager.upsert(args[0]);
                 case NONE -> throw new IllegalStateException("Unexpected EntityDao method type");
             };
         }
@@ -844,15 +412,5 @@ public class MuYunRepositoryFactory {
             return new Sort[]{sort};
         }
         throw new IllegalArgumentException("Sort arguments must be Sort[]");
-    }
-
-    private static boolean hasSqlAnnotation(Method method) {
-        return method.isAnnotationPresent(Select.class)
-                || method.isAnnotationPresent(Insert.class)
-                || method.isAnnotationPresent(Update.class)
-                || method.isAnnotationPresent(Delete.class);
-    }
-
-    private record ArgumentPlan(String name) {
     }
 }

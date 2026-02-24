@@ -40,9 +40,9 @@
 | P0 目标 | 最低覆盖要求 |
 | --- | --- |
 | 双库一致性 | `MuYunDatabaseMySQLTest` 与 `MuYunDatabasePostgresTest` 对同一组核心用例同时通过（CRUD/query/pageQuery/count/upsert） |
-| 事务回滚矩阵 | starter 层覆盖 `EntityDao` 方法 + 注解 SQL 方法同事务回滚 |
+| 事务回滚矩阵 | starter 层覆盖 `EntityDao` 方法 + Jdbi SQL 注解方法同事务回滚 |
 | 拉齐策略优先级 | starter 层覆盖 `repository-schema-mode` 与 `alignTable=DEFAULT/ENABLED/DISABLED` 组合 |
-| 契约门禁 | 与 `README/QUICKSTART/API_CONTRACT/MIGRATION` 示例口径一致 |
+| 契约门禁 | 与 `README/QUICKSTART/API_CONTRACT/REFACTOR_GUIDE` 示例口径一致 |
 
 ---
 
@@ -55,7 +55,7 @@
 5. 共享基线表必须在 `@BeforeEach` 重建。
 6. 继承相关 DDL 测试必须使用独立表名，禁止跨测试复用。
 7. 自定义 schema 的 DDL 测试应使用用例专属 schema 名。
-8. SQL 注解测试不应硬编码共享表名，应使用占位参数传入测试作用域表名。
+8. Jdbi SQL 注解测试不应硬编码共享表名，应使用测试作用域表名。
 
 ---
 
@@ -68,7 +68,7 @@
 守卫目标：
 
 1. 阻止重新引入历史共享 schema/table 硬编码。
-2. 阻止 SQL 注解测试硬编码共享测试表。
+2. 阻止 Jdbi SQL 注解测试硬编码共享测试表。
 3. 维持测试命名与隔离约束。
 
 此外，集成测试包含原子 upsert 并发回归场景：

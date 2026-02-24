@@ -130,8 +130,8 @@ public class MuYunDatabaseAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public MuYunRepositoryFactory muYunRepositoryFactory(IDatabaseOperations<?> operations, Environment environment) {
-        return new MuYunRepositoryFactory(operations, environment);
+    public MuYunRepositoryFactory muYunRepositoryFactory(IDatabaseOperations<?> operations, Environment environment, Jdbi jdbi) {
+        return new MuYunRepositoryFactory(operations, environment, jdbi);
     }
 
     @Bean
