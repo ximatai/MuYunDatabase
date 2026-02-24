@@ -8,7 +8,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 @Testcontainers
-public class MuYunDatabaseMySQLTest extends MuYunDatabaseBaseTest {
+public class MuYunDatabaseMySQLTest extends MuYunDatabaseUsageExamplesTestBase {
 
     @Container
 //    private static final JdbcDatabaseContainer postgresContainer = new MySQLContainer("mysql:8.4.5")

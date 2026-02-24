@@ -1,0 +1,12 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/testdb
+    username: testuser
+    password: testpass
+
+muyun:
+  database:
+    primary-key-name: id
+    primary-key-type: STRING
+    default-schema: public
+    migration-mode: APPLY

@@ -1,178 +1,72 @@
 package net.ximatai.muyun.database.jdbi;
 
-import net.ximatai.muyun.database.core.IDatabaseOperations;
-import net.ximatai.muyun.database.core.IMetaDataLoader;
-import net.ximatai.muyun.database.core.metadata.DBColumn;
-import net.ximatai.muyun.database.core.metadata.DBTable;
 import org.jdbi.v3.core.Jdbi;
-import org.jdbi.v3.core.mapper.MapMapper;
 import org.jdbi.v3.core.mapper.RowMapper;
 import org.jdbi.v3.core.statement.PreparedBatch;
 import org.jdbi.v3.core.statement.Query;
 import org.jdbi.v3.core.statement.Update;
 
-import java.math.BigDecimal;
-import java.math.BigInteger;
 import java.sql.Array;
 import java.sql.Connection;
 import java.sql.SQLException;
-import java.sql.Timestamp;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Supplier;
 
 /**
  * JDBI数据库操作实现类
  * 基于JDBI框架实现数据库的CRUD操作和数据类型转换
  */
-public class JdbiDatabaseOperations<K> implements IDatabaseOperations<K> {
+public class JdbiDatabaseOperations<K> extends AbstractJdbiDatabaseOperations<K> {
 
-    // 日期时间格式化器
-    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-    private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-
+    private static final int WRITE_RETRY_TIMES = 3;
     private final Jdbi jdbi;
-    private final JdbiMetaDataLoader metaDataLoader;
-    private RowMapper<Map<String, Object>> rowMapper;
-    private final static MapMapper MAP_MAPPER = new MapMapper();
-
-    private final Class<K> pkType;
-    private final String pkName;
-
-    @Override
-    public String getPKName() {
-        return pkName;
-    }
-
-    public RowMapper<Map<String, Object>> getRowMapper() {
-        if (rowMapper == null) {
-            return MAP_MAPPER;
-        }
-        return rowMapper;
-    }
-
-    /**
-     * 设置自定义行映射器
-     *
-     * @param rowMapper 行映射器实例
-     * @return 当前操作实例
-     */
-    public JdbiDatabaseOperations<K> setRowMapper(RowMapper<Map<String, Object>> rowMapper) {
-        Objects.requireNonNull(rowMapper);
-        this.rowMapper = rowMapper;
-        return this;
-    }
 
     public JdbiDatabaseOperations(Jdbi jdbi, JdbiMetaDataLoader metaDataLoader, Class<K> pkType, String pkName) {
+        super(metaDataLoader, pkType, pkName);
         this.jdbi = jdbi;
-        this.metaDataLoader = metaDataLoader;
-        this.pkType = pkType;
-        this.pkName = pkName;
     }
 
     public Jdbi getJdbi() {
         return jdbi;
     }
 
-    @Override
-    public IMetaDataLoader getMetaDataLoader() {
-        return metaDataLoader;
-    }
-
-    @Override
-    public Map<String, Object> transformDataForDB(DBTable dbTable, Map<String, Object> data) {
-        Map<String, Object> transformedData = new HashMap<>(data);
-        transformedData.forEach((k, v) -> {
-            DBColumn dbColumn = dbTable.getColumn(k);
-            if (dbColumn != null) {
-                transformedData.put(k, getDBValue(v, dbColumn.getType()));
-            }
-        });
-        return transformedData;
+    public Class<K> getPkType() {
+        return pkType;
     }
 
     /**
-     * 将Java对象转换为数据库对应的数据类型
-     * 支持数组、数值、布尔、日期时间等类型转换
-     *
-     * @param value Java对象值
-     * @param type  数据库类型名称
-     * @return 转换后的数据库值
+     * 设置自定义行映射器
      */
-    public Object getDBValue(Object value, String type) {
-        if (value == null) {
-            return null;
-        }
-
-        // 处理数组类型（以_开头的类型，如_varchar）
-        if (type.startsWith("_")) {
-            if (value instanceof java.sql.Array) {
-                return value;
-            }
-
-            Object[] arrayValue;
-            if (value instanceof String val) {
-                arrayValue = val.split(",");
-            } else if (value instanceof List<?> val) {
-                arrayValue = val.toArray();
-            } else {
-                return value;
-            }
-
-            String subType = type.substring(1);
-            return switch (subType) {
-                case "varchar" -> Arrays.stream(arrayValue)
-                        .map(Object::toString)
-                        .toArray(String[]::new);
-                case "int4" -> Arrays.stream(arrayValue)
-                        .map(val -> Integer.parseInt(val.toString()))
-                        .toArray(Integer[]::new);
-                case "bool" -> Arrays.stream(arrayValue)
-                        .map(val -> Boolean.parseBoolean(val.toString()))
-                        .toArray(Boolean[]::new);
-                default -> value;
-            };
-        }
-
-        // 处理标量类型
-        return switch (type) {
-            case "varchar" -> value.toString();
-            case "int8" -> convertToBigInteger(value);
-            case "int4", "int2" -> convertToInteger(value);
-            case "bool" -> isTrue(value);
-            case "date", "timestamp" -> handleDateTimestamp(value);
-            case "numeric" -> convertToBigDecimal(value);
-            case "bytea" -> convertToByteArray(value);
-            default -> value;
-        };
+    public JdbiDatabaseOperations<K> setRowMapper(RowMapper<Map<String, Object>> rowMapper) {
+        setRowMapperInternal(rowMapper);
+        return this;
     }
 
     @Override
     public K insertWithPK(String sql, Map<String, Object> params, K pk) {
-        getJdbi().withHandle(handle ->
+        withWriteRetry(() -> getJdbi().withHandle(handle ->
                 handle.createUpdate(sql)
                         .attachToHandleForCleanup()
                         .bindMap(params)
                         .execute()
-        );
+        ));
         return pk;
     }
 
     @Override
     public K insert(String sql, Map<String, Object> params) {
-        return getJdbi().withHandle(handle ->
+        return withWriteRetry(() -> getJdbi().withHandle(handle ->
                 handle.createUpdate(sql)
                         .attachToHandleForCleanup()
                         .bindMap(params)
-                        .executeAndReturnGeneratedKeys(getPKName()).mapTo(pkType).one());
+                        .executeAndReturnGeneratedKeys(getPKName()).mapTo(pkType).one()));
     }
 
     @Override
     public List<K> batchInsert(String sql, List<Map<String, Object>> paramsList) {
-        return getJdbi().withHandle(handle -> {
+        return withWriteRetry(() -> getJdbi().withHandle(handle -> {
             List<K> generatedKeys = new ArrayList<>();
             PreparedBatch batch = handle.prepareBatch(sql);
 
@@ -186,7 +80,7 @@ public class JdbiDatabaseOperations<K> implements IDatabaseOperations<K> {
                     .forEach(generatedKeys::add);
 
             return generatedKeys;
-        });
+        }));
     }
 
     @Override
@@ -237,16 +131,16 @@ public class JdbiDatabaseOperations<K> implements IDatabaseOperations<K> {
 
     @Override
     public int update(String sql, Map<String, Object> params) {
-        return getJdbi().withHandle(handle ->
+        return withWriteRetry(() -> getJdbi().withHandle(handle ->
                 handle.createUpdate(sql)
                         .attachToHandleForCleanup()
                         .bindMap(params)
-                        .execute());
+                        .execute()));
     }
 
     @Override
     public int update(String sql, List<Object> params) {
-        return getJdbi().withHandle(handle -> {
+        return withWriteRetry(() -> getJdbi().withHandle(handle -> {
             Update query = handle.createUpdate(sql).attachToHandleForCleanup();
             if (params != null && !params.isEmpty()) {
                 for (int i = 0; i < params.size(); i++) {
@@ -254,32 +148,26 @@ public class JdbiDatabaseOperations<K> implements IDatabaseOperations<K> {
                 }
             }
             return query.execute();
-        });
+        }));
     }
 
     @Override
     public int execute(String sql) {
-        return getJdbi().withHandle(handle -> handle.execute(sql));
+        return withWriteRetry(() -> getJdbi().withHandle(handle -> handle.execute(sql)));
     }
 
     @Override
     public int execute(String sql, Object... params) {
-        return getJdbi().withHandle(handle -> handle.execute(sql, params));
+        return withWriteRetry(() -> getJdbi().withHandle(handle -> handle.execute(sql, params)));
     }
 
     @Override
     public int execute(String sql, List<Object> params) {
-        return getJdbi().withHandle(handle -> handle.execute(sql, params.toArray()));
+        return withWriteRetry(() -> getJdbi().withHandle(handle -> handle.execute(sql, params.toArray())));
     }
 
-    /**
-     * 创建数据库数组对象
-     *
-     * @param list 数据列表
-     * @param type 数组元素类型
-     * @return SQL数组对象
-     */
-    public Array createArray(List list, String type) {
+    @Override
+    public Array createArray(List<Object> list, String type) {
         try {
             return getJdbi().withHandle(handle -> {
                 Connection connection = handle.getConnection();
@@ -290,100 +178,44 @@ public class JdbiDatabaseOperations<K> implements IDatabaseOperations<K> {
         }
     }
 
-    // 数据类型转换辅助方法
-    private BigInteger convertToBigInteger(Object value) {
-        if (value instanceof String val) {
-            return new BigInteger(val);
-        } else if (value instanceof Number val) {
-            return BigInteger.valueOf(val.longValue());
-        }
-        throw new IllegalArgumentException("Cannot convert to Bigint: " + value);
-    }
-
-    private Integer convertToInteger(Object value) {
-        if (value instanceof String val) {
-            return Integer.valueOf(val);
-        } else if (value instanceof Number val) {
-            return val.intValue();
-        }
-        throw new IllegalArgumentException("Cannot convert to int: " + value);
-    }
-
-    private BigDecimal convertToBigDecimal(Object value) {
-        if (value instanceof String val && !isBlank(val)) {
-            return new BigDecimal(val);
-        } else if (value instanceof Number val) {
-            return BigDecimal.valueOf(val.doubleValue());
-        }
-        return null;
-    }
-
-    private byte[] convertToByteArray(Object value) {
-        if (value instanceof byte[] val) {
-            return val;
-        }
-        return value.toString().getBytes();
-    }
-
-    private boolean isBlank(String value) {
-        return value == null || value.trim().isEmpty();
-    }
-
-    private boolean isTrue(Object value) {
-        return Objects.equals(value, Boolean.TRUE) || "true".equalsIgnoreCase(value.toString());
-    }
-
-    /**
-     * 字符串转换为SQL日期
-     */
-    public static Date stringToSqlDate(String dateString) {
-        if (dateString == null || dateString.isEmpty()) {
-            throw new IllegalArgumentException("Date string cannot be null or empty.");
-        }
-        try {
-            LocalDate localDate = LocalDate.parse(dateString.substring(0, 10), DATE_FORMATTER);
-            return Date.from(localDate.atStartOfDay(ZoneId.systemDefault()).toInstant());
-        } catch (DateTimeParseException e) {
-            throw new IllegalArgumentException("Invalid date format: " + dateString);
-        }
-    }
-
-    /**
-     * 字符串转换为SQL时间戳
-     */
-    public static Timestamp stringToSqlTimestamp(String dateString) {
-        if (dateString == null || dateString.isEmpty()) {
-            return null;
-        }
-        try {
-            if (dateString.length() == 10) {
-                dateString += " 00:00:00";
+    private <T> T withWriteRetry(Supplier<T> action) {
+        RuntimeException last = null;
+        for (int i = 0; i < WRITE_RETRY_TIMES; i++) {
+            try {
+                return action.get();
+            } catch (RuntimeException ex) {
+                if (!isRetryableWriteException(ex) || i >= WRITE_RETRY_TIMES - 1) {
+                    throw ex;
+                }
+                last = ex;
+                try {
+                    Thread.sleep(20L * (i + 1));
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw ex;
+                }
             }
-            LocalDateTime localDateTime = LocalDateTime.parse(dateString, DATE_TIME_FORMATTER);
-            return Timestamp.valueOf(localDateTime);
-        } catch (DateTimeParseException e) {
-            throw new IllegalArgumentException("Invalid datetime format: " + dateString);
         }
+        throw last == null ? new IllegalStateException("Unexpected write retry state") : last;
     }
 
-    /**
-     * 处理日期时间类型转换
-     */
-    public static Timestamp handleDateTimestamp(Object value) {
-        if (value instanceof Timestamp val) {
-            return val;
-        } else if ("".equals(value)) {
-            return null;
-        } else if (value instanceof LocalDate val) {
-            return Timestamp.valueOf(val.atStartOfDay());
-        } else if (value instanceof LocalDateTime val) {
-            return Timestamp.valueOf(val);
-        } else if (value instanceof Date val) {
-            return new Timestamp(val.getTime());
-        } else if (value instanceof String val) {
-            return stringToSqlTimestamp(val);
-        } else {
-            throw new IllegalArgumentException("Unsupported type: " + value.getClass().getName());
+    private boolean isRetryableWriteException(Throwable ex) {
+        Throwable cursor = ex;
+        while (cursor != null) {
+            if (cursor instanceof SQLException sqlEx) {
+                String sqlState = sqlEx.getSQLState();
+                int code = sqlEx.getErrorCode();
+                if ("40001".equals(sqlState) || code == 1213 || code == 1205) {
+                    return true;
+                }
+                String message = sqlEx.getMessage();
+                if (message != null && (message.contains("Deadlock found")
+                        || message.contains("Lock wait timeout exceeded"))) {
+                    return true;
+                }
+            }
+            cursor = cursor.getCause();
         }
+        return false;
     }
 }

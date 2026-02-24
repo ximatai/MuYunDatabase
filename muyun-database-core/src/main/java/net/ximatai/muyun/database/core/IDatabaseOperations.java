@@ -1,6 +1,7 @@
 package net.ximatai.muyun.database.core;
 
 import net.ximatai.muyun.database.core.exception.MuYunDatabaseException;
+import net.ximatai.muyun.database.core.exception.TableNotFound;
 import net.ximatai.muyun.database.core.metadata.DBColumn;
 import net.ximatai.muyun.database.core.metadata.DBInfo;
 import net.ximatai.muyun.database.core.metadata.DBTable;
@@ -56,6 +57,18 @@ public interface IDatabaseOperations<K> {
     }
 
     /**
+     * 兜底处理动态建表后的元数据缓存滞后：首次缺表时刷新缓存并重试一次。
+     */
+    default DBTable resolveTable(String schema, String tableName) {
+        try {
+            return getDBInfo().getSchema(schema).getTable(tableName);
+        } catch (TableNotFound first) {
+            resetDBInfo();
+            return getDBInfo().getSchema(schema).getTable(tableName);
+        }
+    }
+
+    /**
      * 构建插入SQL语句
      *
      * @param schema    模式名
@@ -64,7 +77,7 @@ public interface IDatabaseOperations<K> {
      * @return 插入SQL语句
      */
     default String buildInsertSql(String schema, String tableName, Map<String, ?> params) {
-        DBTable dbTable = getDBInfo().getSchema(schema).getTable(tableName);
+        DBTable dbTable = resolveTable(schema, tableName);
         Objects.requireNonNull(dbTable);
 
         Map<String, DBColumn> columnMap = dbTable.getColumnMap();
@@ -91,7 +104,7 @@ public interface IDatabaseOperations<K> {
      * @return 更新SQL语句
      */
     default String buildUpdateSql(String schema, String tableName, Map<String, Object> params, String pkName) {
-        DBTable dbTable = getDBInfo().getSchema(schema).getTable(tableName);
+        DBTable dbTable = resolveTable(schema, tableName);
         Objects.requireNonNull(dbTable);
 
         Map<String, DBColumn> columnMap = dbTable.getColumnMap();
@@ -120,7 +133,7 @@ public interface IDatabaseOperations<K> {
      * @return 插入记录的主键ID
      */
     default K insertItem(String schema, String tableName, Map<String, Object> params) {
-        DBTable table = getDBInfo().getSchema(schema).getTable(tableName);
+        DBTable table = resolveTable(schema, tableName);
         Map<String, Object> transformed = transformDataForDB(table, params);
         String sql = buildInsertSql(schema, tableName, transformed);
 
@@ -162,7 +175,7 @@ public interface IDatabaseOperations<K> {
             throw new IllegalArgumentException("The list must not be empty");
         }
 
-        DBTable table = getDBInfo().getSchema(schema).getTable(tableName);
+        DBTable table = resolveTable(schema, tableName);
         List<Map<String, Object>> transformedList = list.stream().map(it -> transformDataForDB(table, it)).collect(Collectors.toList());
 
         return this.batchInsert(buildInsertSql(schema, tableName, transformedList.get(0)), transformedList);
@@ -181,9 +194,61 @@ public interface IDatabaseOperations<K> {
      * @return 影响的行数
      */
     default int updateItem(String schema, String tableName, Map<String, Object> params) {
-        DBTable table = getDBInfo().getSchema(schema).getTable(tableName);
+        DBTable table = resolveTable(schema, tableName);
         Map<String, Object> transformed = transformDataForDB(table, params);
         return this.update(buildUpdateSql(schema, tableName, transformed, getPKName()), transformed);
+    }
+
+    /**
+     * 构建按主键局部字段更新 SQL。
+     * 只更新 patchParams 中存在且属于表字段的列；主键字段永不进入 SET 子句。
+     */
+    default String buildPatchUpdateSql(String schema,
+                                       String tableName,
+                                       Map<String, Object> patchParams,
+                                       String pkName,
+                                       String pkBindName) {
+        DBTable dbTable = resolveTable(schema, tableName);
+        Objects.requireNonNull(dbTable);
+
+        Map<String, DBColumn> columnMap = dbTable.getColumnMap();
+        StringJoiner setClause = new StringJoiner(", ");
+        patchParams.keySet().forEach(key -> {
+            if (columnMap.containsKey(key) && !key.equalsIgnoreCase(pkName)) {
+                setClause.add(key + "=:" + key);
+            }
+        });
+
+        String renderedSetClause = setClause.toString();
+        if (renderedSetClause.isBlank()) {
+            throw new MuYunDatabaseException("No updatable fields were provided for patch update");
+        }
+        return "update " + schema + "." + tableName + " set " + renderedSetClause + " where " + pkName + " = :" + pkBindName;
+    }
+
+    /**
+     * 按主键执行局部字段更新（使用默认模式）。
+     */
+    default int patchUpdateItem(String tableName, K id, Map<String, Object> patchParams) {
+        return patchUpdateItem(getDefaultSchemaName(), tableName, id, patchParams);
+    }
+
+    /**
+     * 按主键执行局部字段更新。
+     */
+    default int patchUpdateItem(String schema, String tableName, K id, Map<String, Object> patchParams) {
+        if (id == null) {
+            throw new MuYunDatabaseException("The primary key value must not be null");
+        }
+        Map<String, Object> safePatch = patchParams == null ? Collections.emptyMap() : patchParams;
+        DBTable table = resolveTable(schema, tableName);
+        Map<String, Object> transformedPatch = transformDataForDB(table, safePatch);
+
+        String pkBindName = "__pk";
+        String sql = buildPatchUpdateSql(schema, tableName, transformedPatch, getPKName(), pkBindName);
+        Map<String, Object> execParams = new HashMap<>(transformedPatch);
+        execParams.put(pkBindName, id);
+        return this.update(sql, execParams);
     }
 
     /**
@@ -220,6 +285,24 @@ public interface IDatabaseOperations<K> {
     }
 
     /**
+     * 是否支持方言级原子 upsert
+     */
+    default boolean supportsAtomicUpsert() {
+        return false;
+    }
+
+    /**
+     * 使用数据库方言原子 upsert，默认不支持
+     */
+    default int atomicUpsertItem(String schema, String tableName, Map<String, Object> params) {
+        throw new UnsupportedOperationException("Atomic upsert is not supported by this IDatabaseOperations implementation");
+    }
+
+    default int atomicUpsertItem(String tableName, Map<String, Object> params) {
+        return atomicUpsertItem(getDefaultSchemaName(), tableName, params);
+    }
+
+    /**
      * 删除记录（使用默认模式）
      */
     default int deleteItem(String tableName, K id) {
@@ -232,7 +315,7 @@ public interface IDatabaseOperations<K> {
      * @return 影响的行数
      */
     default int deleteItem(String schema, String tableName, K id) {
-        DBTable dbTable = getDBInfo().getSchema(schema).getTable(tableName);
+        DBTable dbTable = resolveTable(schema, tableName);
         Objects.requireNonNull(dbTable);
 
         return this.delete("DELETE FROM " + schema + "." + tableName + " WHERE " + getPKName() + "=:id", Collections.singletonMap("id", id));
@@ -251,7 +334,7 @@ public interface IDatabaseOperations<K> {
      * @return 记录映射，未找到时返回null
      */
     default Map<String, Object> getItem(String schema, String tableName, K id) {
-        DBTable dbTable = getDBInfo().getSchema(schema).getTable(tableName);
+        DBTable dbTable = resolveTable(schema, tableName);
         Objects.requireNonNull(dbTable);
 
         return this.row("SELECT * FROM " + schema + "." + tableName + " WHERE " + getPKName() + "=:id", Collections.singletonMap("id", id));

@@ -2,6 +2,10 @@ package net.ximatai.muyun.database.core.builder;
 
 import net.ximatai.muyun.database.core.IDatabaseOperations;
 import net.ximatai.muyun.database.core.annotation.AnnotationProcessor;
+import net.ximatai.muyun.database.core.builder.sql.MySqlTableBuilderSqlDialect;
+import net.ximatai.muyun.database.core.builder.sql.PostgresTableBuilderSqlDialect;
+import net.ximatai.muyun.database.core.builder.sql.SchemaBuildRules;
+import net.ximatai.muyun.database.core.builder.sql.TableBuilderSqlDialect;
 import net.ximatai.muyun.database.core.exception.MuYunDatabaseException;
 import net.ximatai.muyun.database.core.metadata.*;
 import org.slf4j.Logger;
@@ -10,7 +14,6 @@ import org.slf4j.LoggerFactory;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static net.ximatai.muyun.database.core.metadata.DBInfo.Type.MYSQL;
 import static net.ximatai.muyun.database.core.metadata.DBInfo.Type.POSTGRESQL;
 
 public class TableBuilder {
@@ -19,10 +22,12 @@ public class TableBuilder {
 
     private final DBInfo info;
     private final IDatabaseOperations<?> db;
+    private final TableBuilderSqlDialect dialect;
 
     public TableBuilder(IDatabaseOperations<?> db) {
         this.db = db;
         this.info = db.getDBInfo();
+        this.dialect = createDialect();
     }
 
     public boolean build(Class<?> entityClass) {
@@ -35,13 +40,15 @@ public class TableBuilder {
         boolean result = false;
         String schema = wrapper.getSchema() != null ? wrapper.getSchema() : info.getDefaultSchemaName();
         String name = wrapper.getName();
+        requireSafeIdentifier(schema, "schema");
+        requireSafeIdentifier(name, "table");
 
         logger.info("Table %s.%s build initiated".formatted(schema, name));
 
         String inheritSQL = "";
 
         if (info.getSchema(schema) == null) {
-            db.execute("create schema if not exists " + schema);
+            db.execute(dialect.createSchemaIfNotExists(schema));
             info.addSchema(new DBSchema(schema));
             logger.info("create schema " + schema);
         }
@@ -50,7 +57,10 @@ public class TableBuilder {
 
         // 检查继承的父表是否存在
         inherits.forEach(inherit -> {
-            if (!info.getSchema(inherit.getSchema()).containsTable(inherit.getName())) {
+            requireSafeIdentifier(inherit.getSchema(), "inherit schema");
+            requireSafeIdentifier(inherit.getName(), "inherit table");
+            DBSchema parentSchema = info.getSchema(inherit.getSchema());
+            if (parentSchema == null || !parentSchema.containsTable(inherit.getName())) {
                 throw new MuYunDatabaseException("Table " + inherit + " does not exist");
             }
         });
@@ -60,7 +70,7 @@ public class TableBuilder {
         }
 
         if (!info.getSchema(schema).containsTable(wrapper.getName())) {
-            db.execute("create table " + schema + "." + name + "(a_temp_column int)" + inheritSQL);
+            db.execute(dialect.createTableWithTempColumn(schema + "." + name, inheritSQL));
             logger.info("create table " + schema + "." + name);
             result = true;
             info.getSchema(schema).addTable(new DBTable(db.getMetaDataLoader()).setName(name).setSchema(schema));
@@ -71,11 +81,7 @@ public class TableBuilder {
         buildInheritColumns(dbTable, inherits);
 
         if (wrapper.getComment() != null) {
-            if (getDatabaseType().equals(POSTGRESQL)) {
-                db.execute("comment on table " + schema + "." + name + " is '" + wrapper.getComment() + "'");
-            } else if (getDatabaseType().equals(MYSQL)) {
-                db.execute("alter table " + schema + "." + name + " comment '" + wrapper.getComment() + "'");
-            }
+            db.execute(dialect.setTableComment(schema + "." + name, wrapper.getComment()));
         }
 
         if (wrapper.getPrimaryKey() != null) {
@@ -88,7 +94,7 @@ public class TableBuilder {
         });
 
         if (result) {
-            db.execute("alter table " + schema + "." + name + " drop column a_temp_column;");
+            db.execute(dialect.dropTempColumn(schema + "." + name));
         }
 
         dbTable.resetColumns();
@@ -140,8 +146,9 @@ public class TableBuilder {
     private boolean checkAndBuildColumn(DBTable dbTable, Column column) {
         boolean isNew = false;
         String name = column.getName();
+        requireSafeIdentifier(name, "column");
         ColumnType dataType = column.getType();
-        String type = getColumnTypeTransform().transform(dataType);
+        String type = SchemaBuildRules.columnTypeTransform(getDatabaseType()).transform(dataType);
 
         if (ColumnType.UNKNOWN.name().equals(type)) {
             throw new MuYunDatabaseException("column: " + column + " type not provided");
@@ -149,24 +156,18 @@ public class TableBuilder {
             Objects.requireNonNull(type, "column: " + column + " type not provided");
         }
 
-        String defaultValue = column.getDefaultValue();
         String comment = column.getComment();
-        String length = getColumnLength(column);
+        String length = SchemaBuildRules.columnLength(column);
 
         boolean sequence = column.isSequence();
         boolean nullable = column.isNullable();
         boolean primaryKey = column.isPrimaryKey();
+        String defaultValue = column.getDefaultValue();
 
-        String defaultValueString = defaultValue == null ? "" : ("AUTO_INCREMENT".equalsIgnoreCase(defaultValue) ? "" : " DEFAULT ") + defaultValue;
-        String primaryKeyString = "";
-        if (defaultValueString.equalsIgnoreCase("AUTO_INCREMENT") && primaryKey) {
-            primaryKeyString = " PRIMARY KEY ";
-        }
-
-        String baseColumnString = name + " " + type + length + (nullable ? " null " : " not null ") + defaultValueString + primaryKeyString;
+        String baseColumnString = SchemaBuildRules.columnDefinition(column, type);
 
         if (!dbTable.contains(name)) {
-            db.execute("alter table " + dbTable.getSchemaDotTable() + " add " + baseColumnString);
+            db.execute(dialect.addColumn(dbTable.getSchemaDotTable(), baseColumnString));
             dbTable.resetColumns();
             isNew = true;
             logger.info("column " + dbTable.getSchemaDotTable() + "." + name + " built");
@@ -175,11 +176,7 @@ public class TableBuilder {
         DBColumn dbColumn = dbTable.getColumn(name);
 
         if (!type.equalsIgnoreCase(dbColumn.getType()) || column.getLength() != null && !column.getLength().equals(dbColumn.getLength())) {
-            if (getDatabaseType().equals(POSTGRESQL)) {
-                db.execute("alter table " + dbTable.getSchemaDotTable() + " alter column " + name + " type " + type + length);
-            } else if (getDatabaseType().equals(MYSQL)) {
-                db.execute("alter table " + dbTable.getSchemaDotTable() + " modify column " + baseColumnString);
-            }
+            db.execute(dialect.alterColumnType(dbTable.getSchemaDotTable(), name, type + length, baseColumnString));
         }
 
         if (primaryKey && !dbColumn.isPrimaryKey()) {
@@ -187,100 +184,48 @@ public class TableBuilder {
         }
 
         if (dbColumn.isNullable() != nullable) {
-            if (getDatabaseType().equals(POSTGRESQL)) {
-                String flag = nullable ? "drop" : "set";
-                db.execute("alter table " + dbTable.getSchemaDotTable() + " alter column " + name + " " + flag + " not null");
-            } else if (getDatabaseType().equals(MYSQL)) {
-                db.execute("alter table " + dbTable.getSchemaDotTable() + " modify column " + baseColumnString);
-            }
+            db.execute(dialect.alterColumnNullable(dbTable.getSchemaDotTable(), name, nullable, baseColumnString));
 
         }
 
         if ((!dbColumn.isSequence() && !Objects.equals(dbColumn.getDefaultValueWithString(), defaultValue))) {
-            if (getDatabaseType().equals(POSTGRESQL)) {
-                db.execute("alter table " + dbTable.getSchemaDotTable() + " alter column " + name + " set default " + defaultValue);
-            } else if (getDatabaseType().equals(MYSQL)) {
-                db.execute("alter table " + dbTable.getSchemaDotTable() + " modify column " + baseColumnString);
-            }
+            db.execute(dialect.alterColumnDefault(dbTable.getSchemaDotTable(), name, defaultValue, baseColumnString));
         }
 
-        if (getDatabaseType().equals(POSTGRESQL) && dbColumn.isSequence() != sequence) {
-            String seq = dbTable.getName() + "_" + name + "_sql";
-            if (sequence) {
-                db.execute("create sequence if not exists " + dbTable.getSchema() + "." + seq);
-                db.execute("alter table " + dbTable.getSchemaDotTable() + " alter column " + name + " set default nextval('" + dbTable.getSchema() + "." + seq + "')");
-            } else {
-                db.execute("alter table " + dbTable.getSchemaDotTable() + " alter column " + name + " drop default");
-                db.execute("drop sequence if exists " + dbTable.getSchema() + "." + seq + ";");
-            }
+        if (dbColumn.isSequence() != sequence) {
+            dialect.alterColumnSequence(dbTable.getSchemaDotTable(), dbTable.getSchema(), dbTable.getName(), name, sequence)
+                    .forEach(db::execute);
         }
 
         if (comment != null && !Objects.equals(dbColumn.getDescription(), comment)) {
-            if (getDatabaseType().equals(POSTGRESQL)) {
-                db.execute("comment on column " + dbTable.getSchemaDotTable() + "." + name + " is '" + comment + "'");
-            } else if (getDatabaseType().equals(MYSQL)) {
-                db.execute("alter table " + dbTable.getSchemaDotTable() + " modify column " + baseColumnString + " COMMENT '" + comment + "'");
-            }
+            db.execute(dialect.setColumnComment(dbTable.getSchemaDotTable(), name, comment, baseColumnString));
         }
 
         return isNew;
     }
 
-    private String getColumnLength(Column column) {
-        String length = column.getLength() == null ? "" : "(" + column.getLength() + ")";
-
-        if (column.getType().equals(ColumnType.TEXT)) {
-            return "";
-        }
-
-        if (column.getType().equals(ColumnType.NUMERIC)) {
-            if (column.getScale() != null && column.getPrecision() != null) {
-                return "(" + column.getPrecision() + "," + column.getScale() + ")";
-            }
-        }
-
-        return length;
-    }
-
     private boolean checkAndBuildIndex(DBTable dbTable, Index index) {
-        Set<String> columns = new HashSet<>(index.getColumns());
+        List<String> columns = new ArrayList<>(index.getColumns());
+        columns.forEach(columnName -> requireSafeIdentifier(columnName, "index column"));
+        Set<String> columnSet = new HashSet<>(columns);
         List<DBIndex> indexList = dbTable.getIndexList();
-        Optional<DBIndex> dbIndexOptional = indexList.stream().filter(i -> new HashSet<>(i.getColumns()).equals(columns)).findFirst();
+        Optional<DBIndex> dbIndexOptional = indexList.stream().filter(i -> new HashSet<>(i.getColumns()).equals(columnSet)).findFirst();
 
         if (dbIndexOptional.isPresent()) {
             DBIndex dbIndex = dbIndexOptional.get();
             if (dbIndex.isUnique() == index.isUnique()) {
                 return false;
             } else {
-                if (getDatabaseType().equals(POSTGRESQL)) {
-                    db.execute("drop index " + dbTable.getSchema() + "." + dbIndex.getName() + ";");
-                } else {
-                    db.execute("drop index " + dbIndex.getName() + " on " + dbTable.getSchemaDotTable() + ";");
-                }
+                db.execute(dialect.dropIndex(dbTable.getSchema(), dbTable.getSchemaDotTable(), dbIndex.getName()));
                 logger.info("index " + dbTable.getSchemaDotTable() + "." + dbIndex.getName() + " dropped");
             }
 
         }
 
-        String indexName = dbTable.getName() + "_" + String.join("_", columns);
+        String indexName = SchemaBuildRules.indexName(dbTable.getName(), index);
+        requireSafeIdentifier(indexName, "index");
 
-        String unique = "";
-        if (index.isUnique()) {
-            unique = "unique";
-            indexName += "_uindex";
-        } else {
-            indexName += "_index";
-        }
-
-        if (index.getName() != null && !index.getName().isEmpty()) {
-            indexName = index.getName();
-        }
-
-        if (getDatabaseType().equals(POSTGRESQL)) {
-            db.execute("create " + unique + " index if not exists " + indexName + " on " + dbTable.getSchemaDotTable() + "(" + String.join(",", columns) + ");");
-        } else if (getDatabaseType().equals(MYSQL)) {
-            db.execute("create " + unique + " index " + indexName + " on " + dbTable.getSchemaDotTable() + "(" + String.join(",", columns) + ");");
-        }
+        db.execute(dialect.createIndex(dbTable.getSchemaDotTable(), indexName, columns, index.isUnique()));
 
         logger.info("index " + dbTable.getSchemaDotTable() + "." + indexName + " created");
 
@@ -292,29 +237,31 @@ public class TableBuilder {
             return "";
         }
 
-        StringBuilder builder = new StringBuilder("inherits (");
-        inherits.forEach(inherit -> {
-            builder.append(inherit.getSchema())
-                    .append(".")
-                    .append(inherit.getName());
-        });
-        builder.append(")");
-        return builder.toString();
+        List<String> parents = inherits.stream()
+                .peek(inherit -> {
+                    requireSafeIdentifier(inherit.getSchema(), "inherit schema");
+                    requireSafeIdentifier(inherit.getName(), "inherit table");
+                })
+                .map(inherit -> inherit.getSchema() + "." + inherit.getName())
+                .toList();
+        return "inherits (" + String.join(", ", parents) + ")";
     }
 
     private DBInfo.Type getDatabaseType() {
-        String dbName = info.getTypeName().toUpperCase();
-        return switch (dbName) {
-            case "POSTGRESQL" -> POSTGRESQL;
-            default -> MYSQL;
+        return info.getDatabaseType();
+    }
+
+    private TableBuilderSqlDialect createDialect() {
+        return switch (getDatabaseType()) {
+            case POSTGRESQL -> new PostgresTableBuilderSqlDialect();
+            default -> new MySqlTableBuilderSqlDialect();
         };
     }
 
-    private IColumnTypeTransform getColumnTypeTransform() {
-        return switch (getDatabaseType()) {
-            case POSTGRESQL -> IColumnTypeTransform.POSTGRESQL;
-            default -> IColumnTypeTransform.DEFAULT;
-        };
+    private void requireSafeIdentifier(String identifier, String type) {
+        if (!SchemaBuildRules.isSafeIdentifier(identifier)) {
+            throw new MuYunDatabaseException("Invalid " + type + " identifier: " + identifier);
+        }
     }
 
 }

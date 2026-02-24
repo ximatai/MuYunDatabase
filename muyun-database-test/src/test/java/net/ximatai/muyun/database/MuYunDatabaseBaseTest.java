@@ -2,6 +2,7 @@ package net.ximatai.muyun.database;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import net.ximatai.muyun.database.core.annotation.Default;
 import net.ximatai.muyun.database.core.annotation.Id;
 import net.ximatai.muyun.database.core.annotation.Table;
@@ -9,20 +10,29 @@ import net.ximatai.muyun.database.core.builder.Column;
 import net.ximatai.muyun.database.core.builder.ColumnType;
 import net.ximatai.muyun.database.core.builder.TableBuilder;
 import net.ximatai.muyun.database.core.builder.TableWrapper;
+import net.ximatai.muyun.database.core.exception.MuYunDatabaseException;
 import net.ximatai.muyun.database.core.metadata.DBColumn;
 import net.ximatai.muyun.database.core.metadata.DBIndex;
 import net.ximatai.muyun.database.core.metadata.DBInfo;
 import net.ximatai.muyun.database.core.metadata.DBTable;
+import net.ximatai.muyun.database.core.orm.*;
 import net.ximatai.muyun.database.jdbi.JdbiDatabaseOperations;
 import net.ximatai.muyun.database.jdbi.JdbiMetaDataLoader;
+import net.ximatai.muyun.database.jdbi.JdbiRecommendedPlugins;
+import net.ximatai.muyun.database.jdbi.JdbiTransactionRunner;
+import org.jdbi.v3.json.Json;
 import org.jdbi.v3.core.Handle;
 import org.jdbi.v3.core.Jdbi;
 import org.jdbi.v3.core.mapper.CaseStrategy;
 import org.jdbi.v3.core.mapper.MapMappers;
+import org.jdbi.v3.sqlobject.customizer.Bind;
+import org.jdbi.v3.sqlobject.customizer.Define;
+import org.jdbi.v3.sqlobject.statement.GetGeneratedKeys;
+import org.jdbi.v3.sqlobject.statement.SqlQuery;
+import org.jdbi.v3.sqlobject.statement.SqlUpdate;
 import org.jdbi.v3.core.statement.Slf4JSqlLogger;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.testcontainers.containers.JdbcDatabaseContainer;
 
@@ -36,6 +46,11 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -48,14 +63,14 @@ public abstract class MuYunDatabaseBaseTest {
     Jdbi jdbi;
     JdbiMetaDataLoader loader;
     JdbiDatabaseOperations<String> db;
+    SimpleEntityManager orm;
+    JdbiTransactionRunner<String> txRunner;
 
     abstract DatabaseType getDatabaseType();
 
     abstract Column getPrimaryKey();
 
     abstract JdbcDatabaseContainer getContainer();
-
-    private boolean tableCreated = false;
 
     DataSource getDataSource() {
         if (dataSource == null) {
@@ -73,28 +88,31 @@ public abstract class MuYunDatabaseBaseTest {
     void setUp() {
         jdbi = Jdbi.create(getDataSource())
                 .setSqlLogger(new Slf4JSqlLogger());
+        JdbiRecommendedPlugins.installCommon(jdbi);
+        if (getDatabaseType() == DatabaseType.POSTGRESQL) {
+            JdbiRecommendedPlugins.installPostgres(jdbi);
+        }
         jdbi.getConfig(MapMappers.class).setCaseChange(CaseStrategy.NOP);
         loader = new JdbiMetaDataLoader(jdbi);
         db = new JdbiDatabaseOperations<>(jdbi, loader, String.class, "id");
+        orm = new DefaultSimpleEntityManager(db);
+        txRunner = new JdbiTransactionRunner<>(jdbi, loader, String.class, "id");
     }
 
     @BeforeEach
     void beforeEach() {
-        if (!tableCreated) { // 测试之前要先创建表
-            testTableBuilder();
-        }
+        // 每次测试前都对齐 basic 表基线结构，避免测试间顺序耦合
+        ensureBasicTable();
     }
 
-    @Test
-    void testGetDBInfo() {
+    protected void testGetDBInfo() {
         DBInfo info = loader.getDBInfo();
 
         assertEquals(getDatabaseType().name().toLowerCase(), info.getTypeName().toLowerCase());
         assertNotNull(info.getDefaultSchema());
     }
 
-    @Test
-    void testTableBuilder() {
+    protected void ensureBasicTable() {
         TableWrapper basic = TableWrapper.withName("basic")
                 .setPrimaryKey(getPrimaryKey())
                 .setComment("测试表")
@@ -107,25 +125,24 @@ public abstract class MuYunDatabaseBaseTest {
 
         new TableBuilder(db).build(basic);
 
+    }
+
+    protected void testTableBuilder() {
+        ensureBasicTable();
+
         DBInfo info = loader.getDBInfo();
-
         DBTable table = info.getDefaultSchema().getTable("basic");
-
         assertNotNull(table);
-
         assertTrue(table.contains("id"));
         assertTrue(table.contains("v_name"));
         assertTrue(table.contains("b_flag"));
         assertTrue(table.contains("i_age"));
-
         assertTrue(table.getColumn("id").isPrimaryKey());
-
-        tableCreated = true;
     }
 
-    @Test
-    void testTableBuilderChangeLength() {
-        TableWrapper basic = TableWrapper.withName("basic")
+    protected void testTableBuilderChangeLength() {
+        String tableName = "test_table_builder_change_length";
+        TableWrapper basic = TableWrapper.withName(tableName)
                 .setPrimaryKey(getPrimaryKey())
                 .setComment("测试表")
                 .addColumn(Column.of("v_name").setLength(20).setIndexed().setComment("名称").setDefaultValue("test"))
@@ -144,24 +161,23 @@ public abstract class MuYunDatabaseBaseTest {
                 "d_date", "2024-01-01"
         );
 
-        String id = db.insertItem("basic", body);
+        String id = db.insertItem(tableName, body);
 
-        TableWrapper basic2 = TableWrapper.withName("basic")
+        TableWrapper basic2 = TableWrapper.withName(tableName)
                 .addColumn(Column.of("v_name").setLength(12).setIndexed().setComment("名称").setDefaultValue("test"));
 
         new TableBuilder(db).build(basic2);
 
         DBInfo info = loader.getDBInfo();
 
-        DBTable table = info.getDefaultSchema().getTable("basic");
+        DBTable table = info.getDefaultSchema().getTable(tableName);
         DBColumn vName = table.getColumn("v_name");
 
         assertEquals(12, vName.getLength());
     }
 
-    @Test
-    void testTableBuilderWithoutDefaultSchema() {
-        String schema = "just_a_test";
+    protected void testTableBuilderWithoutDefaultSchema() {
+        String schema = "test_schema_without_default";
         TableWrapper basic = TableWrapper.withName("basic")
                 .setSchema(schema)
                 .setPrimaryKey(getPrimaryKey())
@@ -187,12 +203,9 @@ public abstract class MuYunDatabaseBaseTest {
         assertTrue(table.contains("i_age"));
 
         assertTrue(table.getColumn("id").isPrimaryKey());
-
-        tableCreated = true;
     }
 
-    @Test
-    void testSimpleInsert() {
+    protected void testSimpleInsert() {
 
         Map body = Map.of("v_name", "test_name",
                 "i_age", 5,
@@ -214,8 +227,7 @@ public abstract class MuYunDatabaseBaseTest {
         assertEquals(LocalDate.of(2024, 1, 1), ((Date) item.get("d_date")).toLocalDate());
     }
 
-    @Test
-    void testUpsert() {
+    protected void testUpsert() {
 
         Map body = Map.of(
                 "v_name", "test_name",
@@ -258,8 +270,113 @@ public abstract class MuYunDatabaseBaseTest {
 
     }
 
-    @Test
-    void testBatchInsert() {
+    protected void testAtomicUpsertConcurrent() throws InterruptedException {
+        assertTrue(db.supportsAtomicUpsert(), "Current database should support atomic upsert");
+
+        String tableName = "atomic_upsert_concurrent";
+        TableWrapper table = TableWrapper.withName(tableName)
+                .setPrimaryKey(getPrimaryKey())
+                .addColumn(Column.of("v_name").setLength(64))
+                .addColumn(Column.of("i_age"));
+        new TableBuilder(db).build(table);
+
+        String id = getDatabaseType() == DatabaseType.POSTGRESQL ? UUID.randomUUID().toString() : "1";
+        int threads = 12;
+        int iterations = 20;
+        CountDownLatch startGate = new CountDownLatch(1);
+        CountDownLatch doneGate = new CountDownLatch(threads);
+        AtomicInteger failures = new AtomicInteger(0);
+        AtomicReference<String> firstError = new AtomicReference<>();
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+
+        for (int i = 0; i < threads; i++) {
+            final int worker = i;
+            pool.submit(() -> {
+                try {
+                    startGate.await(5, TimeUnit.SECONDS);
+                    for (int j = 0; j < iterations; j++) {
+                        db.atomicUpsertItem(tableName, Map.of(
+                                "id", id,
+                                "v_name", "worker_" + worker,
+                                "i_age", worker
+                        ));
+                    }
+                } catch (Exception e) {
+                    failures.incrementAndGet();
+                    firstError.compareAndSet(null, e.getClass().getName() + ": " + e.getMessage());
+                } finally {
+                    doneGate.countDown();
+                }
+            });
+        }
+
+        startGate.countDown();
+        assertTrue(doneGate.await(60, TimeUnit.SECONDS), "Concurrent upsert tasks timed out");
+        pool.shutdownNow();
+
+        assertEquals(0, failures.get(),
+                "Atomic upsert should not fail under concurrent writes, first error: " + firstError.get());
+
+        Map<String, Object> row = db.row("select count(*) as c from " + tableName + " where id = :id", Map.of("id", id));
+        assertNotNull(row);
+        Number count = (Number) row.get("c");
+        assertEquals(1, count.intValue(), "Only one row should exist for the same primary key");
+    }
+
+    protected void testAtomicUpsertConcurrentHighContention() throws InterruptedException {
+        assertTrue(db.supportsAtomicUpsert(), "Current database should support atomic upsert");
+
+        String tableName = "atomic_upsert_high_contention";
+        TableWrapper table = TableWrapper.withName(tableName)
+                .setPrimaryKey(getPrimaryKey())
+                .addColumn(Column.of("v_name").setLength(64))
+                .addColumn(Column.of("i_age"));
+        new TableBuilder(db).build(table);
+
+        String id = getDatabaseType() == DatabaseType.POSTGRESQL ? UUID.randomUUID().toString() : "2";
+        int threads = 24;
+        int iterations = 40;
+        CountDownLatch startGate = new CountDownLatch(1);
+        CountDownLatch doneGate = new CountDownLatch(threads);
+        AtomicInteger failures = new AtomicInteger(0);
+        AtomicReference<String> firstError = new AtomicReference<>();
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+
+        for (int i = 0; i < threads; i++) {
+            final int worker = i;
+            pool.submit(() -> {
+                try {
+                    startGate.await(5, TimeUnit.SECONDS);
+                    for (int j = 0; j < iterations; j++) {
+                        db.atomicUpsertItem(tableName, Map.of(
+                                "id", id,
+                                "v_name", "hc_" + worker,
+                                "i_age", worker
+                        ));
+                    }
+                } catch (Exception e) {
+                    failures.incrementAndGet();
+                    firstError.compareAndSet(null, e.getClass().getName() + ": " + e.getMessage());
+                } finally {
+                    doneGate.countDown();
+                }
+            });
+        }
+
+        startGate.countDown();
+        assertTrue(doneGate.await(90, TimeUnit.SECONDS), "High-contention upsert tasks timed out");
+        pool.shutdownNow();
+
+        assertEquals(0, failures.get(),
+                "Atomic upsert should remain stable under high contention, first error: " + firstError.get());
+
+        Map<String, Object> row = db.row("select count(*) as c from " + tableName + " where id = :id", Map.of("id", id));
+        assertNotNull(row);
+        Number count = (Number) row.get("c");
+        assertEquals(1, count.intValue(), "Only one row should exist under high contention");
+    }
+
+    protected void testBatchInsert() {
         String schema = loader.getDBInfo().getDefaultSchemaName();
         Map<String, Object> body = Map.of("v_name", "test_name1",
                 "i_age", 5,
@@ -280,8 +397,7 @@ public abstract class MuYunDatabaseBaseTest {
         assertEquals(2, ids.size());
     }
 
-    @Test
-    void testUpdate() {
+    protected void testUpdate() {
         Map body = Map.of("v_name", "test_name",
                 "i_age", 5,
                 "b_flag", true,
@@ -305,8 +421,33 @@ public abstract class MuYunDatabaseBaseTest {
         assertEquals("test_name2", item.get("v_name"));
     }
 
-    @Test
-    void testDelete() {
+    protected void testPatchUpdate() {
+        Map<String, Object> body = Map.of(
+                "v_name", "patch_source",
+                "i_age", 5,
+                "b_flag", true,
+                "n_price", 10.2,
+                "d_date", "2024-01-01"
+        );
+
+        String id = db.insertItem("basic", body);
+        assertNotNull(id);
+
+        int updated = db.patchUpdateItem("basic", id, Map.of("v_name", "patch_target"));
+        assertEquals(1, updated);
+
+        Map<String, Object> item = db.getItem("basic", id);
+        assertEquals("patch_target", item.get("v_name"));
+        assertEquals(5, ((Number) item.get("i_age")).intValue());
+
+        MuYunDatabaseException ex = assertThrows(
+                MuYunDatabaseException.class,
+                () -> db.patchUpdateItem("basic", id, Map.of("id", id))
+        );
+        assertEquals("No updatable fields were provided for patch update", ex.getMessage());
+    }
+
+    protected void testDelete() {
         Map body = Map.of("v_name", "test_name",
                 "i_age", 5,
                 "b_flag", true,
@@ -325,8 +466,7 @@ public abstract class MuYunDatabaseBaseTest {
         assertNull(item);
     }
 
-    @Test
-    void testQuery() {
+    protected void testQuery() {
         Map body = Map.of("v_name", "test_name_x",
                 "i_age", 5,
                 "b_flag", true,
@@ -357,8 +497,7 @@ public abstract class MuYunDatabaseBaseTest {
 
     }
 
-    @Test
-    void testJdbiConnectionClosedWhenException() throws SQLException {
+    protected void testJdbiConnectionClosedWhenException() throws SQLException {
         AtomicReference<Connection> connection = new AtomicReference<>();
         assertThrowsExactly(SQLException.class, () -> {
             jdbi.withHandle(handle -> {
@@ -370,8 +509,7 @@ public abstract class MuYunDatabaseBaseTest {
         assertTrue(connection.get().isClosed());
     }
 
-    @Test
-    void testJdbiConnectionClosedWhenException2() throws SQLException {
+    protected void testJdbiConnectionClosedWhenException2() throws SQLException {
         AtomicReference<Connection> connection = new AtomicReference<>();
         assertThrowsExactly(SQLException.class, () -> {
             try (Handle open = jdbi.open();) {
@@ -383,8 +521,7 @@ public abstract class MuYunDatabaseBaseTest {
         assertTrue(connection.get().isClosed());
     }
 
-    @Test
-    void testJdbiConnectionClosedWhenException3() throws SQLException {
+    protected void testJdbiConnectionClosedWhenException3() throws SQLException {
         AtomicReference<Connection> connection = new AtomicReference<>();
         assertThrowsExactly(SQLException.class, () -> {
             Handle open = jdbi.open();
@@ -395,8 +532,7 @@ public abstract class MuYunDatabaseBaseTest {
         assertFalse(connection.get().isClosed());
     }
 
-    @Test
-    void testModifyColumnTypeToText() {
+    protected void testModifyColumnTypeToText() {
         TableWrapper basic = TableWrapper.withName("test_modify_column_type_to_text")
                 .setPrimaryKey(getPrimaryKey())
                 .addColumn(Column.of("v_name")
@@ -427,10 +563,10 @@ public abstract class MuYunDatabaseBaseTest {
         assertEquals("abcd_efgh", row2.get("v_name"));
     }
 
-    @Test
-    void testInherit() {
-        String schema = "test";
-        String baseTable = "test_inherit_base";
+    protected void testInherit() {
+        String schema = "test_inherit_direct_schema";
+        String baseTable = "test_inherit_base_direct";
+        String childTable = "test_inherit_child_direct";
         TableWrapper basic = TableWrapper.withName(baseTable)
                 .setSchema(schema)
                 .setPrimaryKey(getPrimaryKey())
@@ -446,7 +582,7 @@ public abstract class MuYunDatabaseBaseTest {
         assertTrue(base.getColumn("id").isPrimaryKey());
         assertNotNull(base.getColumn("id").getDefaultValueWithString());
 
-        TableWrapper child = TableWrapper.withName("test_inherit_child")
+        TableWrapper child = TableWrapper.withName(childTable)
                 .setSchema(schema)
                 .addColumn(Column.of("v_name2")
                         .setLength(20)
@@ -458,17 +594,18 @@ public abstract class MuYunDatabaseBaseTest {
 
         DBInfo info = loader.getDBInfo();
 
-        DBTable table = info.getSchema(schema).getTable("test_inherit_child");
+        DBTable table = info.getSchema(schema).getTable(childTable);
 
         assertTrue(table.contains("id"));
         assertTrue(table.contains("v_name"));
         assertTrue(table.contains("v_name2"));
     }
 
-    @Test
-    void testInheritLater() {
-        String schema = "test";
-        TableWrapper basic = TableWrapper.withName("test_inherit_base")
+    protected void testInheritLater() {
+        String schema = "test_inherit_later_schema";
+        String baseTable = "test_inherit_base_later";
+        String childTable = "test_inherit_child_later";
+        TableWrapper basic = TableWrapper.withName(baseTable)
                 .setSchema(schema)
                 .setPrimaryKey(getPrimaryKey())
                 .addColumn(Column.of("v_name")
@@ -478,7 +615,7 @@ public abstract class MuYunDatabaseBaseTest {
 
         new TableBuilder(db).build(basic);
 
-        TableWrapper child = TableWrapper.withName("test_inherit_child")
+        TableWrapper child = TableWrapper.withName(childTable)
                 .setSchema(schema)
                 .addColumn(Column.of("v_name2")
                         .setLength(20)
@@ -493,15 +630,49 @@ public abstract class MuYunDatabaseBaseTest {
 
         DBInfo info = loader.getDBInfo();
 
-        DBTable table = info.getSchema(schema).getTable("test_inherit_child");
+        DBTable table = info.getSchema(schema).getTable(childTable);
 
         assertTrue(table.contains("id"));
         assertTrue(table.contains("v_name"));
         assertTrue(table.contains("v_name2"));
     }
 
-    @Test
-    void testTableBuilderWithEntity() {
+    protected void testInheritMultiParentsForPostgres() {
+        if (getDatabaseType() != DatabaseType.POSTGRESQL) {
+            return;
+        }
+
+        String schema = "test_inherit_multi_schema";
+        TableWrapper parent1 = TableWrapper.withName("test_inherit_parent1")
+                .setSchema(schema)
+                .addColumn(Column.of("v_name1").setLength(20).setDefaultValue("p1"));
+        TableWrapper parent2 = TableWrapper.withName("test_inherit_parent2")
+                .setSchema(schema)
+                .addColumn(Column.of("v_name2").setLength(20).setDefaultValue("p2"));
+
+        new TableBuilder(db).build(parent1);
+        new TableBuilder(db).build(parent2);
+
+        TableWrapper child = TableWrapper.withName("test_inherit_child_multi")
+                .setSchema(schema)
+                .addColumn(Column.of("v_child").setLength(20).setDefaultValue("c"))
+                .setInherits(List.of(parent1, parent2));
+
+        new TableBuilder(db).build(child);
+
+        DBTable table = loader.getDBInfo().getSchema(schema).getTable("test_inherit_child_multi");
+        assertTrue(table.contains("v_name1"));
+        assertTrue(table.contains("v_name2"));
+        assertTrue(table.contains("v_child"));
+
+        List<Map<String, Object>> rows = db.query(
+                "SELECT inhparent::regclass::text AS parent FROM pg_inherits WHERE inhrelid = ?::regclass",
+                schema + ".test_inherit_child_multi"
+        );
+        assertEquals(2, rows.size());
+    }
+
+    protected void testTableBuilderWithEntity() {
 
         new TableBuilder(db).build(getEntityClass());
 
@@ -560,8 +731,7 @@ public abstract class MuYunDatabaseBaseTest {
 
     }
 
-    @Test
-    void testTableBuilderWithEntityNoIdDefaultValue() {
+    protected void testTableBuilderWithEntityNoIdDefaultValue() {
         new TableBuilder(db).build(TestEntityBaseNoIdDefaultValue.class);
 
         DBInfo info = loader.getDBInfo();
@@ -581,10 +751,9 @@ public abstract class MuYunDatabaseBaseTest {
         assertNotNull(string);
     }
 
-    @Test
-    void testIndexChange() {
-        String schema = "test";
-        String baseTable = "a_table";
+    protected void testIndexChange() {
+        String schema = "test_index_change_schema";
+        String baseTable = "test_index_change_table";
         TableWrapper basic = TableWrapper.withName(baseTable)
                 .setSchema(schema)
                 .setPrimaryKey(getPrimaryKey())
@@ -638,4 +807,82 @@ class TestEntityBaseNoIdDefaultValue {
     @net.ximatai.muyun.database.core.annotation.Column(length = 20, comment = "名称2", nullable = false)
     public String name2;
 
+}
+
+@Table(name = "orm_patch_entity")
+class OrmPatchEntity {
+    @Id
+    @net.ximatai.muyun.database.core.annotation.Column(length = 64)
+    public String id;
+
+    @net.ximatai.muyun.database.core.annotation.Column(name = "v_name", length = 32)
+    public String name;
+
+    @net.ximatai.muyun.database.core.annotation.Column(name = "i_age")
+    public Integer age;
+}
+
+@Table(name = "orm_dryrun_entity")
+class OrmDryRunEntity {
+    @Id
+    @net.ximatai.muyun.database.core.annotation.Column(length = 64)
+    public String id;
+
+    @net.ximatai.muyun.database.core.annotation.Column(name = "v_name", length = 20)
+    public String name;
+}
+
+@Table(name = "orm_strict_entity")
+class OrmStrictEntityV1 {
+    @Id
+    @net.ximatai.muyun.database.core.annotation.Column(length = 64)
+    public String id;
+
+    @net.ximatai.muyun.database.core.annotation.Column(name = "v_name", length = 20)
+    public String name;
+}
+
+@Table(name = "orm_strict_entity")
+class OrmStrictEntityV2 {
+    @Id
+    @net.ximatai.muyun.database.core.annotation.Column(length = 64)
+    public String id;
+
+    @net.ximatai.muyun.database.core.annotation.Column(name = "v_name", length = 128)
+    public String name;
+}
+
+@Table(name = "orm_json_entity")
+class OrmJsonEntity {
+    @Id
+    @net.ximatai.muyun.database.core.annotation.Column(length = 64)
+    public String id;
+
+    @net.ximatai.muyun.database.core.annotation.Column(name = "j_payload", type = net.ximatai.muyun.database.core.builder.ColumnType.JSON)
+    public String payload;
+}
+
+interface SqlObjectBasicDao {
+
+    @SqlUpdate("insert into <table>(v_name, i_age) values(:name, :age)")
+    @GetGeneratedKeys("id")
+    String insert(
+            @Define("table") String table,
+            @Bind("name") String name,
+            @Bind("age") int age
+    );
+
+    @SqlQuery("select v_name from <table> where id = :id")
+    String findNameById(@Define("table") String table, @Bind("id") String id);
+
+    @SqlQuery("select count(*) from <table> where v_name = :name")
+    int countByName(@Define("table") String table, @Bind("name") String name);
+}
+
+interface SqlObjectJsonDao {
+    @SqlUpdate("insert into orm_json_entity(id, j_payload) values(:id, :payload)")
+    void insert(@Bind("id") String id, @Json @Bind("payload") Map<String, Object> payload);
+
+    @SqlQuery("select j_payload from orm_json_entity where id = :id")
+    String findPayloadText(@Bind("id") String id);
 }
