@@ -3,16 +3,10 @@ package net.ximatai.muyun.database.spring.boot;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import net.ximatai.muyun.database.core.IDatabaseOperations;
-import net.ximatai.muyun.database.core.annotation.Column;
-import net.ximatai.muyun.database.core.annotation.Id;
-import net.ximatai.muyun.database.core.annotation.Table;
-import net.ximatai.muyun.database.core.orm.EntityDao;
 import net.ximatai.muyun.database.core.orm.SimpleEntityManager;
+import net.ximatai.muyun.database.spring.boot.txprobe.TxProbeOrmEntity;
+import net.ximatai.muyun.database.spring.boot.txprobe.TxProbeRepository;
 import net.ximatai.muyun.database.spring.boot.sql.annotation.EnableMuYunRepositories;
-import net.ximatai.muyun.database.spring.boot.sql.annotation.Insert;
-import net.ximatai.muyun.database.spring.boot.sql.annotation.MuYunRepository;
-import net.ximatai.muyun.database.spring.boot.sql.annotation.Param;
-import net.ximatai.muyun.database.spring.boot.sql.annotation.Select;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -124,24 +118,4 @@ class MuYunDatabaseStarterTransactionalIntegrationTest {
             return ((Number) row.get("c")).intValue();
         }
     }
-}
-
-@MuYunRepository
-interface TxProbeRepository extends EntityDao<TxProbeOrmEntity, String> {
-
-    @Insert("insert into tx_probe_sql(id, v_name) values(#{id}, #{name})")
-    int insertSql(@Param("id") String id, @Param("name") String name);
-
-    @Select("select count(*) as c from tx_probe_sql")
-    Integer countSqlRows();
-}
-
-@Table(name = "tx_probe_orm")
-class TxProbeOrmEntity {
-    @Id
-    @Column(length = 64)
-    public String id;
-
-    @Column(name = "v_name", length = 64)
-    public String name;
 }
