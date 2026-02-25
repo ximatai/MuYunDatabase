@@ -270,6 +270,56 @@ public class SimpleEntityManagerUnitTest {
         assertEquals(new LinkedHashSet<>(Arrays.asList("u3", "u4")), loaded.ids);
     }
 
+    @Test
+    void testEntityMapperSetColumnRejectsCommaInItem() {
+        InMemoryOperations operations = InMemoryOperations.emptyMeta();
+        SimpleEntityManager entityManager = new DefaultSimpleEntityManager(operations);
+
+        DemoRole role = new DemoRole();
+        role.id = "r2";
+        role.roleName = "operator";
+        role.ids = new LinkedHashSet<>(Arrays.asList("u1", "u,2"));
+
+        assertThrows(IllegalArgumentException.class, () -> entityManager.insert(role));
+    }
+
+    @Test
+    void testEntityMapperSetColumnSupportsTreeSetField() {
+        InMemoryOperations operations = InMemoryOperations.emptyMeta();
+        SimpleEntityManager entityManager = new DefaultSimpleEntityManager(operations);
+
+        DemoRoleTreeSet role = new DemoRoleTreeSet();
+        role.id = "r3";
+        role.ids = new TreeSet<>(Arrays.asList("u2", "u1"));
+        entityManager.insert(role);
+
+        Map<Object, Map<String, Object>> table = operations.tables.get("sample_schema.demo_role_tree_set");
+        assertNotNull(table);
+        Map<String, Object> row = table.get("r3");
+        assertNotNull(row);
+        row.put("ids", "u3,u1,u3");
+
+        DemoRoleTreeSet loaded = entityManager.findById(DemoRoleTreeSet.class, "r3");
+        assertNotNull(loaded);
+        assertEquals(new TreeSet<>(Arrays.asList("u1", "u3")), loaded.ids);
+    }
+
+    @Test
+    void testEntityMapperInvalidSetFieldWriteThrowsOrmException() {
+        InMemoryOperations operations = InMemoryOperations.emptyMeta();
+        SimpleEntityManager entityManager = new DefaultSimpleEntityManager(operations);
+
+        operations.tables
+                .computeIfAbsent("sample_schema.demo_role_invalid_set", key -> new ConcurrentHashMap<>())
+                .put("r4", new HashMap<>(Map.of("id", "r4", "ids", "u1,u2")));
+
+        OrmException exception = assertThrows(
+                OrmException.class,
+                () -> entityManager.findById(DemoRoleInvalidSetField.class, "r4")
+        );
+        assertEquals(OrmException.Code.INVALID_MAPPING, exception.getCode());
+    }
+
     @Table(name = "demo_user")
     public static class DemoUser {
 
@@ -341,8 +391,28 @@ public class SimpleEntityManagerUnitTest {
         @Column(length = 64)
         public String roleName;
 
-        @Column(type = ColumnType.SET)
+        @Column
         public Set<String> ids;
+    }
+
+    @Table(name = "demo_role_tree_set", schema = "sample_schema")
+    public static class DemoRoleTreeSet {
+        @Id
+        @Column(length = 32)
+        public String id;
+
+        @Column
+        public TreeSet<String> ids;
+    }
+
+    @Table(name = "demo_role_invalid_set", schema = "sample_schema")
+    public static class DemoRoleInvalidSetField {
+        @Id
+        @Column(length = 32)
+        public String id;
+
+        @Column(type = ColumnType.SET)
+        public String ids;
     }
 
     public enum DemoStatus {

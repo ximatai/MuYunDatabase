@@ -57,5 +57,7 @@ int upsert(T entity);
 1. `EntityDao` 聚焦单表高频场景。
 2. 复杂查询由 Jdbi SQL 注解方法或底层 SQL 承担。
 3. 不提供关系映射 ORM（`1:N/N:N`、级联、延迟加载）。
+4. `Set<String>` 字段默认推断为 `ColumnType.SET`，使用 CSV 语义存入 `text` 列。
+5. `ColumnType.SET` 写入时不允许元素包含英文逗号 `,`（否则拒绝写入），以避免 CSV 不可逆解析。
 
 下一步：若你在做历史项目改造，请按 [`REFACTOR_GUIDE.md`](REFACTOR_GUIDE.md) 的“推荐重构路径”执行。

@@ -3,19 +3,13 @@ package net.ximatai.muyun.database.core.orm;
 import net.ximatai.muyun.database.core.builder.ColumnType;
 
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Modifier;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.LinkedHashSet;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 
 public final class EntityMapper {
 
@@ -183,22 +177,55 @@ public final class EntityMapper {
         if (value == null) {
             return null;
         }
-        LinkedHashSet<String> normalized = normalizeToSet(value);
+        LinkedHashSet<String> normalized = normalizeToSet(value, true);
         return normalized.isEmpty() ? "" : String.join(",", normalized);
     }
 
     private static Object fromCsvSetValue(Object value, Class<?> targetType) {
-        LinkedHashSet<String> normalized = normalizeToSet(value);
-        if (Set.class.isAssignableFrom(targetType) || Collection.class.equals(targetType)) {
+        LinkedHashSet<String> normalized = normalizeToSet(value, false);
+        if (targetType.isAssignableFrom(LinkedHashSet.class)) {
             return normalized;
+        }
+        if (targetType.isAssignableFrom(TreeSet.class)
+                || SortedSet.class.isAssignableFrom(targetType)
+                || NavigableSet.class.isAssignableFrom(targetType)) {
+            return new TreeSet<>(normalized);
         }
         if (targetType.isAssignableFrom(ArrayList.class)) {
             return new ArrayList<>(normalized);
         }
+        if (targetType.isAssignableFrom(LinkedList.class)) {
+            return new LinkedList<>(normalized);
+        }
+        Collection<String> customCollection = instantiateCollection(targetType);
+        if (customCollection != null) {
+            customCollection.addAll(normalized);
+            return customCollection;
+        }
         return normalized;
     }
 
-    private static LinkedHashSet<String> normalizeToSet(Object value) {
+    @SuppressWarnings("unchecked")
+    private static Collection<String> instantiateCollection(Class<?> targetType) {
+        if (!Collection.class.isAssignableFrom(targetType)
+                || targetType.isInterface()
+                || Modifier.isAbstract(targetType.getModifiers())) {
+            return null;
+        }
+        try {
+            Constructor<?> constructor = targetType.getDeclaredConstructor();
+            constructor.setAccessible(true);
+            Object instance = constructor.newInstance();
+            if (instance instanceof Collection<?>) {
+                return (Collection<String>) instance;
+            }
+        } catch (Exception ignored) {
+            // fall through and use default LinkedHashSet
+        }
+        return null;
+    }
+
+    private static LinkedHashSet<String> normalizeToSet(Object value, boolean strictCsvValue) {
         LinkedHashSet<String> normalized = new LinkedHashSet<>();
         if (value == null) {
             return normalized;
@@ -208,25 +235,28 @@ public final class EntityMapper {
                 return normalized;
             }
             for (String part : text.split(",")) {
-                addNormalized(normalized, part);
+                addNormalized(normalized, part, strictCsvValue);
             }
             return normalized;
         }
         if (value instanceof Collection<?> collection) {
             for (Object item : collection) {
-                addNormalized(normalized, item);
+                addNormalized(normalized, item, strictCsvValue);
             }
             return normalized;
         }
-        addNormalized(normalized, value);
+        addNormalized(normalized, value, strictCsvValue);
         return normalized;
     }
 
-    private static void addNormalized(LinkedHashSet<String> normalized, Object raw) {
+    private static void addNormalized(LinkedHashSet<String> normalized, Object raw, boolean strictCsvValue) {
         if (raw == null) {
             return;
         }
         String text = String.valueOf(raw).trim();
+        if (strictCsvValue && text.contains(",")) {
+            throw new IllegalArgumentException("SET value cannot contain ',' in CSV storage: " + text);
+        }
         if (!text.isEmpty()) {
             normalized.add(text);
         }

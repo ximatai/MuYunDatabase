@@ -51,7 +51,7 @@ public class EntityFieldMeta {
     public void write(Object target, Object value) {
         try {
             field.set(target, value);
-        } catch (IllegalAccessException e) {
+        } catch (IllegalAccessException | IllegalArgumentException e) {
             throw new OrmException(OrmException.Code.INVALID_MAPPING, "Failed to write field: " + fieldName, e);
         }
     }

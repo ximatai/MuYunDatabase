@@ -108,6 +108,27 @@ List<UserEntity> rows = orm.query(
 
 ```
 
+### 1.4.1 `Set<String>` 字段映射（CSV 存储）
+
+```java
+@Table(name = "demo_role")
+class RoleEntity {
+    @Id
+    @Column(length = 64)
+    public String id;
+
+    // type 可省略：会自动推断为 ColumnType.SET
+    @Column
+    public Set<String> memberIds;
+}
+```
+
+说明：
+
+1. `Set<String>` 默认映射为 `ColumnType.SET`，底层按 CSV 写入 `text` 列。
+2. 读回时会做去重与空白裁剪（如 `" u1 ,u2,,u1"` -> `["u1", "u2"]`）。
+3. 为保证 CSV 可逆，写入时集合元素不允许包含英文逗号 `,`，否则抛出 `IllegalArgumentException`。
+
 ### 1.5 迁移控制（可选）
 
 ```java
