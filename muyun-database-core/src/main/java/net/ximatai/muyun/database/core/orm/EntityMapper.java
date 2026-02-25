@@ -1,15 +1,21 @@
 package net.ximatai.muyun.database.core.orm;
 
+import net.ximatai.muyun.database.core.builder.ColumnType;
+
 import java.lang.reflect.Constructor;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Date;
-import java.util.Objects;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 
 public final class EntityMapper {
 
@@ -28,7 +34,7 @@ public final class EntityMapper {
             if (value == null && !includeNull) {
                 continue;
             }
-            result.put(fieldMeta.getColumnName(), toDatabaseValue(value));
+            result.put(fieldMeta.getColumnName(), toDatabaseValue(fieldMeta, value));
         }
 
         return result;
@@ -47,7 +53,7 @@ public final class EntityMapper {
                 continue;
             }
 
-            Object converted = convertValue(value, fieldMeta.getFieldType());
+            Object converted = convertValue(value, fieldMeta);
             fieldMeta.write(entity, converted);
         }
 
@@ -67,7 +73,10 @@ public final class EntityMapper {
         return null;
     }
 
-    private static Object toDatabaseValue(Object value) {
+    private static Object toDatabaseValue(EntityFieldMeta fieldMeta, Object value) {
+        if (fieldMeta.getColumnType() == ColumnType.SET) {
+            return toCsvSetValue(value);
+        }
         if (!(value instanceof Enum<?> enumValue)) {
             return value;
         }
@@ -99,7 +108,12 @@ public final class EntityMapper {
         }
     }
 
-    private static Object convertValue(Object value, Class<?> targetType) {
+    private static Object convertValue(Object value, EntityFieldMeta fieldMeta) {
+        if (fieldMeta.getColumnType() == ColumnType.SET) {
+            return fromCsvSetValue(value, fieldMeta.getFieldType());
+        }
+
+        Class<?> targetType = fieldMeta.getFieldType();
         if (value == null || targetType.isAssignableFrom(value.getClass())) {
             return value;
         }
@@ -163,6 +177,59 @@ public final class EntityMapper {
         }
 
         return value;
+    }
+
+    private static String toCsvSetValue(Object value) {
+        if (value == null) {
+            return null;
+        }
+        LinkedHashSet<String> normalized = normalizeToSet(value);
+        return normalized.isEmpty() ? "" : String.join(",", normalized);
+    }
+
+    private static Object fromCsvSetValue(Object value, Class<?> targetType) {
+        LinkedHashSet<String> normalized = normalizeToSet(value);
+        if (Set.class.isAssignableFrom(targetType) || Collection.class.equals(targetType)) {
+            return normalized;
+        }
+        if (targetType.isAssignableFrom(ArrayList.class)) {
+            return new ArrayList<>(normalized);
+        }
+        return normalized;
+    }
+
+    private static LinkedHashSet<String> normalizeToSet(Object value) {
+        LinkedHashSet<String> normalized = new LinkedHashSet<>();
+        if (value == null) {
+            return normalized;
+        }
+        if (value instanceof String text) {
+            if (text.isBlank()) {
+                return normalized;
+            }
+            for (String part : text.split(",")) {
+                addNormalized(normalized, part);
+            }
+            return normalized;
+        }
+        if (value instanceof Collection<?> collection) {
+            for (Object item : collection) {
+                addNormalized(normalized, item);
+            }
+            return normalized;
+        }
+        addNormalized(normalized, value);
+        return normalized;
+    }
+
+    private static void addNormalized(LinkedHashSet<String> normalized, Object raw) {
+        if (raw == null) {
+            return;
+        }
+        String text = String.valueOf(raw).trim();
+        if (!text.isEmpty()) {
+            normalized.add(text);
+        }
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})

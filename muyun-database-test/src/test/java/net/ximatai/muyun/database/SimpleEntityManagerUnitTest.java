@@ -5,6 +5,7 @@ import net.ximatai.muyun.database.core.IMetaDataLoader;
 import net.ximatai.muyun.database.core.annotation.Column;
 import net.ximatai.muyun.database.core.annotation.Id;
 import net.ximatai.muyun.database.core.annotation.Table;
+import net.ximatai.muyun.database.core.builder.ColumnType;
 import net.ximatai.muyun.database.core.metadata.*;
 import net.ximatai.muyun.database.core.orm.*;
 import org.junit.jupiter.api.Test;
@@ -245,6 +246,30 @@ public class SimpleEntityManagerUnitTest {
         assertEquals("A", row.get("status"));
     }
 
+    @Test
+    void testEntityMapperSetColumnUsesCsvStorageAndCompatibleRead() {
+        InMemoryOperations operations = InMemoryOperations.emptyMeta();
+        SimpleEntityManager entityManager = new DefaultSimpleEntityManager(operations);
+
+        DemoRole role = new DemoRole();
+        role.id = "r1";
+        role.roleName = "admin";
+        role.ids = new LinkedHashSet<>(Arrays.asList(" u1 ", "", "u2", "u1"));
+
+        entityManager.insert(role);
+
+        Map<Object, Map<String, Object>> table = operations.tables.get("sample_schema.demo_role");
+        assertNotNull(table);
+        Map<String, Object> row = table.get("r1");
+        assertNotNull(row);
+        assertEquals("u1,u2", row.get("ids"));
+
+        row.put("ids", "u3, u4,,u3");
+        DemoRole loaded = entityManager.findById(DemoRole.class, "r1");
+        assertNotNull(loaded);
+        assertEquals(new LinkedHashSet<>(Arrays.asList("u3", "u4")), loaded.ids);
+    }
+
     @Table(name = "demo_user")
     public static class DemoUser {
 
@@ -305,6 +330,19 @@ public class SimpleEntityManagerUnitTest {
         public void setStatus(DemoStatus status) {
             this.status = status;
         }
+    }
+
+    @Table(name = "demo_role", schema = "sample_schema")
+    public static class DemoRole {
+        @Id
+        @Column(length = 32)
+        public String id;
+
+        @Column(length = 64)
+        public String roleName;
+
+        @Column(type = ColumnType.SET)
+        public Set<String> ids;
     }
 
     public enum DemoStatus {

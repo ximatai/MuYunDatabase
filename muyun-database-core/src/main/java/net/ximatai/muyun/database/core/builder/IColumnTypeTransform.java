@@ -2,7 +2,10 @@ package net.ximatai.muyun.database.core.builder;
 
 public interface IColumnTypeTransform {
 
-    IColumnTypeTransform DEFAULT = Enum::name;
+    IColumnTypeTransform DEFAULT = type -> switch (type) {
+        case SET -> "text";
+        default -> type.name();
+    };
 
     IColumnTypeTransform POSTGRESQL = type -> {
         switch (type) {
@@ -12,6 +15,8 @@ public interface IColumnTypeTransform {
                 return "int[]";
             case JSON:
                 return "jsonb";
+            case SET:
+                return "text";
             default:
                 return type.name();
         }

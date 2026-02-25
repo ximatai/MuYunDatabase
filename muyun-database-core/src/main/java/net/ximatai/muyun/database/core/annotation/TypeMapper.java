@@ -2,8 +2,11 @@ package net.ximatai.muyun.database.core.annotation;
 
 import net.ximatai.muyun.database.core.builder.ColumnType;
 
+import java.util.HashSet;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
 
 import static net.ximatai.muyun.database.core.builder.ColumnType.*;
 
@@ -42,6 +45,9 @@ public class TypeMapper {
         JAVA_TO_COLUMN_TYPE.put(java.time.Instant.class, TIMESTAMP);
 
         JAVA_TO_COLUMN_TYPE.put(Map.class, JSON);
+        JAVA_TO_COLUMN_TYPE.put(Set.class, SET);
+        JAVA_TO_COLUMN_TYPE.put(HashSet.class, SET);
+        JAVA_TO_COLUMN_TYPE.put(LinkedHashSet.class, SET);
         JAVA_TO_COLUMN_TYPE.put(String[].class, VARCHAR_ARRAY);
         JAVA_TO_COLUMN_TYPE.put(int[].class, INT_ARRAY);
     }

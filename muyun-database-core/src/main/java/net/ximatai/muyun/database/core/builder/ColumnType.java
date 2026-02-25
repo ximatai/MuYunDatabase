@@ -76,6 +76,13 @@ public enum ColumnType {
     JSON,
 
     /**
+     * 字符串集合类型（CSV存储）
+     * 适用于：ID集合、标签集合等去重字符串集合
+     * 对应数据库：TEXT (以逗号分隔存储)
+     */
+    SET,
+
+    /**
      * 字符串数组类型
      * 适用于：标签、分类、多选值等字符串集合
      * 对应数据库：VARCHAR[], TEXT[] (PostgreSQL)
