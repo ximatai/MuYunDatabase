@@ -2,7 +2,7 @@ package net.ximatai.muyun.database.core.orm;
 
 import java.util.Map;
 
-final class CompiledCriteria {
+public final class CompiledCriteria {
     private final String sql;
     private final Map<String, Object> params;
 
@@ -11,11 +11,11 @@ final class CompiledCriteria {
         this.params = params == null ? Map.of() : Map.copyOf(params);
     }
 
-    String getSql() {
+    public String getSql() {
         return sql;
     }
 
-    Map<String, Object> getParams() {
+    public Map<String, Object> getParams() {
         return params;
     }
 }

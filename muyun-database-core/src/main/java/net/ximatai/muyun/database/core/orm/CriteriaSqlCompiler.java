@@ -8,16 +8,17 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-final class CriteriaSqlCompiler {
+public final class CriteriaSqlCompiler {
 
     private static final Pattern NAMED_PARAM_PATTERN = Pattern.compile(":([A-Za-z_][A-Za-z0-9_]*)");
 
     private final EnumMap<CriteriaOperator, ClauseRenderer> renderers = new EnumMap<>(CriteriaOperator.class);
 
-    CriteriaSqlCompiler() {
+    public CriteriaSqlCompiler() {
         renderers.put(CriteriaOperator.EQ, (clause, context) -> compare(clause, context, "="));
         renderers.put(CriteriaOperator.NE, (clause, context) -> compare(clause, context, "<>"));
         renderers.put(CriteriaOperator.GT, (clause, context) -> compare(clause, context, ">"));
@@ -37,10 +38,22 @@ final class CriteriaSqlCompiler {
         renderers.put(CriteriaOperator.RAW, this::renderRaw);
     }
 
-    CompiledCriteria compile(Criteria criteria, EntityMeta meta, DBInfo.Type dbType) {
-        ClauseContext context = new ClauseContext(meta, dbType);
+    /**
+     * Compiles criteria into a SQL WHERE fragment and named parameters.
+     */
+    public CompiledCriteria compile(Criteria criteria, CriteriaColumnResolver columnResolver, DBInfo.Type dbType) {
+        Objects.requireNonNull(criteria, "criteria must not be null");
+        Objects.requireNonNull(columnResolver, "columnResolver must not be null");
+        Objects.requireNonNull(dbType, "dbType must not be null");
+
+        ClauseContext context = new ClauseContext(columnResolver, dbType);
         String sql = compileGroup(criteria.getRoot(), context);
         return new CompiledCriteria(sql, context.params);
+    }
+
+    CompiledCriteria compile(Criteria criteria, EntityMeta meta, DBInfo.Type dbType) {
+        Objects.requireNonNull(meta, "meta must not be null");
+        return compile(criteria, meta::resolveColumnName, dbType);
     }
 
     private String compileGroup(CriteriaGroup group, ClauseContext context) {
@@ -141,7 +154,7 @@ final class CriteriaSqlCompiler {
     }
 
     private String resolveColumn(CriteriaClause clause, ClauseContext context) {
-        String columnName = context.meta.resolveColumnName(clause.getField());
+        String columnName = context.columnResolver.resolveColumnName(clause.getField());
         if (columnName == null) {
             throw new OrmException(OrmException.Code.INVALID_CRITERIA, "Unknown field or column: " + clause.getField());
         }
@@ -193,13 +206,13 @@ final class CriteriaSqlCompiler {
     }
 
     private static class ClauseContext {
-        private final EntityMeta meta;
+        private final CriteriaColumnResolver columnResolver;
         private final DBInfo.Type dbType;
         private final Map<String, Object> params = new HashMap<>();
         private int paramIndex;
 
-        private ClauseContext(EntityMeta meta, DBInfo.Type dbType) {
-            this.meta = meta;
+        private ClauseContext(CriteriaColumnResolver columnResolver, DBInfo.Type dbType) {
+            this.columnResolver = columnResolver;
             this.dbType = dbType;
         }
 
