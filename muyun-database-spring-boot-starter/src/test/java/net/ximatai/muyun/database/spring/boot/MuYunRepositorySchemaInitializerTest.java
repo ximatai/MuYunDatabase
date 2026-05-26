@@ -32,6 +32,26 @@ class MuYunRepositorySchemaInitializerTest {
     }
 
     @Test
+    void shouldEnsureSchemaForRepositoryThroughIntermediateGenericInterface() {
+        MuYunSchemaManager schemaManager = mock(MuYunSchemaManager.class);
+        MuYunDatabaseProperties properties = new MuYunDatabaseProperties();
+        properties.setRepositorySchemaMode(MuYunDatabaseProperties.RepositorySchemaMode.ENSURE);
+
+        MuYunRepositoryCatalog catalog = new MuYunRepositoryCatalog(Set.of(IndirectRepository.class.getName()));
+        MuYunRepositorySchemaInitializer initializer = new MuYunRepositorySchemaInitializer(
+                List.of(catalog),
+                schemaManager,
+                properties,
+                getClass().getClassLoader()
+        );
+
+        initializer.afterSingletonsInstantiated();
+
+        verify(schemaManager, times(1)).ensureTable(IndirectEntity.class);
+    }
+
+
+    @Test
     void shouldSkipSchemaEnsureWhenModeIsNone() {
         MuYunSchemaManager schemaManager = mock(MuYunSchemaManager.class);
         MuYunDatabaseProperties properties = new MuYunDatabaseProperties();
@@ -78,6 +98,16 @@ class MuYunRepositorySchemaInitializerTest {
     }
 
     static class DemoEntity {
+    }
+
+    interface IntermediateRepository<T, ID> extends EntityDao<T, ID> {
+    }
+
+    @MuYunRepository
+    interface IndirectRepository extends IntermediateRepository<IndirectEntity, String> {
+    }
+
+    static class IndirectEntity {
     }
 
     @MuYunRepository(alignTable = MuYunRepository.AlignTable.ENABLED)

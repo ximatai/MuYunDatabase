@@ -225,6 +225,28 @@ class MuYunRepositoryFactoryTest {
         verify(jdbi, never()).withExtension(any(), any());
     }
 
+    @Test
+    void shouldResolveEntityDaoThroughIntermediateGenericInterface() {
+        @SuppressWarnings("unchecked")
+        IDatabaseOperations<Object> operations = (IDatabaseOperations<Object>) mock(IDatabaseOperations.class);
+        net.ximatai.muyun.database.core.metadata.DBInfo dbInfo = mock(net.ximatai.muyun.database.core.metadata.DBInfo.class);
+        when(dbInfo.getDatabaseType()).thenReturn(net.ximatai.muyun.database.core.metadata.DBInfo.Type.POSTGRESQL);
+        when(operations.getDBInfo()).thenReturn(dbInfo);
+        when(operations.insertItem(anyString(), anyString(), anyMap())).thenReturn("r-30");
+
+        Jdbi jdbi = mock(Jdbi.class);
+        MuYunRepositoryFactory factory = new MuYunRepositoryFactory(operations, new MockEnvironment(), jdbi);
+        IndirectPureEntityDao dao = factory.create(IndirectPureEntityDao.class);
+
+        DemoRole role = new DemoRole();
+        role.setId("r-30");
+        role.setRoleName("indirect");
+
+        assertEquals("r-30", dao.insert(role));
+        verify(operations, times(1)).insertItem(anyString(), anyString(), anyMap());
+        verify(jdbi, never()).withExtension(any(), any());
+    }
+
     @MuYunRepository
     interface JdbiSqlDao {
         @SqlQuery("select count(*) from sample_role where roleName = :name")
@@ -242,6 +264,13 @@ class MuYunRepositoryFactoryTest {
 
     @MuYunRepository
     interface PureEntityDao extends EntityDao<DemoRole, String> {
+    }
+
+    interface IntermediateEntityDao<T, ID> extends EntityDao<T, ID> {
+    }
+
+    @MuYunRepository
+    interface IndirectPureEntityDao extends IntermediateEntityDao<DemoRole, String> {
     }
 
     @MuYunRepository

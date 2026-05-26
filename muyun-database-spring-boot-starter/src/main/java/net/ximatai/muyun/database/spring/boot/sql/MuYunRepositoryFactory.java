@@ -10,6 +10,8 @@ import net.ximatai.muyun.database.core.orm.SimpleEntityManager;
 import net.ximatai.muyun.database.core.orm.Sort;
 import net.ximatai.muyun.database.core.orm.DefaultSimpleEntityManager;
 import net.ximatai.muyun.database.spring.boot.sql.annotation.MuYunRepository;
+import net.ximatai.muyun.database.spring.boot.sql.internal.EntityDaoTypeResolver;
+import net.ximatai.muyun.database.spring.boot.sql.internal.EntityDaoTypeResolver.EntityDaoTypes;
 import org.jdbi.v3.core.Jdbi;
 import org.jdbi.v3.core.mapper.reflect.BeanMapper;
 import org.jdbi.v3.sqlobject.statement.SqlQuery;
@@ -22,9 +24,7 @@ import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
-import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Proxy;
-import java.lang.reflect.Type;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -185,44 +185,7 @@ public class MuYunRepositoryFactory {
     }
 
     private EntityDaoTypes resolveEntityDaoTypes(Class<?> daoType) {
-        for (Type genericInterface : daoType.getGenericInterfaces()) {
-            EntityDaoTypes hit = resolveEntityDaoTypes(genericInterface);
-            if (hit != null) {
-                return hit;
-            }
-        }
-        return null;
-    }
-
-    private EntityDaoTypes resolveEntityDaoTypes(Type genericType) {
-        if (genericType instanceof ParameterizedType pt) {
-            Type raw = pt.getRawType();
-            if (raw == EntityDao.class) {
-                Type[] args = pt.getActualTypeArguments();
-                if (args.length == 2 && args[0] instanceof Class<?> entityType && args[1] instanceof Class<?> idType) {
-                    return new EntityDaoTypes(entityType, idType);
-                }
-                throw new IllegalStateException("EntityDao type arguments must be concrete classes: " + pt);
-            }
-            if (raw instanceof Class<?> rawClass) {
-                for (Type next : rawClass.getGenericInterfaces()) {
-                    EntityDaoTypes hit = resolveEntityDaoTypes(next);
-                    if (hit != null) {
-                        return hit;
-                    }
-                }
-            }
-            return null;
-        }
-        if (genericType instanceof Class<?> clazz) {
-            for (Type next : clazz.getGenericInterfaces()) {
-                EntityDaoTypes hit = resolveEntityDaoTypes(next);
-                if (hit != null) {
-                    return hit;
-                }
-            }
-        }
-        return null;
+        return EntityDaoTypeResolver.resolve(daoType);
     }
 
     private static Object invokeDefault(Object proxy, Method method, Object[] args) throws Throwable {
@@ -242,9 +205,6 @@ public class MuYunRepositoryFactory {
     private static boolean hasJdbiSqlAnnotation(Method method) {
         return method.isAnnotationPresent(SqlQuery.class)
                 || method.isAnnotationPresent(SqlUpdate.class);
-    }
-
-    private record EntityDaoTypes(Class<?> entityType, Class<?> idType) {
     }
 
     private enum EntityDaoMethodType {

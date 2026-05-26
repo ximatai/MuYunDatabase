@@ -1,10 +1,9 @@
 package net.ximatai.muyun.database.spring.boot.sql.repository;
 
-import net.ximatai.muyun.database.core.orm.EntityDao;
 import net.ximatai.muyun.database.spring.boot.sql.annotation.MuYunRepository;
+import net.ximatai.muyun.database.spring.boot.sql.internal.EntityDaoTypeResolver;
+import net.ximatai.muyun.database.spring.boot.sql.internal.EntityDaoTypeResolver.EntityDaoTypes;
 
-import java.lang.reflect.ParameterizedType;
-import java.lang.reflect.Type;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -43,44 +42,8 @@ public class MuYunRepositoryCatalog {
     }
 
     private Class<?> resolveEntityType(Class<?> repositoryInterface) {
-        for (Type genericInterface : repositoryInterface.getGenericInterfaces()) {
-            Class<?> hit = resolveEntityType(genericInterface);
-            if (hit != null) {
-                return hit;
-            }
-        }
-        return null;
-    }
-
-    private Class<?> resolveEntityType(Type genericType) {
-        if (genericType instanceof ParameterizedType pt) {
-            Type raw = pt.getRawType();
-            if (raw == EntityDao.class) {
-                Type[] args = pt.getActualTypeArguments();
-                if (args.length == 2 && args[0] instanceof Class<?> entityType) {
-                    return entityType;
-                }
-                throw new IllegalStateException("EntityDao type arguments must be concrete classes: " + pt);
-            }
-            if (raw instanceof Class<?> rawClass) {
-                for (Type next : rawClass.getGenericInterfaces()) {
-                    Class<?> hit = resolveEntityType(next);
-                    if (hit != null) {
-                        return hit;
-                    }
-                }
-            }
-            return null;
-        }
-        if (genericType instanceof Class<?> clazz) {
-            for (Type next : clazz.getGenericInterfaces()) {
-                Class<?> hit = resolveEntityType(next);
-                if (hit != null) {
-                    return hit;
-                }
-            }
-        }
-        return null;
+        EntityDaoTypes daoTypes = EntityDaoTypeResolver.resolve(repositoryInterface);
+        return daoTypes == null ? null : daoTypes.entityType();
     }
 
     public record RepositoryEntityBinding(Class<?> entityClass, MuYunRepository.AlignTable alignTable) {
