@@ -1,7 +1,6 @@
 package net.ximatai.muyun.database.core.orm;
 
 import net.ximatai.muyun.database.core.IDatabaseOperations;
-import net.ximatai.muyun.database.core.builder.TableBuilder;
 import net.ximatai.muyun.database.core.metadata.DBInfo;
 
 import java.util.ArrayList;
@@ -37,33 +36,15 @@ public class DefaultSimpleEntityManager implements SimpleEntityManager {
 
     @Override
     public <T> boolean ensureTable(Class<T> entityClass) {
-        return new TableBuilder(operations).build(entityClass);
+        EntityMeta meta = resolveMeta(entityClass);
+        return new SchemaManager(operations).ensureTable(meta.getTableWrapper());
     }
 
     @Override
     public <T> MigrationResult ensureTable(Class<T> entityClass, MigrationOptions options) {
         Objects.requireNonNull(entityClass, "entityClass must not be null");
-        MigrationOptions safeOptions = options == null ? MigrationOptions.execute() : options;
-
         EntityMeta meta = resolveMeta(entityClass);
-        SchemaMigrationPlanner.Plan plan = new SchemaMigrationPlanner(operations).plan(meta.getTableWrapper());
-        if (!plan.isChanged()) {
-            return MigrationResult.empty(safeOptions);
-        }
-
-        if (safeOptions.isStrict() && plan.hasNonAdditive()) {
-            throw new OrmException(
-                    OrmException.Code.STRICT_MIGRATION_REJECTED,
-                    "Strict migration rejected non-additive changes for table " + schema(meta) + "." + meta.getTableName()
-            );
-        }
-
-        if (safeOptions.isDryRun()) {
-            return new MigrationResult(true, true, plan.hasNonAdditive(), plan.getStatements());
-        }
-
-        boolean changed = new TableBuilder(operations).build(meta.getTableWrapper());
-        return new MigrationResult(changed, false, plan.hasNonAdditive(), plan.getStatements());
+        return new SchemaManager(operations).ensureTable(meta.getTableWrapper(), options);
     }
 
     @Override
