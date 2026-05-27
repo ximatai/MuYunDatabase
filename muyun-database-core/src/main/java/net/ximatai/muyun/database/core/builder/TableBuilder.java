@@ -100,6 +100,12 @@ public class TableBuilder {
 
         dbTable.resetColumns();
 
+        wrapper.getDroppedColumns().forEach(columnName -> {
+            dropColumnIfExists(dbTable, columnName);
+        });
+
+        dbTable.resetColumns();
+
         wrapper.getDroppedIndexes().forEach(index -> {
             dropIndexIfExists(dbTable, index);
         });
@@ -215,6 +221,19 @@ public class TableBuilder {
         }
 
         return isNew;
+    }
+
+    private boolean dropColumnIfExists(DBTable dbTable, String columnName) {
+        requireValidIdentifier(columnName, "column");
+        if (!dbTable.contains(columnName)) {
+            return false;
+        }
+        db.execute(dialect.dropColumn(
+                qualifiedName(dbTable.getSchema(), dbTable.getName()),
+                SchemaBuildRules.quoteIdentifier(columnName, getDatabaseType())
+        ));
+        logger.info("column " + dbTable.getSchemaDotTable() + "." + columnName + " dropped");
+        return true;
     }
 
     private boolean dropIndexIfExists(DBTable dbTable, Index index) {

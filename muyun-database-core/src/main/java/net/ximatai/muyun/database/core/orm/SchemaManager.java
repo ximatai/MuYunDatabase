@@ -33,8 +33,8 @@ public class SchemaManager {
         if (safeOptions.isDryRun()) {
             return new MigrationResult(true, true, plan.hasNonAdditive(), plan.getStatements());
         }
-        boolean changed = ensureTable(table);
-        return new MigrationResult(changed, false, plan.hasNonAdditive(), plan.getStatements());
+        ensureTable(table);
+        return new MigrationResult(true, false, plan.hasNonAdditive(), plan.getStatements());
     }
 
     private String tableName(TableWrapper table) {

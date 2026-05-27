@@ -22,6 +22,8 @@ public interface TableBuilderSqlDialect {
 
     String setColumnComment(String schemaDotTable, String columnName, String comment, String columnDefinition);
 
+    String dropColumn(String schemaDotTable, String columnName);
+
     String dropIndex(String schema, String schemaDotTable, String indexName);
 
     String createIndex(String schemaDotTable, String indexName, List<String> columns, boolean unique);

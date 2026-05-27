@@ -50,6 +50,11 @@ public class MySqlTableBuilderSqlDialect implements TableBuilderSqlDialect {
     }
 
     @Override
+    public String dropColumn(String schemaDotTable, String columnName) {
+        return "alter table " + schemaDotTable + " drop column " + columnName + ";";
+    }
+
+    @Override
     public String dropIndex(String schema, String schemaDotTable, String indexName) {
         return "drop index " + indexName + " on " + schemaDotTable + ";";
     }

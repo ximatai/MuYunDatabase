@@ -85,6 +85,50 @@ class SchemaManagerTest {
     }
 
     @Test
+    void shouldPlanAndExecuteExplicitColumnDropAsNonAdditiveMigration() {
+        FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("POSTGRESQL"));
+        existingInfo(loader);
+        loader.columns.get("public.contract").put("code", varcharColumn("code", 64));
+        loader.columns.get("public.contract").put("removed_name", varcharColumn("removed_name", 128));
+        FakeOperations operations = new FakeOperations(loader);
+        TableWrapper table = TableWrapper.withName("contract")
+                .setPrimaryKey(Column.of("id").setType(ColumnType.VARCHAR).setLength(32).setPrimaryKey())
+                .addColumn(Column.of("code").setType(ColumnType.VARCHAR).setLength(64))
+                .dropColumn("removed_name");
+
+        MigrationResult dryRun = new SchemaManager(operations).ensureTable(table, MigrationOptions.dryRun());
+
+        assertTrue(dryRun.isChanged());
+        assertTrue(dryRun.hasNonAdditiveChanges());
+        assertTrue(dryRun.getStatements().stream().anyMatch(sql -> sql.contains("drop column \"removed_name\"")));
+
+        MigrationResult executed = new SchemaManager(operations).ensureTable(table, MigrationOptions.execute());
+
+        assertTrue(executed.isChanged());
+        assertTrue(executed.hasNonAdditiveChanges());
+        assertTrue(operations.executedSql.stream().anyMatch(sql -> sql.contains("drop column \"removed_name\"")));
+    }
+
+    @Test
+    void shouldRejectExplicitColumnDropInStrictMode() {
+        FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("POSTGRESQL"));
+        existingInfo(loader);
+        loader.columns.get("public.contract").put("removed_name", varcharColumn("removed_name", 128));
+        FakeOperations operations = new FakeOperations(loader);
+        TableWrapper table = TableWrapper.withName("contract")
+                .setPrimaryKey(Column.of("id").setType(ColumnType.VARCHAR).setLength(32).setPrimaryKey())
+                .dropColumn("removed_name");
+
+        OrmException exception = assertThrows(
+                OrmException.class,
+                () -> new SchemaManager(operations).ensureTable(table, MigrationOptions.strict())
+        );
+
+        assertEquals(OrmException.Code.STRICT_MIGRATION_REJECTED, exception.getCode());
+        assertEquals(List.of(), operations.executedSql);
+    }
+
+    @Test
     void shouldKeepNarrowUniqueIndexWhenTargetStillDeclaresIt() {
         FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("POSTGRESQL"));
         existingInfo(loader);

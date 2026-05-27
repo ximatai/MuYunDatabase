@@ -88,6 +88,10 @@ class SchemaMigrationPlanner {
             checkAndPlanColumn(table, column, builder);
         }
 
+        for (String columnName : wrapper.getDroppedColumns()) {
+            checkAndPlanDropColumn(table, columnName, builder);
+        }
+
         for (Index index : wrapper.getDroppedIndexes()) {
             checkAndPlanDropIndex(table, index, builder);
         }
@@ -121,6 +125,17 @@ class SchemaMigrationPlanner {
                 ));
             }
         }
+    }
+
+    private void checkAndPlanDropColumn(DBTable table, String columnName, PlanBuilder builder) {
+        assertValidIdentifier(columnName, "column");
+        if (!table.contains(columnName)) {
+            return;
+        }
+        builder.addNonAdditive(dialect.dropColumn(
+                SchemaBuildRules.qualifiedName(table.getSchema(), table.getName(), getDatabaseType()),
+                SchemaBuildRules.quoteIdentifier(columnName, getDatabaseType())
+        ));
     }
 
     private void checkAndPlanDropIndex(DBTable table, Index index, PlanBuilder builder) {
