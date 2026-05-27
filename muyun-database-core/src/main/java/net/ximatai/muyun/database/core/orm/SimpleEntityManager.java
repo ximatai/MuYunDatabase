@@ -1,6 +1,7 @@
 package net.ximatai.muyun.database.core.orm;
 
 import java.util.List;
+import java.util.Map;
 
 public interface SimpleEntityManager {
 
@@ -19,11 +20,15 @@ public interface SimpleEntityManager {
         return update(entity);
     }
 
+    <T> int update(T entity, Map<String, Object> conditions);
+
     <T> int upsert(T entity);
 
     <T, ID> T findById(Class<T> entityClass, ID id);
 
     <T, ID> int deleteById(Class<T> entityClass, ID id);
+
+    <T, ID> int deleteById(Class<T> entityClass, ID id, Map<String, Object> conditions);
 
     <T> List<T> findAll(Class<T> entityClass, PageRequest pageRequest);
 

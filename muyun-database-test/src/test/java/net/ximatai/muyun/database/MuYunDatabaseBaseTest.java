@@ -440,6 +440,30 @@ public abstract class MuYunDatabaseBaseTest {
         assertEquals("patch_target", item.get("v_name"));
         assertEquals(5, ((Number) item.get("i_age")).intValue());
 
+        int staleUpdate = db.patchUpdateItemWhere("basic",
+                Map.of("v_name", "stale_update"),
+                Map.of("id", id, "i_age", 999));
+        assertEquals(0, staleUpdate);
+        assertEquals("patch_target", db.getItem("basic", id).get("v_name"));
+
+        int conditionalUpdate = db.patchUpdateItemWhere("basic",
+                Map.of("v_name", "conditional_update"),
+                Map.of("id", id, "i_age", 5));
+        assertEquals(1, conditionalUpdate);
+        assertEquals("conditional_update", db.getItem("basic", id).get("v_name"));
+
+        int conditionalSameColumnUpdate = db.patchUpdateItemWhere("basic",
+                Map.of("i_age", 6),
+                Map.of("id", id, "i_age", 5));
+        assertEquals(1, conditionalSameColumnUpdate);
+        assertEquals(6, ((Number) db.getItem("basic", id).get("i_age")).intValue());
+
+        int ignoredPkPatch = db.patchUpdateItemWhere("basic",
+                Map.of("id", UUID.randomUUID().toString(), "v_name", "pk_patch_ignored"),
+                Map.of("id", id));
+        assertEquals(1, ignoredPkPatch);
+        assertEquals("pk_patch_ignored", db.getItem("basic", id).get("v_name"));
+
         MuYunDatabaseException ex = assertThrows(
                 MuYunDatabaseException.class,
                 () -> db.patchUpdateItem("basic", id, Map.of("id", id))
@@ -464,6 +488,13 @@ public abstract class MuYunDatabaseBaseTest {
         Map<String, Object> item = db.getItem("basic", id);
 
         assertNull(item);
+
+        String conditionalId = db.insertItem("basic", body);
+        assertNotNull(conditionalId);
+        assertEquals(0, db.deleteItemWhere("basic", Map.of("id", conditionalId, "i_age", 999)));
+        assertNotNull(db.getItem("basic", conditionalId));
+        assertEquals(1, db.deleteItemWhere("basic", Map.of("id", conditionalId, "i_age", 5)));
+        assertNull(db.getItem("basic", conditionalId));
     }
 
     protected void testQuery() {

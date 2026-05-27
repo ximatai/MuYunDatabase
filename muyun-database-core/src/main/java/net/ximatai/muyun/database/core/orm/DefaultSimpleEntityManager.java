@@ -5,6 +5,7 @@ import net.ximatai.muyun.database.core.metadata.DBInfo;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -101,6 +102,25 @@ public class DefaultSimpleEntityManager implements SimpleEntityManager {
     }
 
     @Override
+    public <T> int update(T entity, Map<String, Object> conditions) {
+        Objects.requireNonNull(entity, "entity must not be null");
+
+        EntityMeta meta = resolveMeta(entity.getClass());
+        Object id = meta.getIdField().read(entity);
+        if (id == null) {
+            throw new OrmException(OrmException.Code.INVALID_ENTITY, "entity id must not be null");
+        }
+
+        Map<String, Object> body = EntityMapper.toMap(meta, entity, true, false);
+        Map<String, Object> where = new LinkedHashMap<>();
+        if (conditions != null) {
+            where.putAll(resolveConditionColumns(meta, conditions));
+        }
+        where.put(meta.getIdColumnName(), id);
+        return operations.patchUpdateItemWhere(schema(meta), meta.getTableName(), body, where);
+    }
+
+    @Override
     public <T> int upsert(T entity) {
         Objects.requireNonNull(entity, "entity must not be null");
 
@@ -129,6 +149,19 @@ public class DefaultSimpleEntityManager implements SimpleEntityManager {
 
         EntityMeta meta = resolveMeta(entityClass);
         return operations.deleteItem(schema(meta), meta.getTableName(), id);
+    }
+
+    @Override
+    public <T, ID> int deleteById(Class<T> entityClass, ID id, Map<String, Object> conditions) {
+        Objects.requireNonNull(entityClass, "entityClass must not be null");
+
+        EntityMeta meta = resolveMeta(entityClass);
+        Map<String, Object> where = new LinkedHashMap<>();
+        if (conditions != null) {
+            where.putAll(resolveConditionColumns(meta, conditions));
+        }
+        where.put(meta.getIdColumnName(), id);
+        return operations.deleteItemWhere(schema(meta), meta.getTableName(), where);
     }
 
     @Override
@@ -268,6 +301,18 @@ public class DefaultSimpleEntityManager implements SimpleEntityManager {
 
     private DBInfo.Type databaseType() {
         return operations.getDBInfo().getDatabaseType();
+    }
+
+    private Map<String, Object> resolveConditionColumns(EntityMeta meta, Map<String, Object> conditions) {
+        Map<String, Object> resolved = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : conditions.entrySet()) {
+            String columnName = meta.resolveColumnName(entry.getKey());
+            if (columnName == null || !SqlIdentifiers.isSafe(columnName)) {
+                throw new OrmException(OrmException.Code.INVALID_CRITERIA, "Unknown or unsafe condition field: " + entry.getKey());
+            }
+            resolved.put(columnName, entry.getValue());
+        }
+        return resolved;
     }
 
     private int executeUpsert(String schema, String tableName, Map<String, Object> body) {

@@ -160,6 +160,70 @@ public final class SqlPlanBuilder {
         return new PreparedSql(sql, bindParams);
     }
 
+    public static PreparedSql preparePatchUpdateSql(String schema,
+                                                    String tableName,
+                                                    Map<String, Object> patchParams,
+                                                    Map<String, Object> whereParams,
+                                                    Map<String, DBColumn> columnMap,
+                                                    String pkName,
+                                                    DBInfo.Type dbType) {
+        StringJoiner setClause = new StringJoiner(", ");
+        StringJoiner whereClause = new StringJoiner(" and ");
+        Map<String, Object> bindParams = new HashMap<>();
+        int updateIndex = 0;
+        for (String key : patchParams.keySet()) {
+            if (columnMap.containsKey(key) && !key.equalsIgnoreCase(pkName)) {
+                String bindName = "p_" + updateIndex++;
+                setClause.add(quoteIdentifier(key, dbType) + "=:" + bindName);
+                bindParams.put(bindName, patchParams.get(key));
+            }
+        }
+        int whereIndex = 0;
+        for (String key : whereParams.keySet()) {
+            if (columnMap.containsKey(key)) {
+                String bindName = "w_" + whereIndex++;
+                whereClause.add(quoteIdentifier(key, dbType) + "=:" + bindName);
+                bindParams.put(bindName, whereParams.get(key));
+            }
+        }
+        String renderedSetClause = setClause.toString();
+        if (renderedSetClause.isBlank()) {
+            throw new MuYunDatabaseException("No updatable fields were provided for patch update");
+        }
+        String renderedWhereClause = whereClause.toString();
+        if (renderedWhereClause.isBlank()) {
+            throw new MuYunDatabaseException("No where fields were provided for conditional patch update");
+        }
+        String sql = "update " + quoteSchemaTable(schema, tableName, dbType)
+                + " set " + renderedSetClause
+                + " where " + renderedWhereClause;
+        return new PreparedSql(sql, bindParams);
+    }
+
+    public static PreparedSql prepareDeleteSql(String schema,
+                                               String tableName,
+                                               Map<String, Object> whereParams,
+                                               Map<String, DBColumn> columnMap,
+                                               DBInfo.Type dbType) {
+        StringJoiner whereClause = new StringJoiner(" and ");
+        Map<String, Object> bindParams = new HashMap<>();
+        int whereIndex = 0;
+        for (String key : whereParams.keySet()) {
+            if (columnMap.containsKey(key)) {
+                String bindName = "w_" + whereIndex++;
+                whereClause.add(quoteIdentifier(key, dbType) + "=:" + bindName);
+                bindParams.put(bindName, whereParams.get(key));
+            }
+        }
+        String renderedWhereClause = whereClause.toString();
+        if (renderedWhereClause.isBlank()) {
+            throw new MuYunDatabaseException("No where fields were provided for conditional delete");
+        }
+        String sql = "delete from " + quoteSchemaTable(schema, tableName, dbType)
+                + " where " + renderedWhereClause;
+        return new PreparedSql(sql, bindParams);
+    }
+
     public static Map<String, Object> toBindMap(Map<String, Object> source, List<String> columns, List<String> bindNames) {
         Map<String, Object> bindParams = new HashMap<>();
         for (int i = 0; i < columns.size(); i++) {

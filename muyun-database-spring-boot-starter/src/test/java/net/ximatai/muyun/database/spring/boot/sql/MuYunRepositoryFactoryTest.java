@@ -247,6 +247,55 @@ class MuYunRepositoryFactoryTest {
     }
 
     @Test
+    void shouldDelegateConditionalEntityDaoMethods() {
+        @SuppressWarnings("unchecked")
+        IDatabaseOperations<Object> operations = (IDatabaseOperations<Object>) mock(IDatabaseOperations.class);
+        SimpleEntityManager entityManager = mock(SimpleEntityManager.class);
+        DemoRole role = new DemoRole();
+        role.setId("r-40");
+        role.setRoleName("conditional");
+        Map<String, Object> conditions = Map.of("version", 1);
+        when(entityManager.update(role, conditions)).thenReturn(1);
+        when(entityManager.deleteById(DemoRole.class, "r-40", conditions)).thenReturn(1);
+
+        MuYunRepositoryFactory factory = new MuYunRepositoryFactory(
+                operations,
+                new MockEnvironment(),
+                mock(Jdbi.class),
+                entityManager
+        );
+        PureEntityDao dao = factory.create(PureEntityDao.class);
+
+        assertEquals(1, dao.updateByIdAndCondition(role, conditions));
+        assertEquals(1, dao.deleteByIdAndCondition("r-40", conditions));
+        verify(entityManager).update(role, conditions);
+        verify(entityManager).deleteById(DemoRole.class, "r-40", conditions);
+    }
+
+    @Test
+    void shouldAllowEntityDaoDefaultMethodToComposeReservedMethods() {
+        @SuppressWarnings("unchecked")
+        IDatabaseOperations<Object> operations = (IDatabaseOperations<Object>) mock(IDatabaseOperations.class);
+        SimpleEntityManager entityManager = mock(SimpleEntityManager.class);
+        DemoRole role = new DemoRole();
+        role.setId("r-41");
+        role.setRoleName("default-method");
+        Map<String, Object> conditions = Map.of("version", 1);
+        when(entityManager.update(role, conditions)).thenReturn(1);
+
+        MuYunRepositoryFactory factory = new MuYunRepositoryFactory(
+                operations,
+                new MockEnvironment(),
+                mock(Jdbi.class),
+                entityManager
+        );
+        DefaultMethodEntityDao dao = factory.create(DefaultMethodEntityDao.class);
+
+        assertEquals(1, dao.updateByVersion(role, 1));
+        verify(entityManager).update(role, conditions);
+    }
+
+    @Test
     void shouldResolveEntityDaoThroughIntermediateGenericInterface() {
         @SuppressWarnings("unchecked")
         IDatabaseOperations<Object> operations = (IDatabaseOperations<Object>) mock(IDatabaseOperations.class);
@@ -285,6 +334,13 @@ class MuYunRepositoryFactoryTest {
 
     @MuYunRepository
     interface PureEntityDao extends EntityDao<DemoRole, String> {
+    }
+
+    @MuYunRepository
+    interface DefaultMethodEntityDao extends EntityDao<DemoRole, String> {
+        default int updateByVersion(DemoRole entity, Integer expectedVersion) {
+            return updateByIdAndCondition(entity, Map.of("version", expectedVersion));
+        }
     }
 
     interface IntermediateEntityDao<T, ID> extends EntityDao<T, ID> {

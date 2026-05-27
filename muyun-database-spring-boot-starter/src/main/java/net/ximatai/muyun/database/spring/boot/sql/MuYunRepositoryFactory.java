@@ -80,7 +80,7 @@ public class MuYunRepositoryFactory {
             this.entityDaoDelegate = resolveEntityDaoDelegate(daoType);
 
             for (Method method : daoType.getMethods()) {
-                if (method.getDeclaringClass() == Object.class || method.isDefault() || Modifier.isStatic(method.getModifiers())) {
+                if (method.getDeclaringClass() == Object.class || Modifier.isStatic(method.getModifiers())) {
                     continue;
                 }
                 validateMethod(method);
@@ -94,16 +94,15 @@ public class MuYunRepositoryFactory {
             if (method.getDeclaringClass() == Object.class) {
                 return method.invoke(this, safeArgs);
             }
-            if (method.isDefault()) {
-                return invokeDefault(proxy, method, safeArgs);
-            }
-
             EntityDaoMethodType type = entityDaoMethodTypes.computeIfAbsent(
                     method,
                     m -> entityDaoDelegate == null ? EntityDaoMethodType.NONE : entityDaoDelegate.resolve(m)
             );
             if (type != EntityDaoMethodType.NONE) {
                 return entityDaoDelegate.invoke(type, safeArgs);
+            }
+            if (method.isDefault()) {
+                return invokeDefault(proxy, method, safeArgs);
             }
             return invokeViaJdbi(method, safeArgs);
         }
@@ -123,6 +122,10 @@ public class MuYunRepositoryFactory {
                 if (hasJdbiSqlAnnotation(method)) {
                     throw new IllegalStateException("CRUD method is reserved by EntityDao and must not use SQL annotations: " + method);
                 }
+                return;
+            }
+
+            if (method.isDefault()) {
                 return;
             }
 
@@ -220,7 +223,9 @@ public class MuYunRepositoryFactory {
         ENSURE_TABLE,
         INSERT,
         UPDATE_BY_ID,
+        UPDATE_BY_ID_AND_CONDITION,
         DELETE_BY_ID,
+        DELETE_BY_ID_AND_CONDITION,
         EXISTS_BY_ID,
         FIND_BY_ID,
         QUERY,
@@ -234,9 +239,12 @@ public class MuYunRepositoryFactory {
     @SuppressWarnings("unchecked")
     private final class EntityDaoDelegate {
         private static final Set<String> RESERVED_METHOD_NAMES = Set.of(
+                "ensureTable",
                 "insert",
                 "updateById",
+                "updateByIdAndCondition",
                 "deleteById",
+                "deleteByIdAndCondition",
                 "existsById",
                 "findById",
                 "query",
@@ -270,8 +278,20 @@ public class MuYunRepositoryFactory {
             if ("updateById".equals(name) && paramTypes.length == 1 && isIntReturn(returnType)) {
                 return EntityDaoMethodType.UPDATE_BY_ID;
             }
+            if ("updateByIdAndCondition".equals(name)
+                    && paramTypes.length == 2
+                    && Map.class.isAssignableFrom(paramTypes[1])
+                    && isIntReturn(returnType)) {
+                return EntityDaoMethodType.UPDATE_BY_ID_AND_CONDITION;
+            }
             if ("deleteById".equals(name) && paramTypes.length == 1 && isIntReturn(returnType)) {
                 return EntityDaoMethodType.DELETE_BY_ID;
+            }
+            if ("deleteByIdAndCondition".equals(name)
+                    && paramTypes.length == 2
+                    && Map.class.isAssignableFrom(paramTypes[1])
+                    && isIntReturn(returnType)) {
+                return EntityDaoMethodType.DELETE_BY_ID_AND_CONDITION;
             }
             if ("existsById".equals(name) && paramTypes.length == 1 && isBooleanReturn(returnType)) {
                 return EntityDaoMethodType.EXISTS_BY_ID;
@@ -353,7 +373,9 @@ public class MuYunRepositoryFactory {
                 case "ensureTable" -> "boolean ensureTable()";
                 case "insert" -> "ID insert(T entity)";
                 case "updateById" -> "int updateById(T entity)";
+                case "updateByIdAndCondition" -> "int updateByIdAndCondition(T entity, Map<String, Object> conditions)";
                 case "deleteById" -> "int deleteById(ID id)";
+                case "deleteByIdAndCondition" -> "int deleteByIdAndCondition(ID id, Map<String, Object> conditions)";
                 case "existsById" -> "boolean existsById(ID id)";
                 case "findById" -> "T findById(ID id)";
                 case "query" -> "List<T> query(Criteria criteria, PageRequest pageRequest, Sort... sorts)";
@@ -375,7 +397,9 @@ public class MuYunRepositoryFactory {
                 case ENSURE_TABLE -> entityManager.ensureTable((Class<Object>) entityType);
                 case INSERT -> entityManager.insert(args[0]);
                 case UPDATE_BY_ID -> entityManager.update(args[0]);
+                case UPDATE_BY_ID_AND_CONDITION -> entityManager.update(args[0], castMap(args[1]));
                 case DELETE_BY_ID -> entityManager.deleteById((Class<Object>) entityType, args[0]);
+                case DELETE_BY_ID_AND_CONDITION -> entityManager.deleteById((Class<Object>) entityType, args[0], castMap(args[1]));
                 case EXISTS_BY_ID -> entityManager.findById((Class<Object>) entityType, args[0]) != null;
                 case FIND_BY_ID -> entityManager.findById((Class<Object>) entityType, args[0]);
                 case QUERY -> entityManager.query((Class<Object>) entityType, (Criteria) args[0], (PageRequest) args[1], extractSorts(args, 2));
@@ -387,6 +411,11 @@ public class MuYunRepositoryFactory {
                 case NONE -> throw new IllegalStateException("Unexpected EntityDao method type");
             };
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> castMap(Object value) {
+        return value == null ? Map.of() : (Map<String, Object>) value;
     }
 
     private static Sort[] extractSorts(Object[] args, int index) {

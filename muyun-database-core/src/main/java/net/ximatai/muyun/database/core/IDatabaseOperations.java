@@ -264,6 +264,34 @@ public interface IDatabaseOperations<K> {
         return this.update(plan.sql(), execParams);
     }
 
+    default int patchUpdateItemWhere(String tableName,
+                                     Map<String, Object> patchParams,
+                                     Map<String, Object> whereParams) {
+        return patchUpdateItemWhere(getDefaultSchemaName(), tableName, patchParams, whereParams);
+    }
+
+    default int patchUpdateItemWhere(String schema,
+                                     String tableName,
+                                     Map<String, Object> patchParams,
+                                     Map<String, Object> whereParams) {
+        Map<String, Object> safePatch = patchParams == null ? Collections.emptyMap() : patchParams;
+        Map<String, Object> safeWhere = whereParams == null ? Collections.emptyMap() : whereParams;
+        DBTable table = resolveTable(schema, tableName);
+        Map<String, Object> transformedPatch = transformDataForDB(table, safePatch);
+        transformedPatch.keySet().removeIf(key -> key.equalsIgnoreCase(getPKName()));
+        Map<String, Object> transformedWhere = transformDataForDB(table, safeWhere);
+        SqlPlanBuilder.PreparedSql plan = SqlPlanBuilder.preparePatchUpdateSql(
+                schema,
+                tableName,
+                transformedPatch,
+                transformedWhere,
+                table.getColumnMap(),
+                getPKName(),
+                getDBInfo().getDatabaseType()
+        );
+        return this.update(plan.sql(), plan.params());
+    }
+
     /**
      * 新增或修改记录
      *
@@ -332,6 +360,24 @@ public interface IDatabaseOperations<K> {
         Objects.requireNonNull(dbTable);
 
         return this.delete("DELETE FROM " + quoteSchemaTable(schema, tableName) + " WHERE " + quoteIdentifier(getPKName()) + "=:id", Collections.singletonMap("id", id));
+    }
+
+    default int deleteItemWhere(String tableName, Map<String, Object> whereParams) {
+        return deleteItemWhere(getDefaultSchemaName(), tableName, whereParams);
+    }
+
+    default int deleteItemWhere(String schema, String tableName, Map<String, Object> whereParams) {
+        DBTable table = resolveTable(schema, tableName);
+        Map<String, Object> safeWhere = whereParams == null ? Collections.emptyMap() : whereParams;
+        Map<String, Object> transformedWhere = transformDataForDB(table, safeWhere);
+        SqlPlanBuilder.PreparedSql plan = SqlPlanBuilder.prepareDeleteSql(
+                schema,
+                tableName,
+                transformedWhere,
+                table.getColumnMap(),
+                getDBInfo().getDatabaseType()
+        );
+        return this.delete(plan.sql(), plan.params());
     }
 
     /**
