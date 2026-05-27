@@ -2,6 +2,7 @@ package net.ximatai.muyun.database.spring.boot;
 
 import net.ximatai.muyun.database.core.IDatabaseOperations;
 import net.ximatai.muyun.database.core.orm.DefaultSimpleEntityManager;
+import net.ximatai.muyun.database.core.orm.EntityMetaResolver;
 import net.ximatai.muyun.database.core.orm.MigrationOptions;
 import net.ximatai.muyun.database.core.orm.SimpleEntityManager;
 import net.ximatai.muyun.database.jdbi.JdbiMetaDataLoader;
@@ -78,8 +79,14 @@ public class MuYunDatabaseAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public SimpleEntityManager simpleEntityManager(IDatabaseOperations<?> operations) {
-        return new DefaultSimpleEntityManager(operations);
+    public EntityMetaResolver entityMetaResolver() {
+        return new EntityMetaResolver();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public SimpleEntityManager simpleEntityManager(IDatabaseOperations<?> operations, EntityMetaResolver entityMetaResolver) {
+        return new DefaultSimpleEntityManager(operations, entityMetaResolver);
     }
 
     @Bean
@@ -132,8 +139,11 @@ public class MuYunDatabaseAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public MuYunRepositoryFactory muYunRepositoryFactory(IDatabaseOperations<?> operations, Environment environment, Jdbi jdbi) {
-        return new MuYunRepositoryFactory(operations, environment, jdbi);
+    public MuYunRepositoryFactory muYunRepositoryFactory(IDatabaseOperations<?> operations,
+                                                         Environment environment,
+                                                         Jdbi jdbi,
+                                                         SimpleEntityManager entityManager) {
+        return new MuYunRepositoryFactory(operations, environment, jdbi, entityManager);
     }
 
     @Bean

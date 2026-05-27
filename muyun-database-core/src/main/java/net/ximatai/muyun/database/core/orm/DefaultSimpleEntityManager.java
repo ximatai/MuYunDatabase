@@ -22,10 +22,21 @@ public class DefaultSimpleEntityManager implements SimpleEntityManager {
         this(operations, UpsertStrategy.ATOMIC_PREFERRED);
     }
 
+    public DefaultSimpleEntityManager(IDatabaseOperations<?> operations, EntityMetaResolver metaResolver) {
+        this(operations, UpsertStrategy.ATOMIC_PREFERRED, metaResolver);
+    }
+
     @SuppressWarnings("unchecked")
     public DefaultSimpleEntityManager(IDatabaseOperations<?> operations, UpsertStrategy upsertStrategy) {
+        this(operations, upsertStrategy, new EntityMetaResolver());
+    }
+
+    @SuppressWarnings("unchecked")
+    public DefaultSimpleEntityManager(IDatabaseOperations<?> operations,
+                                      UpsertStrategy upsertStrategy,
+                                      EntityMetaResolver metaResolver) {
         this.operations = (IDatabaseOperations<Object>) operations;
-        this.metaResolver = new EntityMetaResolver();
+        this.metaResolver = Objects.requireNonNull(metaResolver, "metaResolver must not be null");
         this.upsertStrategy = upsertStrategy == null ? UpsertStrategy.ATOMIC_PREFERRED : upsertStrategy;
         this.criteriaCompiler = new CriteriaSqlCompiler();
     }

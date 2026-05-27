@@ -8,6 +8,7 @@ import net.ximatai.muyun.database.core.orm.Criteria;
 import net.ximatai.muyun.database.core.orm.EntityDao;
 import net.ximatai.muyun.database.core.orm.PageRequest;
 import net.ximatai.muyun.database.core.orm.PageResult;
+import net.ximatai.muyun.database.core.orm.SimpleEntityManager;
 import net.ximatai.muyun.database.core.orm.Sort;
 import net.ximatai.muyun.database.spring.boot.sql.annotation.MuYunRepository;
 import org.jdbi.v3.core.Handle;
@@ -223,6 +224,26 @@ class MuYunRepositoryFactoryTest {
         role.setRoleName("only-entity");
         assertEquals("r-20", dao.insert(role));
         verify(jdbi, never()).withExtension(any(), any());
+    }
+
+    @Test
+    void shouldUseInjectedEntityManagerForEntityDaoMethods() {
+        @SuppressWarnings("unchecked")
+        IDatabaseOperations<Object> operations = (IDatabaseOperations<Object>) mock(IDatabaseOperations.class);
+        SimpleEntityManager entityManager = mock(SimpleEntityManager.class);
+        when(entityManager.ensureTable(DemoRole.class)).thenReturn(true);
+
+        MuYunRepositoryFactory factory = new MuYunRepositoryFactory(
+                operations,
+                new MockEnvironment(),
+                mock(Jdbi.class),
+                entityManager
+        );
+        PureEntityDao dao = factory.create(PureEntityDao.class);
+
+        assertTrue(dao.ensureTable());
+        verify(entityManager).ensureTable(DemoRole.class);
+        verifyNoInteractions(operations);
     }
 
     @Test

@@ -8,11 +8,22 @@ import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 
 public class EntityMetaResolver {
 
     private final Map<Class<?>, EntityMeta> cache = new ConcurrentHashMap<>();
+    private final Function<Class<?>, TableWrapper> tableResolver;
+
+    public EntityMetaResolver() {
+        this(AnnotationProcessor::fromEntityClass);
+    }
+
+    public EntityMetaResolver(Function<Class<?>, TableWrapper> tableResolver) {
+        this.tableResolver = Objects.requireNonNull(tableResolver, "tableResolver must not be null");
+    }
 
     public EntityMeta resolve(Class<?> entityClass) {
         if (entityClass == null) {
@@ -24,9 +35,12 @@ public class EntityMetaResolver {
     private EntityMeta buildMeta(Class<?> entityClass) {
         TableWrapper wrapper;
         try {
-            wrapper = AnnotationProcessor.fromEntityClass(entityClass);
+            wrapper = tableResolver.apply(entityClass);
         } catch (RuntimeException e) {
             throw new OrmException(OrmException.Code.INVALID_MAPPING, "Failed to parse entity annotations: " + entityClass.getName(), e);
+        }
+        if (wrapper == null) {
+            throw new OrmException(OrmException.Code.INVALID_MAPPING, "Failed to parse entity annotations: " + entityClass.getName());
         }
 
         List<EntityFieldMeta> fields = new ArrayList<>();

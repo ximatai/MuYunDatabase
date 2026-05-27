@@ -3,7 +3,6 @@ package net.ximatai.muyun.database.spring.boot.sql;
 import net.ximatai.muyun.database.core.IDatabaseOperations;
 import net.ximatai.muyun.database.core.orm.Criteria;
 import net.ximatai.muyun.database.core.orm.EntityDao;
-import net.ximatai.muyun.database.core.orm.EntityMetaResolver;
 import net.ximatai.muyun.database.core.orm.PageRequest;
 import net.ximatai.muyun.database.core.orm.PageResult;
 import net.ximatai.muyun.database.core.orm.SimpleEntityManager;
@@ -36,15 +35,24 @@ public class MuYunRepositoryFactory {
     @SuppressWarnings("unused")
     private final Environment environment;
     private final Jdbi jdbi;
+    private final SimpleEntityManager entityManager;
 
     public MuYunRepositoryFactory(IDatabaseOperations<?> operations, Environment environment) {
         this(operations, environment, null);
     }
 
     public MuYunRepositoryFactory(IDatabaseOperations<?> operations, Environment environment, Jdbi jdbi) {
+        this(operations, environment, jdbi, new DefaultSimpleEntityManager(operations));
+    }
+
+    public MuYunRepositoryFactory(IDatabaseOperations<?> operations,
+                                  Environment environment,
+                                  Jdbi jdbi,
+                                  SimpleEntityManager entityManager) {
         this.operations = Objects.requireNonNull(operations, "operations");
         this.environment = Objects.requireNonNull(environment, "environment");
         this.jdbi = jdbi;
+        this.entityManager = Objects.requireNonNull(entityManager, "entityManager");
     }
 
     @SuppressWarnings("unchecked")
@@ -240,12 +248,9 @@ public class MuYunRepositoryFactory {
         );
 
         private final Class<?> entityType;
-        private final SimpleEntityManager entityManager;
 
         private EntityDaoDelegate(Class<?> entityType) {
             this.entityType = entityType;
-            this.entityManager = new DefaultSimpleEntityManager(operations);
-            new EntityMetaResolver().resolve(entityType);
         }
 
         private EntityDaoMethodType resolve(Method method) {
