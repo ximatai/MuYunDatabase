@@ -58,8 +58,59 @@ class SchemaManagerTest {
         assertEquals(List.of(), operations.executedSql);
     }
 
+    @Test
+    void shouldPlanAndExecuteObsoleteUniqueIndexDropWhenReplacedByWiderUniqueIndex() {
+        FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("POSTGRESQL"));
+        existingInfo(loader);
+        loader.columns.get("public.contract").put("tenant_id", varcharColumn("tenant_id", 64));
+        loader.columns.get("public.contract").put("code", varcharColumn("code", 64));
+        loader.indexes.put("public.contract", List.of(index("contract_code_uindex", true, "code")));
+        FakeOperations operations = new FakeOperations(loader);
+        TableWrapper table = TableWrapper.withName("contract")
+                .setPrimaryKey(Column.of("id").setType(ColumnType.VARCHAR).setLength(32).setPrimaryKey())
+                .addColumn(Column.of("tenant_id").setType(ColumnType.VARCHAR).setLength(64))
+                .addColumn(Column.of("code").setType(ColumnType.VARCHAR).setLength(64))
+                .addIndex(List.of("tenant_id", "code"), true);
+
+        MigrationResult dryRun = new SchemaManager(operations).ensureTable(table, MigrationOptions.dryRun());
+
+        assertTrue(dryRun.hasNonAdditiveChanges());
+        assertTrue(dryRun.getStatements().stream().anyMatch(sql -> sql.contains("drop index")));
+        assertTrue(dryRun.getStatements().stream().anyMatch(sql -> sql.contains("create unique index")));
+
+        new SchemaManager(operations).ensureTable(table, MigrationOptions.execute());
+
+        assertTrue(operations.executedSql.stream().anyMatch(sql -> sql.contains("drop index")));
+        assertTrue(operations.executedSql.stream().anyMatch(sql -> sql.contains("create unique index")));
+    }
+
+    @Test
+    void shouldKeepNarrowUniqueIndexWhenTargetStillDeclaresIt() {
+        FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("POSTGRESQL"));
+        existingInfo(loader);
+        loader.columns.get("public.contract").put("tenant_id", varcharColumn("tenant_id", 64));
+        loader.columns.get("public.contract").put("code", varcharColumn("code", 64));
+        loader.indexes.put("public.contract", List.of(index("contract_code_uindex", true, "code")));
+        FakeOperations operations = new FakeOperations(loader);
+        TableWrapper table = TableWrapper.withName("contract")
+                .setPrimaryKey(Column.of("id").setType(ColumnType.VARCHAR).setLength(32).setPrimaryKey())
+                .addColumn(Column.of("tenant_id").setType(ColumnType.VARCHAR).setLength(64))
+                .addColumn(Column.of("code").setType(ColumnType.VARCHAR).setLength(64))
+                .addIndex(List.of("code"), true)
+                .addIndex(List.of("tenant_id", "code"), true);
+
+        MigrationResult dryRun = new SchemaManager(operations).ensureTable(table, MigrationOptions.dryRun());
+
+        assertFalse(dryRun.getStatements().stream().anyMatch(sql -> sql.contains("drop index")));
+        assertTrue(dryRun.getStatements().stream().anyMatch(sql -> sql.contains("create unique index")));
+    }
+
     private DBInfo existingInfo() {
         FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("POSTGRESQL"));
+        return existingInfo(loader);
+    }
+
+    private DBInfo existingInfo(FakeMetaDataLoader loader) {
         DBInfo info = loader.getDBInfo();
         DBSchema schema = new DBSchema("public");
         schema.addTable(new DBTable(loader).setSchema("public").setName("contract"));
@@ -76,6 +127,23 @@ class SchemaManagerTest {
         column.setLength(32);
         column.setNullable(true);
         return column;
+    }
+
+    private DBColumn varcharColumn(String name, int length) {
+        DBColumn column = new DBColumn();
+        column.setName(name);
+        column.setType("varchar");
+        column.setLength(length);
+        column.setNullable(true);
+        return column;
+    }
+
+    private DBIndex index(String name, boolean unique, String... columns) {
+        DBIndex index = new DBIndex().setName(name).setUnique(unique);
+        for (String column : columns) {
+            index.addColumn(column);
+        }
+        return index;
     }
 
     private static class FakeMetaDataLoader implements IMetaDataLoader {

@@ -100,6 +100,16 @@ public class TableBuilder {
 
         dbTable.resetColumns();
 
+        wrapper.getDroppedIndexes().forEach(index -> {
+            dropIndexIfExists(dbTable, index);
+        });
+
+        dbTable.resetIndexes();
+
+        dropObsoleteUniqueIndexes(dbTable, wrapper);
+
+        dbTable.resetIndexes();
+
         wrapper.getIndexes().forEach(index -> {
             checkAndBuildIndex(dbTable, index);
         });
@@ -205,6 +215,52 @@ public class TableBuilder {
         }
 
         return isNew;
+    }
+
+    private boolean dropIndexIfExists(DBTable dbTable, Index index) {
+        List<String> columns = new ArrayList<>(index.getColumns());
+        columns.forEach(columnName -> requireValidIdentifier(columnName, "index column"));
+        Set<String> columnSet = new HashSet<>(columns);
+        Optional<DBIndex> dbIndexOptional = dbTable.getIndexList().stream()
+                .filter(i -> new HashSet<>(i.getColumns()).equals(columnSet))
+                .findFirst();
+        if (dbIndexOptional.isEmpty()) {
+            return false;
+        }
+
+        DBIndex dbIndex = dbIndexOptional.get();
+        db.execute(dialect.dropIndex(
+                SchemaBuildRules.quoteIdentifier(dbTable.getSchema(), getDatabaseType()),
+                qualifiedName(dbTable.getSchema(), dbTable.getName()),
+                SchemaBuildRules.quoteIdentifier(dbIndex.getName(), getDatabaseType())
+        ));
+        logger.info("index " + dbTable.getSchemaDotTable() + "." + dbIndex.getName() + " dropped");
+        return true;
+    }
+
+    private void dropObsoleteUniqueIndexes(DBTable dbTable, TableWrapper wrapper) {
+        List<Set<String>> targetUniqueColumnSets = wrapper.getIndexes().stream()
+                .filter(Index::isUnique)
+                .map(index -> (Set<String>) new LinkedHashSet<>(index.getColumns()))
+                .toList();
+        for (DBIndex dbIndex : dbTable.getIndexList()) {
+            if (!dbIndex.isUnique()) {
+                continue;
+            }
+            Set<String> existingColumns = new LinkedHashSet<>(dbIndex.getColumns());
+            boolean stillTargeted = targetUniqueColumnSets.stream().anyMatch(existingColumns::equals);
+            boolean replacedByWiderUnique = targetUniqueColumnSets.stream()
+                    .anyMatch(targetColumns -> targetColumns.size() > existingColumns.size()
+                            && targetColumns.containsAll(existingColumns));
+            if (!stillTargeted && replacedByWiderUnique) {
+                db.execute(dialect.dropIndex(
+                        SchemaBuildRules.quoteIdentifier(dbTable.getSchema(), getDatabaseType()),
+                        qualifiedName(dbTable.getSchema(), dbTable.getName()),
+                        SchemaBuildRules.quoteIdentifier(dbIndex.getName(), getDatabaseType())
+                ));
+                logger.info("index " + dbTable.getSchemaDotTable() + "." + dbIndex.getName() + " dropped");
+            }
+        }
     }
 
     private boolean checkAndBuildIndex(DBTable dbTable, Index index) {

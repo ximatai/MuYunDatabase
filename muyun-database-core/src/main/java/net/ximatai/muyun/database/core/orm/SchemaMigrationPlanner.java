@@ -88,9 +88,52 @@ class SchemaMigrationPlanner {
             checkAndPlanColumn(table, column, builder);
         }
 
+        for (Index index : wrapper.getDroppedIndexes()) {
+            checkAndPlanDropIndex(table, index, builder);
+        }
+
+        planObsoleteUniqueIndexes(table, wrapper, builder);
+
         for (Index index : wrapper.getIndexes()) {
             checkAndPlanIndex(table, index, builder);
         }
+    }
+
+    private void planObsoleteUniqueIndexes(DBTable table, TableWrapper wrapper, PlanBuilder builder) {
+        List<Set<String>> targetUniqueColumnSets = wrapper.getIndexes().stream()
+                .filter(Index::isUnique)
+                .map(index -> (Set<String>) new LinkedHashSet<>(index.getColumns()))
+                .toList();
+        for (DBIndex dbIndex : table.getIndexList()) {
+            if (!dbIndex.isUnique()) {
+                continue;
+            }
+            Set<String> existingColumns = new LinkedHashSet<>(dbIndex.getColumns());
+            boolean stillTargeted = targetUniqueColumnSets.stream().anyMatch(existingColumns::equals);
+            boolean replacedByWiderUnique = targetUniqueColumnSets.stream()
+                    .anyMatch(targetColumns -> targetColumns.size() > existingColumns.size()
+                            && targetColumns.containsAll(existingColumns));
+            if (!stillTargeted && replacedByWiderUnique) {
+                builder.addNonAdditive(dialect.dropIndex(
+                        SchemaBuildRules.quoteIdentifier(table.getSchema(), getDatabaseType()),
+                        SchemaBuildRules.qualifiedName(table.getSchema(), table.getName(), getDatabaseType()),
+                        SchemaBuildRules.quoteIdentifier(dbIndex.getName(), getDatabaseType())
+                ));
+            }
+        }
+    }
+
+    private void checkAndPlanDropIndex(DBTable table, Index index, PlanBuilder builder) {
+        Set<String> targetColumns = new LinkedHashSet<>(index.getColumns());
+        targetColumns.forEach(name -> assertValidIdentifier(name, "index column"));
+        table.getIndexList().stream()
+                .filter(i -> new HashSet<>(i.getColumns()).equals(targetColumns))
+                .findFirst()
+                .ifPresent(dbIndex -> builder.addNonAdditive(dialect.dropIndex(
+                        SchemaBuildRules.quoteIdentifier(table.getSchema(), getDatabaseType()),
+                        SchemaBuildRules.qualifiedName(table.getSchema(), table.getName(), getDatabaseType()),
+                        SchemaBuildRules.quoteIdentifier(dbIndex.getName(), getDatabaseType())
+                )));
     }
 
     private void checkAndPlanColumn(DBTable table, Column column, PlanBuilder builder) {

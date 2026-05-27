@@ -11,6 +11,7 @@ public class TableWrapper extends TableBase {
     private List<TableBase> inherits = new ArrayList<>();
     private List<Column> columns = new ArrayList<>();
     private List<Index> indexes = new ArrayList<>();
+    private List<Index> droppedIndexes = new ArrayList<>();
 
     private Column primaryKey;
 
@@ -86,6 +87,11 @@ public class TableWrapper extends TableBase {
         return this;
     }
 
+    public TableWrapper dropIndex(List<String> columns) {
+        droppedIndexes.add(new Index(columns, false));
+        return this;
+    }
+
     public TableWrapper addColumn(String columnName) {
         columns.add(Column.of(columnName));
         return this;
@@ -136,6 +142,10 @@ public class TableWrapper extends TableBase {
 
     public List<Index> getIndexes() {
         return indexes;
+    }
+
+    public List<Index> getDroppedIndexes() {
+        return droppedIndexes;
     }
 
     public Column getPrimaryKey() {
