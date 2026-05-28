@@ -1,11 +1,10 @@
 [versions]
 jdbi3 = "3.50.0"
 junit = "6.0.1"
-testcontainers-core = "2.0.2"
-testcontainers = "1.21.3"
+testcontainers = "1.21.4"
 
 hikariCP = "7.0.2"
-postgresql = "42.7.8"
+postgresql = "42.7.11"
 mysql = "9.5.0"
 
 slf4j = "2.0.17"
@@ -23,7 +22,7 @@ junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher
 hikariCP = { module = "com.zaxxer:HikariCP", version.ref = "hikariCP" }
 postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
 mysql = { module = "com.mysql:mysql-connector-j", version.ref = "mysql" }
-testcontainers = { module = "org.testcontainers:testcontainers", version.ref = "testcontainers-core" }
+testcontainers = { module = "org.testcontainers:testcontainers", version.ref = "testcontainers" }
 testcontainers-junit-jupiter = { module = "org.testcontainers:junit-jupiter", version.ref = "testcontainers" }
 testcontainers-postgresql = { module = "org.testcontainers:postgresql", version.ref = "testcontainers" }
 testcontainers-mysql = { module = "org.testcontainers:mysql", version.ref = "testcontainers" }

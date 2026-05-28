@@ -12,6 +12,7 @@ import org.jdbi.v3.core.mapper.RowMapper;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.sql.Timestamp;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -232,6 +233,8 @@ abstract class AbstractJdbiDatabaseOperations<K> implements IDatabaseOperations<
             return Timestamp.valueOf(val.atStartOfDay());
         } else if (value instanceof LocalDateTime val) {
             return Timestamp.valueOf(val);
+        } else if (value instanceof Instant val) {
+            return Timestamp.from(val);
         } else if (value instanceof Date val) {
             return new Timestamp(val.getTime());
         } else if (value instanceof String val) {

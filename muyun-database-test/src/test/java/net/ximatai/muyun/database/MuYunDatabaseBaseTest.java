@@ -40,7 +40,9 @@ import javax.sql.DataSource;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.Date;
+import java.sql.Timestamp;
 import java.sql.SQLException;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.List;
@@ -207,11 +209,13 @@ public abstract class MuYunDatabaseBaseTest {
 
     protected void testSimpleInsert() {
 
+        Instant now = Instant.parse("2026-05-28T03:00:00Z");
         Map body = Map.of("v_name", "test_name",
                 "i_age", 5,
                 "b_flag", true,
                 "n_price", 10.2,
-                "d_date", "2024-01-01"
+                "d_date", "2024-01-01",
+                "t_create", now
         );
 
         String id = db.insertItem("basic", body);
@@ -225,6 +229,7 @@ public abstract class MuYunDatabaseBaseTest {
         assertEquals(true, item.get("b_flag"));
         assertEquals(0, BigDecimal.valueOf(10.2).compareTo((BigDecimal) item.get("n_price")));
         assertEquals(LocalDate.of(2024, 1, 1), ((Date) item.get("d_date")).toLocalDate());
+        assertEquals(now, ((Timestamp) item.get("t_create")).toInstant());
     }
 
     protected void testUpsert() {
@@ -900,6 +905,16 @@ class OrmPatchEntity {
 
     @net.ximatai.muyun.database.core.annotation.Column(name = "i_age")
     public Integer age;
+}
+
+@Table(name = "orm_instant_entity")
+class OrmInstantEntity {
+    @Id
+    @net.ximatai.muyun.database.core.annotation.Column(length = 64)
+    public String id;
+
+    @net.ximatai.muyun.database.core.annotation.Column(name = "t_created_at")
+    public java.time.Instant createdAt;
 }
 
 @Table(name = "orm_dryrun_entity")

@@ -7,6 +7,7 @@ import java.lang.reflect.Modifier;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.sql.Timestamp;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -168,6 +169,10 @@ public final class EntityMapper {
 
         if (targetType == LocalDateTime.class && value instanceof Timestamp ts) {
             return ts.toLocalDateTime();
+        }
+
+        if (targetType == Instant.class && value instanceof Timestamp ts) {
+            return ts.toInstant();
         }
 
         return value;

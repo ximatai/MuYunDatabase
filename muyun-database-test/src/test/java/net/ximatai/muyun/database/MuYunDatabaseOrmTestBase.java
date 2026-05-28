@@ -3,6 +3,7 @@ package net.ximatai.muyun.database;
 import net.ximatai.muyun.database.core.orm.*;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -41,6 +42,22 @@ public abstract class MuYunDatabaseOrmTestBase extends MuYunDatabaseDdlTestBase 
 
         int deleted = orm.deleteById((Class) entityClass, id);
         assertEquals(1, deleted);
+    }
+
+    @Test
+    void testSimpleOrmInstantRoundTrip() {
+        orm.ensureTable(OrmInstantEntity.class);
+        Instant createdAt = Instant.parse("2026-05-28T03:00:00Z");
+
+        OrmInstantEntity entity = new OrmInstantEntity();
+        entity.id = UUID.randomUUID().toString();
+        entity.createdAt = createdAt;
+        orm.insert(entity);
+
+        OrmInstantEntity loaded = orm.findById(OrmInstantEntity.class, entity.id);
+
+        assertNotNull(loaded);
+        assertEquals(createdAt, loaded.createdAt);
     }
 
     @Test
