@@ -400,13 +400,13 @@ public class MuYunRepositoryFactory {
                 case UPDATE_BY_ID_AND_CONDITION -> entityManager.update(args[0], castMap(args[1]));
                 case DELETE_BY_ID -> entityManager.deleteById((Class<Object>) entityType, args[0]);
                 case DELETE_BY_ID_AND_CONDITION -> entityManager.deleteById((Class<Object>) entityType, args[0], castMap(args[1]));
-                case EXISTS_BY_ID -> entityManager.findById((Class<Object>) entityType, args[0]) != null;
+                case EXISTS_BY_ID -> entityManager.exists((Class<Object>) entityType, args[0]);
                 case FIND_BY_ID -> entityManager.findById((Class<Object>) entityType, args[0]);
                 case QUERY -> entityManager.query((Class<Object>) entityType, (Criteria) args[0], (PageRequest) args[1], extractSorts(args, 2));
                 case LIST -> entityManager.query((Class<Object>) entityType, (Criteria) args[0], (PageRequest) args[1], extractSorts(args, 2));
                 case PAGE_QUERY -> entityManager.pageQuery((Class<Object>) entityType, (Criteria) args[0], (PageRequest) args[1], extractSorts(args, 2));
                 case PAGE -> entityManager.pageQuery((Class<Object>) entityType, (Criteria) args[0], (PageRequest) args[1], extractSorts(args, 2));
-                case COUNT -> entityManager.pageQuery((Class<Object>) entityType, (Criteria) args[0], PageRequest.of(1, 1)).getTotal();
+                case COUNT -> entityManager.count((Class<Object>) entityType, (Criteria) args[0]);
                 case UPSERT -> entityManager.upsert(args[0]);
                 case NONE -> throw new IllegalStateException("Unexpected EntityDao method type");
             };

@@ -3,7 +3,7 @@ package net.ximatai.muyun.database.core.builder;
 public interface IColumnTypeTransform {
 
     IColumnTypeTransform DEFAULT = type -> switch (type) {
-        case SET -> "text";
+        case SET, JSON_SET -> "text";
         default -> type.name();
     };
 
@@ -16,6 +16,7 @@ public interface IColumnTypeTransform {
             case JSON:
                 return "jsonb";
             case SET:
+            case JSON_SET:
                 return "text";
             default:
                 return type.name();

@@ -7,6 +7,7 @@ plugins {
 
 val releasePublishModules = listOf(
     "muyun-database-core",
+    "muyun-database-core-json-jackson",
     "muyun-database-jdbi",
     "muyun-database-spring-boot-starter"
 )
@@ -14,7 +15,7 @@ val releasePublishModules = listOf(
 allprojects {
     group = "net.ximatai.muyun.database"
 //    version = "1.0.0-SNAPSHOT"
-    version = "3.26.6"
+    version = "3.26.7"
 
     repositories {
         maven { url = uri("https://mirrors.cloud.tencent.com/repository/maven") }

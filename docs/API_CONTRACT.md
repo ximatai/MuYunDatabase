@@ -59,5 +59,9 @@ int upsert(T entity);
 3. 不提供关系映射 ORM（`1:N/N:N`、级联、延迟加载）。
 4. `Set<String>` 字段默认推断为 `ColumnType.SET`，使用 CSV 语义存入 `text` 列。
 5. `ColumnType.SET` 写入时不允许元素包含英文逗号 `,`（否则拒绝写入），以避免 CSV 不可逆解析。
+6. `ColumnType.JSON_SET` 使用 JSON 字符串数组语义存入 `text` 列，适用于元素可能包含逗号的字符串集合。
+7. `ColumnType.JSON_SET` 必须通过 `@Column(type = ColumnType.JSON_SET)` 显式声明；默认 `Set<String>` 推断结果仍为 `ColumnType.SET`。
+8. `ColumnType.JSON_SET` 的元素按字符串处理：写入时忽略 `null` 元素、按集合语义去重、保留首次出现顺序；空集合写入为 `[]`，字段值为 `null` 时写入为 `null`。
+9. `ColumnType.JSON_SET` 读取非法 JSON 数组或写入非法 JSON 数组字符串时直接拒绝，不做静默降级。
 
 下一步：若你在做历史项目改造，请按 [`REFACTOR_GUIDE.md`](REFACTOR_GUIDE.md) 的“推荐重构路径”执行。

@@ -299,6 +299,18 @@ public interface IDatabaseOperations<K> {
      */
     default int upsertItem(String schema, String tableName, Map<String, Object> params) {
 
+        if (supportsAtomicUpsert()) {
+            return atomicUpsertItem(schema, tableName, params);
+        }
+
+        return legacyUpsertItem(schema, tableName, params);
+    }
+
+    /**
+     * 使用传统 SELECT + INSERT/UPDATE 路径执行 upsert。
+     */
+    default int legacyUpsertItem(String schema, String tableName, Map<String, Object> params) {
+
         Optional<K> pkValue = findPrimaryKeyValue(params);
 
         if (pkValue.isEmpty()) {
@@ -341,6 +353,10 @@ public interface IDatabaseOperations<K> {
 
     default int atomicUpsertItem(String tableName, Map<String, Object> params) {
         return atomicUpsertItem(getDefaultSchemaName(), tableName, params);
+    }
+
+    default int legacyUpsertItem(String tableName, Map<String, Object> params) {
+        return legacyUpsertItem(getDefaultSchemaName(), tableName, params);
     }
 
     /**

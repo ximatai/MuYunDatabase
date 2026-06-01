@@ -259,6 +259,32 @@ public class DefaultSimpleEntityManager implements SimpleEntityManager {
         return PageResult.of(records, total, pageRequest);
     }
 
+    @Override
+    public <T> long count(Class<T> entityClass, Criteria criteria) {
+        Objects.requireNonNull(entityClass, "entityClass must not be null");
+        Objects.requireNonNull(criteria, "criteria must not be null");
+
+        EntityMeta meta = resolveMeta(entityClass);
+        if (criteria.isEmpty()) {
+            return countTotal(meta, null, Map.of());
+        }
+        CompiledCriteria compiled = criteriaCompiler.compile(criteria, meta, databaseType());
+        return countTotal(meta, compiled.getSql(), compiled.getParams());
+    }
+
+    @Override
+    public <T, ID> boolean exists(Class<T> entityClass, ID id) {
+        Objects.requireNonNull(entityClass, "entityClass must not be null");
+        Objects.requireNonNull(id, "id must not be null");
+
+        EntityMeta meta = resolveMeta(entityClass);
+        String schemaDotTable = SqlIdentifiers.qualified(schema(meta), meta.getTableName(), databaseType());
+        String pkColumn = SqlIdentifiers.quote(meta.getIdColumnName(), databaseType());
+        String sql = "SELECT 1 FROM " + schemaDotTable + " WHERE " + pkColumn + " = :id LIMIT 1";
+        Map<String, Object> row = operations.row(sql, Map.of("id", id));
+        return row != null && !row.isEmpty();
+    }
+
     private String schema(EntityMeta meta) {
         if (meta.getSchema() != null && !meta.getSchema().isBlank()) {
             return meta.getSchema();
@@ -315,9 +341,13 @@ public class DefaultSimpleEntityManager implements SimpleEntityManager {
         return resolved;
     }
 
+    int executeUpsertForTest(String schema, String tableName, Map<String, Object> body) {
+        return executeUpsert(schema, tableName, body);
+    }
+
     private int executeUpsert(String schema, String tableName, Map<String, Object> body) {
         if (upsertStrategy == UpsertStrategy.LEGACY_ONLY) {
-            return operations.upsertItem(schema, tableName, body);
+            return operations.legacyUpsertItem(schema, tableName, body);
         }
 
         if (!operations.supportsAtomicUpsert()) {
@@ -327,13 +357,6 @@ public class DefaultSimpleEntityManager implements SimpleEntityManager {
             return operations.upsertItem(schema, tableName, body);
         }
 
-        try {
-            return operations.atomicUpsertItem(schema, tableName, body);
-        } catch (RuntimeException ex) {
-            if (upsertStrategy == UpsertStrategy.ATOMIC_ONLY) {
-                throw ex;
-            }
-            return operations.upsertItem(schema, tableName, body);
-        }
+        return operations.atomicUpsertItem(schema, tableName, body);
     }
 }

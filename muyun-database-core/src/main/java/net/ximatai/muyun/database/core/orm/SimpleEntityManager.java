@@ -61,4 +61,8 @@ public interface SimpleEntityManager {
         List<T> records = query(entityClass, criteria, pageRequest, sorts);
         return PageResult.unknownTotal(records, pageRequest);
     }
+
+    <T> long count(Class<T> entityClass, Criteria criteria);
+
+    <T, ID> boolean exists(Class<T> entityClass, ID id);
 }

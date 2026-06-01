@@ -20,7 +20,7 @@
 
 ```groovy
 dependencies {
-    implementation("net.ximatai.muyun.database:muyun-database-jdbi:3.26.1")
+    implementation("net.ximatai.muyun.database:muyun-database-jdbi:3.26.7")
 }
 ```
 
@@ -28,7 +28,7 @@ dependencies {
 <dependency>
   <groupId>net.ximatai.muyun.database</groupId>
   <artifactId>muyun-database-jdbi</artifactId>
-  <version>3.26.1</version>
+  <version>3.26.7</version>
 </dependency>
 ```
 
@@ -129,6 +129,27 @@ class RoleEntity {
 2. 读回时会做去重与空白裁剪（如 `" u1 ,u2,,u1"` -> `["u1", "u2"]`）。
 3. 为保证 CSV 可逆，写入时集合元素不允许包含英文逗号 `,`，否则抛出 `IllegalArgumentException`。
 
+如果集合元素可能包含逗号，显式使用 `ColumnType.JSON_SET`：
+
+```java
+@Table(name = "demo_article")
+class ArticleEntity {
+    @Id
+    @Column(length = 64)
+    public String id;
+
+    @Column(type = ColumnType.JSON_SET)
+    public Set<String> tags;
+}
+```
+
+说明：
+
+1. `ColumnType.JSON_SET` 底层仍写入 `text` 列，但内容是 JSON 字符串数组，如 `["tech, ai","database"]`。
+2. 写入时忽略 `null` 元素、按集合语义去重、保留首次出现顺序；空集合写入为 `[]`，字段值为 `null` 时写入为 `null`。
+3. 读取或写入非法 JSON 数组字符串会直接失败，不会静默降级为单个元素。
+4. 核心模块内置轻量 JSON 数组解析器；如需使用 Jackson 解析器，可额外引入 `muyun-database-core-json-jackson`。
+
 ### 1.5 迁移控制（可选）
 
 ```java
@@ -147,7 +168,7 @@ orm.ensureTable(UserEntity.class, MigrationOptions.dryRunStrict());
 
 ```groovy
 dependencies {
-    implementation("net.ximatai.muyun.database:muyun-database-spring-boot-starter:3.26.1")
+    implementation("net.ximatai.muyun.database:muyun-database-spring-boot-starter:3.26.7")
 }
 ```
 

@@ -159,7 +159,7 @@ public class SimpleEntityManagerUnitTest {
     }
 
     @Test
-    void testUpsertStrategyAtomicPreferredFallsBackToLegacy() {
+    void testUpsertStrategyAtomicPreferredPropagatesAtomicFailure() {
         InMemoryOperations operations = InMemoryOperations.emptyMeta().withAtomicSupport(true, true);
         SimpleEntityManager entityManager = new DefaultSimpleEntityManager(operations, UpsertStrategy.ATOMIC_PREFERRED);
 
@@ -170,13 +170,13 @@ public class SimpleEntityManagerUnitTest {
         entityManager.insert(user);
 
         user.setAge(21);
-        int affected = entityManager.upsert(user);
-        assertEquals(1, affected);
+        RuntimeException exception = assertThrows(RuntimeException.class, () -> entityManager.upsert(user));
+        assertEquals("atomic upsert failed", exception.getMessage());
 
         assertTrue(operations.atomicUpsertCalled);
         DemoUser loaded = entityManager.findById(DemoUser.class, "u2");
         assertNotNull(loaded);
-        assertEquals(21, loaded.getAge());
+        assertEquals(18, loaded.getAge());
     }
 
     @Test

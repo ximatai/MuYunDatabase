@@ -83,6 +83,13 @@ public enum ColumnType {
     SET,
 
     /**
+     * 字符串集合类型（JSON数组存储）
+     * 适用于：元素可能包含逗号的字符串集合
+     * 对应数据库：TEXT (以JSON数组格式存储，如 ["a","b","c"])
+     */
+    JSON_SET,
+
+    /**
      * 字符串数组类型
      * 适用于：标签、分类、多选值等字符串集合
      * 对应数据库：VARCHAR[], TEXT[] (PostgreSQL)

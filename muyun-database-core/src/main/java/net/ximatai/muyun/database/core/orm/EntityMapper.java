@@ -1,6 +1,8 @@
 package net.ximatai.muyun.database.core.orm;
 
 import net.ximatai.muyun.database.core.builder.ColumnType;
+import net.ximatai.muyun.database.core.internal.JsonArrayParser;
+import net.ximatai.muyun.database.core.internal.JsonArrayParserLoader;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Modifier;
@@ -72,6 +74,9 @@ public final class EntityMapper {
         if (fieldMeta.getColumnType() == ColumnType.SET) {
             return toCsvSetValue(value);
         }
+        if (fieldMeta.getColumnType() == ColumnType.JSON_SET) {
+            return toJsonSetValue(value);
+        }
         if (!(value instanceof Enum<?> enumValue)) {
             return value;
         }
@@ -106,6 +111,9 @@ public final class EntityMapper {
     private static Object convertValue(Object value, EntityFieldMeta fieldMeta) {
         if (fieldMeta.getColumnType() == ColumnType.SET) {
             return fromCsvSetValue(value, fieldMeta.getFieldType());
+        }
+        if (fieldMeta.getColumnType() == ColumnType.JSON_SET) {
+            return fromJsonSetValue(value, fieldMeta.getFieldType());
         }
 
         Class<?> targetType = fieldMeta.getFieldType();
@@ -188,26 +196,7 @@ public final class EntityMapper {
 
     private static Object fromCsvSetValue(Object value, Class<?> targetType) {
         LinkedHashSet<String> normalized = normalizeToSet(value, false);
-        if (targetType.isAssignableFrom(LinkedHashSet.class)) {
-            return normalized;
-        }
-        if (targetType.isAssignableFrom(TreeSet.class)
-                || SortedSet.class.isAssignableFrom(targetType)
-                || NavigableSet.class.isAssignableFrom(targetType)) {
-            return new TreeSet<>(normalized);
-        }
-        if (targetType.isAssignableFrom(ArrayList.class)) {
-            return new ArrayList<>(normalized);
-        }
-        if (targetType.isAssignableFrom(LinkedList.class)) {
-            return new LinkedList<>(normalized);
-        }
-        Collection<String> customCollection = instantiateCollection(targetType);
-        if (customCollection != null) {
-            customCollection.addAll(normalized);
-            return customCollection;
-        }
-        return normalized;
+        return adaptCollection(normalized, targetType);
     }
 
     @SuppressWarnings("unchecked")
@@ -265,6 +254,87 @@ public final class EntityMapper {
         if (!text.isEmpty()) {
             normalized.add(text);
         }
+    }
+
+    private static String toJsonSetValue(Object value) {
+        if (value == null) {
+            return null;
+        }
+        LinkedHashSet<String> normalized = new LinkedHashSet<>();
+        if (value instanceof Collection<?> collection) {
+            for (Object item : collection) {
+                if (item != null) {
+                    normalized.add(String.valueOf(item));
+                }
+            }
+        } else if (value instanceof String text && !text.isBlank()) {
+            String content = text.trim();
+            if (content.startsWith("[")) {
+                JsonArrayParser parser = JsonArrayParserLoader.get();
+                return parser.serialize(parser.parse(content));
+            }
+            normalized.add(content);
+        } else if (value != null) {
+            normalized.add(String.valueOf(value));
+        }
+        JsonArrayParser parser = JsonArrayParserLoader.get();
+        return parser.serialize(new ArrayList<>(normalized));
+    }
+
+    private static Object fromJsonSetValue(Object value, Class<?> targetType) {
+        if (value == null) {
+            return null;
+        }
+        LinkedHashSet<String> result = new LinkedHashSet<>();
+        if (value instanceof String text) {
+            if (text.isBlank()) {
+                return adaptCollection(result, targetType);
+            }
+            JsonArrayParser parser = JsonArrayParserLoader.get();
+            result.addAll(parser.parse(text));
+        } else if (value instanceof Collection<?> collection) {
+            for (Object item : collection) {
+                if (item != null) {
+                    result.add(String.valueOf(item));
+                }
+            }
+        } else {
+            result.add(String.valueOf(value));
+        }
+        return adaptCollection(result, targetType);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Object adaptCollection(LinkedHashSet<String> elements, Class<?> targetType) {
+        if (Collection.class.isAssignableFrom(targetType) && targetType.isInterface()) {
+            if (List.class.isAssignableFrom(targetType)) {
+                return new ArrayList<>(elements);
+            }
+            if (Queue.class.isAssignableFrom(targetType)) {
+                return new LinkedList<>(elements);
+            }
+            return elements;
+        }
+        if (targetType.isAssignableFrom(LinkedHashSet.class)) {
+            return elements;
+        }
+        if (targetType.isAssignableFrom(TreeSet.class)
+                || SortedSet.class.isAssignableFrom(targetType)
+                || NavigableSet.class.isAssignableFrom(targetType)) {
+            return new TreeSet<>(elements);
+        }
+        if (targetType.isAssignableFrom(ArrayList.class)) {
+            return new ArrayList<>(elements);
+        }
+        if (targetType.isAssignableFrom(LinkedList.class)) {
+            return new LinkedList<>(elements);
+        }
+        Collection<String> customCollection = instantiateCollection(targetType);
+        if (customCollection != null) {
+            customCollection.addAll(elements);
+            return customCollection;
+        }
+        return elements;
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})

@@ -75,7 +75,13 @@ class MuYunRepositoryFactoryTest {
         when(operations.getDBInfo()).thenReturn(dbInfo);
         when(operations.insertItem(anyString(), anyString(), anyMap())).thenReturn("r-10");
         when(operations.getItem(anyString(), anyString(), any())).thenReturn(Map.of("id", "r-10", "roleName", "hybrid-role"));
-        when(operations.row(anyString(), anyMap())).thenReturn(Map.of("total_count", 1), Map.of("total_count", 1));
+        when(operations.row(anyString(), anyMap())).thenAnswer(invocation -> {
+            String sql = invocation.getArgument(0);
+            if (sql.contains("COUNT")) {
+                return Map.of("total_count", 1);
+            }
+            return Map.of("1", 1);
+        });
         when(operations.query(anyString(), anyMap())).thenReturn(List.of(Map.of("id", "r-10", "roleName", "hybrid-role")));
 
         Jdbi jdbi = mock(Jdbi.class);
@@ -115,7 +121,7 @@ class MuYunRepositoryFactoryTest {
         assertEquals(1, affected);
 
         verify(operations, times(1)).insertItem(anyString(), anyString(), anyMap());
-        verify(operations, times(2)).getItem(anyString(), anyString(), any());
+        verify(operations, times(1)).getItem(anyString(), anyString(), any());
         verify(jdbi, times(1)).withHandle(any());
     }
 

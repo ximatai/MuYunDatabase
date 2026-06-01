@@ -5,6 +5,8 @@ import net.ximatai.muyun.database.core.IMetaDataLoader;
 import net.ximatai.muyun.database.core.annotation.Column;
 import net.ximatai.muyun.database.core.annotation.Id;
 import net.ximatai.muyun.database.core.annotation.Table;
+import net.ximatai.muyun.database.core.metadata.DBInfo;
+import net.ximatai.muyun.database.core.metadata.DBSchema;
 import org.junit.jupiter.api.Test;
 
 import java.sql.Array;
@@ -12,7 +14,10 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DefaultSimpleEntityManagerTest {
 
@@ -57,6 +62,96 @@ class DefaultSimpleEntityManagerTest {
         assertEquals(OrmException.Code.INVALID_CRITERIA, ex.getCode());
     }
 
+    @Test
+    void countShouldGenerateSelectCountSql() {
+        CapturingOperations operations = new CapturingOperations();
+        DefaultSimpleEntityManager manager = new DefaultSimpleEntityManager(operations);
+
+        long count = manager.count(SampleRole.class, Criteria.of().eq("roleName", "admin"));
+
+        assertNotNull(operations.capturedSql);
+        assertTrue(operations.capturedSql.contains("COUNT(*)"), "SQL should contain COUNT(*): " + operations.capturedSql);
+        assertTrue(operations.capturedSql.contains("FROM"), "SQL should contain FROM clause: " + operations.capturedSql);
+        assertFalse(operations.capturedSql.contains("SELECT *"), "SQL should not contain SELECT *: " + operations.capturedSql);
+        assertEquals(5L, count);
+    }
+
+    @Test
+    void countShouldGenerateSelectCountSqlWithoutCriteria() {
+        CapturingOperations operations = new CapturingOperations();
+        DefaultSimpleEntityManager manager = new DefaultSimpleEntityManager(operations);
+
+        long count = manager.count(SampleRole.class, Criteria.of());
+
+        assertNotNull(operations.capturedSql);
+        assertTrue(operations.capturedSql.contains("COUNT(*)"), "SQL should contain COUNT(*): " + operations.capturedSql);
+        assertFalse(operations.capturedSql.contains("SELECT *"), "SQL should not contain SELECT *: " + operations.capturedSql);
+        assertFalse(operations.capturedSql.contains("WHERE"), "SQL should not contain WHERE without criteria: " + operations.capturedSql);
+        assertEquals(5L, count);
+    }
+
+    @Test
+    void existsShouldGenerateSelectOneSql() {
+        CapturingOperations operations = new CapturingOperations();
+        DefaultSimpleEntityManager manager = new DefaultSimpleEntityManager(operations);
+
+        boolean exists = manager.exists(SampleRole.class, "r-1");
+
+        assertNotNull(operations.capturedSql);
+        assertTrue(operations.capturedSql.contains("SELECT 1"), "SQL should contain SELECT 1: " + operations.capturedSql);
+        assertTrue(operations.capturedSql.contains("LIMIT 1"), "SQL should contain LIMIT 1: " + operations.capturedSql);
+        assertTrue(exists);
+
+        boolean notExists = manager.exists(SampleRole.class, "not-found");
+        assertFalse(notExists);
+    }
+
+    @Test
+    void upsertItemShouldPreferAtomicWhenSupported() {
+        CapturingOperations operations = new CapturingOperations(true);
+        DefaultSimpleEntityManager manager = new DefaultSimpleEntityManager(operations);
+
+        manager.executeUpsertForTest("sample_schema", "sample_role", Map.of("id", "r-5", "roleName", "new-role"));
+
+        assertTrue(operations.atomicUpsertCalled, "Should call atomicUpsertItem when supported");
+        assertFalse(operations.nonAtomicUpsertCalled, "Should NOT call non-atomic upsertItem when atomic is supported");
+    }
+
+    @Test
+    void upsertItemShouldFallBackToNonAtomicWhenNotSupported() {
+        CapturingOperations operations = new CapturingOperations(false);
+        DefaultSimpleEntityManager manager = new DefaultSimpleEntityManager(operations);
+
+        manager.executeUpsertForTest("sample_schema", "sample_role", Map.of("id", "r-5", "roleName", "new-role"));
+
+        assertFalse(operations.atomicUpsertCalled, "Should NOT call atomicUpsertItem when not supported");
+        assertTrue(operations.nonAtomicUpsertCalled, "Should call non-atomic upsertItem when atomic is not supported");
+    }
+
+    @Test
+    void legacyOnlyShouldBypassAtomicEvenWhenSupported() {
+        CapturingOperations operations = new CapturingOperations(true);
+        DefaultSimpleEntityManager manager = new DefaultSimpleEntityManager(operations, UpsertStrategy.LEGACY_ONLY);
+
+        manager.executeUpsertForTest("sample_schema", "sample_role", Map.of("id", "r-5", "roleName", "new-role"));
+
+        assertFalse(operations.atomicUpsertCalled, "LEGACY_ONLY should not call atomicUpsertItem");
+        assertTrue(operations.legacyUpsertCalled, "LEGACY_ONLY should call legacyUpsertItem");
+    }
+
+    @Test
+    void upsertItemShouldPropagateAtomicFailureWhenSupported() {
+        CapturingOperations operations = new CapturingOperations(true);
+        operations.throwOnAtomicUpsert = true;
+        DefaultSimpleEntityManager manager = new DefaultSimpleEntityManager(operations);
+
+        assertThrows(RuntimeException.class, () ->
+                manager.executeUpsertForTest("sample_schema", "sample_role", Map.of("id", "r-5", "roleName", "new-role")));
+
+        assertTrue(operations.atomicUpsertCalled, "Should call atomicUpsertItem when supported");
+        assertFalse(operations.nonAtomicUpsertCalled, "Should NOT fall back after atomic execution failure");
+    }
+
     @Table(name = "sample_role", schema = "sample_schema")
     static class SampleRole {
         @Id
@@ -98,10 +193,32 @@ class DefaultSimpleEntityManagerTest {
         private String schema;
         private String table;
         private Map<String, Object> where;
+        private String capturedSql;
+        private final boolean supportsAtomic;
+        private final DBInfo dbInfo;
+
+        boolean atomicUpsertCalled;
+        boolean nonAtomicUpsertCalled;
+        boolean legacyUpsertCalled;
+        boolean throwOnAtomicUpsert;
+
+        CapturingOperations() {
+            this(false);
+        }
+
+        CapturingOperations(boolean supportsAtomic) {
+            this.supportsAtomic = supportsAtomic;
+            this.dbInfo = new DBInfo("MYSQL").setName("test_db");
+        }
 
         @Override
         public IMetaDataLoader getMetaDataLoader() {
             throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public DBInfo getDBInfo() {
+            return dbInfo;
         }
 
         @Override
@@ -142,12 +259,21 @@ class DefaultSimpleEntityManagerTest {
 
         @Override
         public Map<String, Object> row(String sql, List<Object> params) {
-            throw new UnsupportedOperationException();
+            this.capturedSql = sql;
+            return Map.of("1", 1);
         }
 
         @Override
         public Map<String, Object> row(String sql, Map<String, Object> params) {
-            throw new UnsupportedOperationException();
+            this.capturedSql = sql;
+            Object idValue = params != null ? params.get("id") : null;
+            if ("not-found".equals(idValue)) {
+                return null;
+            }
+            if (sql != null && sql.contains("COUNT(*)")) {
+                return Map.of("total_count", 5L);
+            }
+            return Map.of("1", 1);
         }
 
         @Override
@@ -188,6 +314,32 @@ class DefaultSimpleEntityManagerTest {
         @Override
         public Array createArray(List<Object> list, String type) {
             throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public boolean supportsAtomicUpsert() {
+            return supportsAtomic;
+        }
+
+        @Override
+        public int upsertItem(String schema, String tableName, Map<String, Object> params) {
+            this.nonAtomicUpsertCalled = true;
+            return 1;
+        }
+
+        @Override
+        public int legacyUpsertItem(String schema, String tableName, Map<String, Object> params) {
+            this.legacyUpsertCalled = true;
+            return 1;
+        }
+
+        @Override
+        public int atomicUpsertItem(String schema, String tableName, Map<String, Object> params) {
+            this.atomicUpsertCalled = true;
+            if (throwOnAtomicUpsert) {
+                throw new RuntimeException("atomic upsert failed");
+            }
+            return 1;
         }
     }
 }

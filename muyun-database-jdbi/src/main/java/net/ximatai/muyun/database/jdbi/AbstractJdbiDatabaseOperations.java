@@ -106,7 +106,11 @@ abstract class AbstractJdbiDatabaseOperations<K> implements IDatabaseOperations<
                 transformed,
                 dbType
         );
-        return update(plan.sql(), plan.params());
+        int affected = update(plan.sql(), plan.params());
+        if (dbType == DBInfo.Type.MYSQL) {
+            return Math.min(affected, 1);
+        }
+        return affected;
     }
 
     public Object getDBValue(Object value, String type) {
