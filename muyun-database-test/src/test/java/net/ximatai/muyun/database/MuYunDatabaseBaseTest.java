@@ -469,6 +469,36 @@ public abstract class MuYunDatabaseBaseTest {
         assertEquals(1, ignoredPkPatch);
         assertEquals("pk_patch_ignored", db.getItem("basic", id).get("v_name"));
 
+        MuYunDatabaseException emptyWhere = assertThrows(
+                MuYunDatabaseException.class,
+                () -> db.patchUpdateItemWhere("basic", Map.of("v_name", "unsafe"), Map.of())
+        );
+        assertEquals("No where fields were provided for conditional patch update", emptyWhere.getMessage());
+
+        MuYunDatabaseException nullWhere = assertThrows(
+                MuYunDatabaseException.class,
+                () -> db.patchUpdateItemWhere("basic", Map.of("v_name", "unsafe"), null)
+        );
+        assertEquals("No where fields were provided for conditional patch update", nullWhere.getMessage());
+
+        MuYunDatabaseException unknownWhere = assertThrows(
+                MuYunDatabaseException.class,
+                () -> db.patchUpdateItemWhere("basic", Map.of("v_name", "unsafe"), Map.of("unknown_column", id))
+        );
+        assertEquals("No where fields were provided for conditional patch update", unknownWhere.getMessage());
+
+        MuYunDatabaseException noEffectivePatch = assertThrows(
+                MuYunDatabaseException.class,
+                () -> db.patchUpdateItemWhere("basic", Map.of("id", id), Map.of("id", id))
+        );
+        assertEquals("No updatable fields were provided for patch update", noEffectivePatch.getMessage());
+
+        MuYunDatabaseException nullPatch = assertThrows(
+                MuYunDatabaseException.class,
+                () -> db.patchUpdateItemWhere("basic", null, Map.of("id", id))
+        );
+        assertEquals("No updatable fields were provided for patch update", nullPatch.getMessage());
+
         MuYunDatabaseException ex = assertThrows(
                 MuYunDatabaseException.class,
                 () -> db.patchUpdateItem("basic", id, Map.of("id", id))
@@ -498,6 +528,25 @@ public abstract class MuYunDatabaseBaseTest {
         assertNotNull(conditionalId);
         assertEquals(0, db.deleteItemWhere("basic", Map.of("id", conditionalId, "i_age", 999)));
         assertNotNull(db.getItem("basic", conditionalId));
+
+        MuYunDatabaseException emptyWhere = assertThrows(
+                MuYunDatabaseException.class,
+                () -> db.deleteItemWhere("basic", Map.of())
+        );
+        assertEquals("No where fields were provided for conditional delete", emptyWhere.getMessage());
+
+        MuYunDatabaseException nullWhere = assertThrows(
+                MuYunDatabaseException.class,
+                () -> db.deleteItemWhere("basic", null)
+        );
+        assertEquals("No where fields were provided for conditional delete", nullWhere.getMessage());
+
+        MuYunDatabaseException unknownWhere = assertThrows(
+                MuYunDatabaseException.class,
+                () -> db.deleteItemWhere("basic", Map.of("unknown_column", conditionalId))
+        );
+        assertEquals("No where fields were provided for conditional delete", unknownWhere.getMessage());
+
         assertEquals(1, db.deleteItemWhere("basic", Map.of("id", conditionalId, "i_age", 5)));
         assertNull(db.getItem("basic", conditionalId));
     }

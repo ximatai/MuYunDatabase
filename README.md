@@ -95,7 +95,7 @@ class UserService {
 
 ## 底层能力（可选）
 
-`IDatabaseOperations` 依然可用于底层直调（Map + SQL），适合极少数需要手工控制的场景；常规业务开发建议默认使用 `@MuYunRepository + EntityDao`。
+`IDatabaseOperations` 依然可用于底层直调（Map + SQL），适合极少数需要手工控制的场景；常规业务开发建议默认使用 `@MuYunRepository + EntityDao`。底层条件更新/删除会拒绝空 where 或无有效 where 字段，不提供默认整表更新/整表删除捷径。
 
 ## 兼容性说明
 

@@ -1,5 +1,6 @@
 package net.ximatai.muyun.database.core.sql;
 
+import net.ximatai.muyun.database.core.exception.MuYunDatabaseException;
 import net.ximatai.muyun.database.core.metadata.DBColumn;
 import net.ximatai.muyun.database.core.metadata.DBInfo;
 import org.junit.jupiter.api.Test;
@@ -9,6 +10,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SqlPlanBuilderTest {
@@ -53,6 +55,61 @@ class SqlPlanBuilderTest {
         assertTrue(sql.sql().contains("\"version\"=:p_0"));
         assertTrue(sql.sql().contains("\"version\"=:w_"));
         assertEquals(2, sql.params().get("p_0"));
+    }
+
+    @Test
+    void shouldRejectConditionalPatchWithoutEffectivePatchFields() {
+        Map<String, DBColumn> columns = new LinkedHashMap<>();
+        columns.put("id", column("id"));
+        columns.put("name", column("name"));
+
+        MuYunDatabaseException ex = assertThrows(MuYunDatabaseException.class, () -> SqlPlanBuilder.preparePatchUpdateSql(
+                "public",
+                "sample",
+                linkedMap("id", "r-2", "unknown", "ignored"),
+                linkedMap("id", "r-1"),
+                columns,
+                "id",
+                DBInfo.Type.POSTGRESQL
+        ));
+
+        assertEquals("No updatable fields were provided for patch update", ex.getMessage());
+    }
+
+    @Test
+    void shouldRejectConditionalPatchWithoutEffectiveWhereFields() {
+        Map<String, DBColumn> columns = new LinkedHashMap<>();
+        columns.put("id", column("id"));
+        columns.put("name", column("name"));
+
+        MuYunDatabaseException ex = assertThrows(MuYunDatabaseException.class, () -> SqlPlanBuilder.preparePatchUpdateSql(
+                "public",
+                "sample",
+                linkedMap("name", "updated"),
+                linkedMap("unknown", "ignored"),
+                columns,
+                "id",
+                DBInfo.Type.POSTGRESQL
+        ));
+
+        assertEquals("No where fields were provided for conditional patch update", ex.getMessage());
+    }
+
+    @Test
+    void shouldRejectConditionalDeleteWithoutEffectiveWhereFields() {
+        Map<String, DBColumn> columns = new LinkedHashMap<>();
+        columns.put("id", column("id"));
+        columns.put("name", column("name"));
+
+        MuYunDatabaseException ex = assertThrows(MuYunDatabaseException.class, () -> SqlPlanBuilder.prepareDeleteSql(
+                "public",
+                "sample",
+                linkedMap("unknown", "ignored"),
+                columns,
+                DBInfo.Type.POSTGRESQL
+        ));
+
+        assertEquals("No where fields were provided for conditional delete", ex.getMessage());
     }
 
     private static DBColumn column(String name) {
