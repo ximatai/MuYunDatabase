@@ -9,7 +9,7 @@
 ## 当前稳定能力
 
 1. `core/jdbi/starter` 分层能力与自动装配。
-2. `@MuYunRepository + EntityDao` 统一 DAO 入口（含 CRUD / query / pageQuery / count / upsert / ensureTable）。
+2. `@MuYunRepository + EntityDao` 统一 DAO 入口（含 CRUD / 条件更新 / 条件删除 / query / pageQuery / count / upsert / ensureTable）。
 3. `Criteria` 动态条件（含 `EXISTS/NOT_EXISTS/IN_SUBQUERY/NOT_IN_SUBQUERY`）。
 4. 方言级原子 upsert（MySQL/PostgreSQL）。
 5. `MigrationOptions`（`APPLY`、`DRY_RUN`、`DRY_RUN_STRICT`）。

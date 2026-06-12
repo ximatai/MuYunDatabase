@@ -39,6 +39,20 @@ class DefaultSimpleEntityManagerTest {
     }
 
     @Test
+    void conditionalUpdateShouldReturnZeroWhenNoRowsMatch() {
+        CapturingOperations operations = new CapturingOperations();
+        operations.updateResult = 0;
+        DefaultSimpleEntityManager manager = new DefaultSimpleEntityManager(operations);
+
+        SampleRole role = new SampleRole();
+        role.setId("r-1");
+        role.setRoleName("manager");
+
+        assertEquals(0, manager.update(role, Map.of("tenantId", "missing")));
+        assertEquals(Map.of("tenant_id", "missing", "id", "r-1"), operations.where);
+    }
+
+    @Test
     void shouldResolveConditionalDeleteFieldsToColumns() {
         CapturingOperations operations = new CapturingOperations();
         DefaultSimpleEntityManager manager = new DefaultSimpleEntityManager(operations);
@@ -48,6 +62,16 @@ class DefaultSimpleEntityManagerTest {
         assertEquals("sample_schema", operations.schema);
         assertEquals("sample_role", operations.table);
         assertEquals(Map.of("tenant_id", "t-1", "id", "r-1"), operations.where);
+    }
+
+    @Test
+    void conditionalDeleteShouldReturnZeroWhenNoRowsMatch() {
+        CapturingOperations operations = new CapturingOperations();
+        operations.deleteResult = 0;
+        DefaultSimpleEntityManager manager = new DefaultSimpleEntityManager(operations);
+
+        assertEquals(0, manager.deleteById(SampleRole.class, "r-1", Map.of("tenantId", "missing")));
+        assertEquals(Map.of("tenant_id", "missing", "id", "r-1"), operations.where);
     }
 
     @Test
@@ -201,6 +225,8 @@ class DefaultSimpleEntityManagerTest {
         boolean nonAtomicUpsertCalled;
         boolean legacyUpsertCalled;
         boolean throwOnAtomicUpsert;
+        int updateResult = 1;
+        int deleteResult = 1;
 
         CapturingOperations() {
             this(false);
@@ -231,7 +257,7 @@ class DefaultSimpleEntityManagerTest {
             this.schema = schema;
             this.table = tableName;
             this.where = Map.copyOf(whereParams);
-            return 1;
+            return updateResult;
         }
 
         @Override
@@ -239,7 +265,7 @@ class DefaultSimpleEntityManagerTest {
             this.schema = schema;
             this.table = tableName;
             this.where = Map.copyOf(whereParams);
-            return 1;
+            return deleteResult;
         }
 
         @Override
