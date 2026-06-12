@@ -35,7 +35,11 @@ class SchemaMigrationPlanner {
 
         DBSchema dbSchema = info.getSchema(schema);
         if (dbSchema == null) {
-            builder.addAdditive(dialect.createSchemaIfNotExists(SchemaBuildRules.quoteIdentifier(schema, getDatabaseType())));
+            builder.addAdditive(
+                    MigrationChange.Type.CREATE_SCHEMA,
+                    schema,
+                    dialect.createSchemaIfNotExists(SchemaBuildRules.quoteIdentifier(schema, getDatabaseType()))
+            );
         }
 
         if (dbSchema == null || !dbSchema.containsTable(table)) {
@@ -49,27 +53,27 @@ class SchemaMigrationPlanner {
 
     private void planForNewTable(String schema, String table, TableWrapper wrapper, PlanBuilder builder) {
         String schemaDotTable = SchemaBuildRules.qualifiedName(schema, table, getDatabaseType());
-        builder.addAdditive(dialect.createTableWithTempColumn(schemaDotTable));
+        builder.addAdditive(MigrationChange.Type.CREATE_TABLE, schemaDotTable, dialect.createTableWithTempColumn(schemaDotTable));
 
         if (wrapper.getComment() != null) {
-            builder.addAdditive(dialect.setTableComment(schemaDotTable, wrapper.getComment()));
+            builder.addAdditive(MigrationChange.Type.SET_TABLE_COMMENT, schemaDotTable, dialect.setTableComment(schemaDotTable, wrapper.getComment()));
         }
 
         if (wrapper.getPrimaryKey() != null) {
             String type = resolveColumnType(wrapper.getPrimaryKey());
-            builder.addAdditive(dialect.addColumn(schemaDotTable, buildColumnString(wrapper.getPrimaryKey(), type)));
+            builder.addAdditive(MigrationChange.Type.ADD_COLUMN, wrapper.getPrimaryKey().getName(), dialect.addColumn(schemaDotTable, buildColumnString(wrapper.getPrimaryKey(), type)));
         }
 
         for (Column column : wrapper.getColumns()) {
             String type = resolveColumnType(column);
-            builder.addAdditive(dialect.addColumn(schemaDotTable, buildColumnString(column, type)));
+            builder.addAdditive(MigrationChange.Type.ADD_COLUMN, column.getName(), dialect.addColumn(schemaDotTable, buildColumnString(column, type)));
         }
 
         for (Index index : wrapper.getIndexes()) {
-            builder.addAdditive(buildCreateIndexSql(schemaDotTable, table, index));
+            builder.addAdditive(MigrationChange.Type.CREATE_INDEX, indexTarget(table, index), buildCreateIndexSql(schemaDotTable, table, index));
         }
 
-        builder.addAdditive(dialect.dropTempColumn(schemaDotTable));
+        builder.addAdditive(MigrationChange.Type.DROP_TEMP_COLUMN, "_temp", dialect.dropTempColumn(schemaDotTable));
     }
 
     private void planForExistingTable(String schema, String tableName, TableWrapper wrapper, PlanBuilder builder) {
@@ -77,7 +81,7 @@ class SchemaMigrationPlanner {
         String schemaDotTable = SchemaBuildRules.qualifiedName(schema, tableName, getDatabaseType());
 
         if (wrapper.getComment() != null) {
-            builder.addAdditive(dialect.setTableComment(schemaDotTable, wrapper.getComment()));
+            builder.addAdditive(MigrationChange.Type.SET_TABLE_COMMENT, schemaDotTable, dialect.setTableComment(schemaDotTable, wrapper.getComment()));
         }
 
         if (wrapper.getPrimaryKey() != null) {
@@ -118,7 +122,7 @@ class SchemaMigrationPlanner {
                     .anyMatch(targetColumns -> targetColumns.size() > existingColumns.size()
                             && targetColumns.containsAll(existingColumns));
             if (!stillTargeted && replacedByWiderUnique) {
-                builder.addNonAdditive(dialect.dropIndex(
+                builder.addNonAdditive(MigrationChange.Type.DROP_INDEX, dbIndex.getName(), dialect.dropIndex(
                         SchemaBuildRules.quoteIdentifier(table.getSchema(), getDatabaseType()),
                         SchemaBuildRules.qualifiedName(table.getSchema(), table.getName(), getDatabaseType()),
                         SchemaBuildRules.quoteIdentifier(dbIndex.getName(), getDatabaseType())
@@ -132,7 +136,7 @@ class SchemaMigrationPlanner {
         if (!table.contains(columnName)) {
             return;
         }
-        builder.addNonAdditive(dialect.dropColumn(
+        builder.addNonAdditive(MigrationChange.Type.DROP_COLUMN, columnName, dialect.dropColumn(
                 SchemaBuildRules.qualifiedName(table.getSchema(), table.getName(), getDatabaseType()),
                 SchemaBuildRules.quoteIdentifier(columnName, getDatabaseType())
         ));
@@ -144,7 +148,7 @@ class SchemaMigrationPlanner {
         table.getIndexList().stream()
                 .filter(i -> new HashSet<>(i.getColumns()).equals(targetColumns))
                 .findFirst()
-                .ifPresent(dbIndex -> builder.addNonAdditive(dialect.dropIndex(
+                .ifPresent(dbIndex -> builder.addNonAdditive(MigrationChange.Type.DROP_INDEX, dbIndex.getName(), dialect.dropIndex(
                         SchemaBuildRules.quoteIdentifier(table.getSchema(), getDatabaseType()),
                         SchemaBuildRules.qualifiedName(table.getSchema(), table.getName(), getDatabaseType()),
                         SchemaBuildRules.quoteIdentifier(dbIndex.getName(), getDatabaseType())
@@ -161,35 +165,40 @@ class SchemaMigrationPlanner {
         String baseColumnString = buildColumnString(column, type);
 
         if (!table.contains(column.getName())) {
-            builder.addAdditive(dialect.addColumn(schemaDotTable, baseColumnString));
+            String sql = dialect.addColumn(schemaDotTable, baseColumnString);
+            if (isNonAdditiveColumnAdd(column)) {
+                builder.addNonAdditive(MigrationChange.Type.ADD_COLUMN, column.getName(), sql);
+            } else {
+                builder.addAdditive(MigrationChange.Type.ADD_COLUMN, column.getName(), sql);
+            }
             return;
         }
 
         DBColumn dbColumn = table.getColumn(column.getName());
 
         if (!type.equalsIgnoreCase(dbColumn.getType()) || (column.getLength() != null && !column.getLength().equals(dbColumn.getLength()))) {
-            builder.addNonAdditive(dialect.alterColumnType(schemaDotTable, quotedColumnName, type + SchemaBuildRules.columnLength(column), baseColumnString));
+            builder.addNonAdditive(MigrationChange.Type.ALTER_COLUMN_TYPE, column.getName(), dialect.alterColumnType(schemaDotTable, quotedColumnName, type + SchemaBuildRules.columnLength(column), baseColumnString));
         }
 
         if (column.isPrimaryKey() && !dbColumn.isPrimaryKey()) {
-            builder.addNonAdditive("alter table " + schemaDotTable + " add primary key (" + quotedColumnName + ")");
+            builder.addNonAdditive(MigrationChange.Type.ADD_PRIMARY_KEY, column.getName(), "alter table " + schemaDotTable + " add primary key (" + quotedColumnName + ")");
         }
 
         if (dbColumn.isNullable() != column.isNullable()) {
-            builder.addNonAdditive(dialect.alterColumnNullable(schemaDotTable, quotedColumnName, column.isNullable(), baseColumnString));
+            builder.addNonAdditive(MigrationChange.Type.ALTER_COLUMN_NULLABLE, column.getName(), dialect.alterColumnNullable(schemaDotTable, quotedColumnName, column.isNullable(), baseColumnString));
         }
 
         if (!dbColumn.isSequence() && !Objects.equals(dbColumn.getDefaultValueWithString(), column.getDefaultValue())) {
-            builder.addNonAdditive(dialect.alterColumnDefault(schemaDotTable, quotedColumnName, column.getDefaultValue(), baseColumnString));
+            builder.addNonAdditive(MigrationChange.Type.ALTER_COLUMN_DEFAULT, column.getName(), dialect.alterColumnDefault(schemaDotTable, quotedColumnName, column.getDefaultValue(), baseColumnString));
         }
 
         if (dbColumn.isSequence() != column.isSequence()) {
             dialect.alterColumnSequence(schemaDotTable, table.getSchema(), table.getName(), column.getName(), column.isSequence())
-                    .forEach(builder::addNonAdditive);
+                    .forEach(sql -> builder.addNonAdditive(MigrationChange.Type.ALTER_COLUMN_SEQUENCE, column.getName(), sql));
         }
 
         if (column.getComment() != null && !Objects.equals(dbColumn.getDescription(), column.getComment())) {
-            builder.addAdditive(dialect.setColumnComment(schemaDotTable, quotedColumnName, column.getComment(), baseColumnString));
+            builder.addAdditive(MigrationChange.Type.SET_COLUMN_COMMENT, column.getName(), dialect.setColumnComment(schemaDotTable, quotedColumnName, column.getComment(), baseColumnString));
         }
     }
 
@@ -206,14 +215,14 @@ class SchemaMigrationPlanner {
                 return;
             }
 
-            builder.addNonAdditive(dialect.dropIndex(
+            builder.addNonAdditive(MigrationChange.Type.DROP_INDEX, dbIndex.getName(), dialect.dropIndex(
                     SchemaBuildRules.quoteIdentifier(table.getSchema(), getDatabaseType()),
                     SchemaBuildRules.qualifiedName(table.getSchema(), table.getName(), getDatabaseType()),
                     SchemaBuildRules.quoteIdentifier(dbIndex.getName(), getDatabaseType())
             ));
         }
 
-        builder.addAdditive(buildCreateIndexSql(
+        builder.addAdditive(MigrationChange.Type.CREATE_INDEX, indexTarget(table.getName(), index), buildCreateIndexSql(
                 SchemaBuildRules.qualifiedName(table.getSchema(), table.getName(), getDatabaseType()),
                 table.getName(),
                 index
@@ -235,6 +244,14 @@ class SchemaMigrationPlanner {
                 quotedColumns,
                 index.isUnique()
         );
+    }
+
+    private String indexTarget(String tableName, Index index) {
+        return SchemaBuildRules.indexName(tableName, index);
+    }
+
+    private boolean isNonAdditiveColumnAdd(Column column) {
+        return !column.isNullable() && column.getDefaultValue() == null;
     }
 
     private String buildColumnString(Column column, String type) {
@@ -269,16 +286,20 @@ class SchemaMigrationPlanner {
     }
 
     static class Plan {
-        private final List<String> statements;
+        private final List<MigrationChange> changes;
         private final boolean hasNonAdditive;
 
-        Plan(List<String> statements, boolean hasNonAdditive) {
-            this.statements = statements;
+        Plan(List<MigrationChange> changes, boolean hasNonAdditive) {
+            this.changes = changes;
             this.hasNonAdditive = hasNonAdditive;
         }
 
         public List<String> getStatements() {
-            return statements;
+            return changes.stream().map(MigrationChange::getSql).toList();
+        }
+
+        public List<MigrationChange> getChanges() {
+            return changes;
         }
 
         public boolean hasNonAdditive() {
@@ -286,25 +307,25 @@ class SchemaMigrationPlanner {
         }
 
         public boolean isChanged() {
-            return !statements.isEmpty();
+            return !changes.isEmpty();
         }
     }
 
     private static class PlanBuilder {
-        private final List<String> statements = new ArrayList<>();
+        private final List<MigrationChange> changes = new ArrayList<>();
         private boolean hasNonAdditive;
 
-        void addAdditive(String sql) {
-            statements.add(sql);
+        void addAdditive(MigrationChange.Type type, String target, String sql) {
+            changes.add(MigrationChange.additive(type, target, sql));
         }
 
-        void addNonAdditive(String sql) {
+        void addNonAdditive(MigrationChange.Type type, String target, String sql) {
             hasNonAdditive = true;
-            statements.add(sql);
+            changes.add(MigrationChange.nonAdditive(type, target, sql));
         }
 
         Plan build() {
-            return new Plan(List.copyOf(statements), hasNonAdditive);
+            return new Plan(List.copyOf(changes), hasNonAdditive);
         }
     }
 }

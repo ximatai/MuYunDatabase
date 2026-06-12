@@ -60,13 +60,22 @@ int upsert(T entity);
 2. 仓库级配置：`@MuYunRepository(alignTable = DEFAULT|ENABLED|DISABLED)`。
 3. 优先级：仓库级显式配置优先于全局配置。
 4. `DEFAULT` 表示跟随全局策略。
+5. `MigrationResult.getStatements()` 保留 SQL 列表兼容输出。
+6. `MigrationResult.getChanges()` 提供结构化迁移变化，包含变化类型、目标、SQL 和是否 non-additive，供 dry-run、治理和审计使用。
+7. 旧构造器生成的 `RAW_SQL` change 是兼容降级结果，只表达整体 SQL 和聚合 non-additive 标记；`SchemaManager` 规划出的 changes 才提供逐条分类。
 
-## 6. 事务语义（稳定）
+## 6. Criteria 组合契约（稳定）
+
+1. `Criteria.copyOf(criteria)` 返回当前条件快照；源条件后续修改不会影响副本。
+2. `criteria.and(other)` / `criteria.or(other)` 按组组合另一个 `Criteria` 的快照；`other` 后续修改不会影响组合结果。
+3. 旧的 `andGroup(CriteriaGroup)` / `orGroup(CriteriaGroup)` 保持既有行为，适合调用方显式管理 group 生命周期。
+
+## 7. 事务语义（稳定）
 
 1. `@Transactional` 下，`EntityDao` 约定方法与 Jdbi SQL 注解方法必须共用同一事务边界。
 2. 同一事务内任一步抛异常，全部回滚。
 
-## 7. 边界声明
+## 8. 边界声明
 
 1. `EntityDao` 聚焦单表高频场景。
 2. 复杂查询由 Jdbi SQL 注解方法或底层 SQL 承担。

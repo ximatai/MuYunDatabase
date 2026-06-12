@@ -75,6 +75,61 @@ class CriteriaSqlCompilerTest {
         assertEquals(Map.of("p0", "A001"), compiled.getParams());
     }
 
+    @Test
+    void copyOfShouldSnapshotCriteria() {
+        Criteria source = Criteria.of().eq("code", "A001");
+        Criteria copy = Criteria.copyOf(source);
+
+        source.eq("status", "disabled");
+
+        CompiledCriteria compiled = compiler.compile(copy, this::resolveColumn, DBInfo.Type.POSTGRESQL);
+        assertEquals("(\"v_code\" = :p0)", compiled.getSql());
+        assertEquals(Map.of("p0", "A001"), compiled.getParams());
+    }
+
+    @Test
+    void copyOfEmptyCriteriaShouldRemainEmpty() {
+        Criteria copy = Criteria.copyOf(Criteria.of());
+
+        assertEquals(true, copy.isEmpty());
+        CompiledCriteria compiled = compiler.compile(copy, this::resolveColumn, DBInfo.Type.POSTGRESQL);
+        assertEquals("", compiled.getSql());
+        assertEquals(Map.of(), compiled.getParams());
+    }
+
+    @Test
+    void andShouldCombineCriteriaWithoutSharingMutableSource() {
+        Criteria source = Criteria.of().eq("code", "A001");
+        Criteria combined = Criteria.of().eq("tenant", "t1").and(source);
+
+        source.eq("status", "disabled");
+
+        CompiledCriteria compiled = compiler.compile(combined, this::resolveColumn, DBInfo.Type.POSTGRESQL);
+        assertEquals("\"tenant_id\" = :p0 AND (\"v_code\" = :p1)", compiled.getSql());
+        assertEquals(Map.of("p0", "t1", "p1", "A001"), compiled.getParams());
+    }
+
+    @Test
+    void orShouldCombineCriteriaWithoutSharingMutableSource() {
+        Criteria source = Criteria.of().eq("code", "A001");
+        Criteria combined = Criteria.of().eq("tenant", "t1").or(source);
+
+        source.eq("status", "disabled");
+
+        CompiledCriteria compiled = compiler.compile(combined, this::resolveColumn, DBInfo.Type.POSTGRESQL);
+        assertEquals("\"tenant_id\" = :p0 OR (\"v_code\" = :p1)", compiled.getSql());
+        assertEquals(Map.of("p0", "t1", "p1", "A001"), compiled.getParams());
+    }
+
+    private String resolveColumn(String field) {
+        return switch (field) {
+            case "code" -> "v_code";
+            case "tenant" -> "tenant_id";
+            case "status" -> "status";
+            default -> null;
+        };
+    }
+
     private EntityFieldMeta fieldMeta(String fieldName, String columnName, boolean id) throws NoSuchFieldException {
         Field field = StaticEntity.class.getDeclaredField(fieldName);
         return new EntityFieldMeta(field, columnName, ColumnType.VARCHAR, id);

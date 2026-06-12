@@ -31,10 +31,10 @@ public class SchemaManager {
             );
         }
         if (safeOptions.isDryRun()) {
-            return new MigrationResult(true, true, plan.hasNonAdditive(), plan.getStatements());
+            return new MigrationResult(true, true, plan.hasNonAdditive(), plan.getStatements(), plan.getChanges());
         }
         ensureTable(table);
-        return new MigrationResult(true, false, plan.hasNonAdditive(), plan.getStatements());
+        return new MigrationResult(true, false, plan.hasNonAdditive(), plan.getStatements(), plan.getChanges());
     }
 
     private String tableName(TableWrapper table) {
