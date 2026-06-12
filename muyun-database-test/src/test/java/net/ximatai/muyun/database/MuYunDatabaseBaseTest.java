@@ -551,6 +551,56 @@ public abstract class MuYunDatabaseBaseTest {
         assertNull(db.getItem("basic", conditionalId));
     }
 
+    protected void testRuntimeTableGateway() {
+        RuntimeTableGateway gateway = new RuntimeTableGateway(
+                db,
+                db.getDefaultSchemaName(),
+                "basic",
+                this::basicRuntimeColumn
+        );
+        String marker = "gw_" + UUID.randomUUID().toString().substring(0, 12);
+
+        Object id = gateway.insert(Map.of(
+                "name", marker,
+                "age", 21,
+                "b_flag", true
+        ));
+        assertNotNull(id);
+
+        List<Map<String, Object>> queried = gateway.query(
+                Criteria.of().eq("name", marker),
+                PageRequest.of(1, 10),
+                Sort.asc("age")
+        );
+        assertEquals(1, queried.size());
+        assertEquals(marker, queried.getFirst().get("v_name"));
+
+        PageResult<Map<String, Object>> page = gateway.pageQuery(
+                Criteria.of().eq("name", marker),
+                PageRequest.of(1, 10)
+        );
+        assertEquals(1L, page.getTotal());
+
+        assertEquals(1, gateway.patchWhere(
+                Map.of("name", "gateway_patch"),
+                Map.of("id", id, "age", 21)
+        ));
+        assertEquals("gateway_patch", db.getItem("basic", (String) id).get("v_name"));
+
+        assertEquals(1, gateway.deleteWhere(Map.of("id", id)));
+        assertNull(db.getItem("basic", (String) id));
+    }
+
+    private String basicRuntimeColumn(String field) {
+        return switch (field) {
+            case "id" -> "id";
+            case "name", "v_name" -> "v_name";
+            case "age", "i_age" -> "i_age";
+            case "b_flag" -> "b_flag";
+            default -> null;
+        };
+    }
+
     protected void testQuery() {
         Map body = Map.of("v_name", "test_name_x",
                 "i_age", 5,
