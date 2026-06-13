@@ -81,14 +81,16 @@ int upsert(T entity);
 1. `EntityDao` 聚焦单表高频场景。
 2. 复杂查询由 Jdbi SQL 注解方法或底层 SQL 承担。
 3. 不提供关系映射 ORM（`1:N/N:N`、级联、延迟加载）。
-4. `RuntimeTableGateway` 面向运行时定义的单表 Map 记录，输入 `schema/tableName/CriteriaColumnResolver` 后提供 `insert/query/pageQuery/count/patchWhere/deleteWhere`。
+4. `RuntimeTableGateway` 面向运行时定义的单表 Map 记录，输入 `schema/tableName/CriteriaColumnResolver` 后提供 `insert/query/queryColumns/pageQuery/pageQueryColumns/count/patchWhere/deleteWhere`。
 5. `RuntimeTableGateway` 只解析字段到物理列并复用 Criteria、分页、排序、count 和条件写 SQL 能力；不理解动态模块、生命周期、租户、软删、权限、审计或乐观锁语义。
-6. `RuntimeTableGateway` 遇到未知字段或不安全列名时直接拒绝；`insert` 无有效字段时直接拒绝。
-7. `Set<String>` 字段默认推断为 `ColumnType.SET`，使用 CSV 语义存入 `text` 列。
-8. `ColumnType.SET` 写入时不允许元素包含英文逗号 `,`（否则拒绝写入），以避免 CSV 不可逆解析。
-9. `ColumnType.JSON_SET` 使用 JSON 字符串数组语义存入 `text` 列，适用于元素可能包含逗号的字符串集合。
-10. `ColumnType.JSON_SET` 必须通过 `@Column(type = ColumnType.JSON_SET)` 显式声明；默认 `Set<String>` 推断结果仍为 `ColumnType.SET`。
-11. `ColumnType.JSON_SET` 的元素按字符串处理：写入时忽略 `null` 元素、按集合语义去重、保留首次出现顺序；空集合写入为 `[]`，字段值为 `null` 时写入为 `null`。
-12. `ColumnType.JSON_SET` 读取非法 JSON 数组或写入非法 JSON 数组字符串时直接拒绝，不做静默降级。
+6. 当 `RuntimeTableGateway` 使用双向 `RuntimeColumnMapper` 构造时，`query/pageQuery` 默认返回逻辑字段 Map；需要物理列 Map 时使用 `queryColumns/pageQueryColumns`。
+7. 旧的单向 `CriteriaColumnResolver` 构造方式保持兼容，`query/pageQuery` 返回底层物理列 Map。
+8. `RuntimeTableGateway` 遇到未知字段或不安全列名时直接拒绝；`insert` 无有效字段时直接拒绝。
+9. `Set<String>` 字段默认推断为 `ColumnType.SET`，使用 CSV 语义存入 `text` 列。
+10. `ColumnType.SET` 写入时不允许元素包含英文逗号 `,`（否则拒绝写入），以避免 CSV 不可逆解析。
+11. `ColumnType.JSON_SET` 使用 JSON 字符串数组语义存入 `text` 列，适用于元素可能包含逗号的字符串集合。
+12. `ColumnType.JSON_SET` 必须通过 `@Column(type = ColumnType.JSON_SET)` 显式声明；默认 `Set<String>` 推断结果仍为 `ColumnType.SET`。
+13. `ColumnType.JSON_SET` 的元素按字符串处理：写入时忽略 `null` 元素、按集合语义去重、保留首次出现顺序；空集合写入为 `[]`，字段值为 `null` 时写入为 `null`。
+14. `ColumnType.JSON_SET` 读取非法 JSON 数组或写入非法 JSON 数组字符串时直接拒绝，不做静默降级。
 
 下一步：若你在做历史项目改造，请按 [`REFACTOR_GUIDE.md`](REFACTOR_GUIDE.md) 的“推荐重构路径”执行。

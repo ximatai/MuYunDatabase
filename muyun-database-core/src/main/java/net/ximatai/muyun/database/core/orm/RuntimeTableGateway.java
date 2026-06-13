@@ -17,6 +17,7 @@ public class RuntimeTableGateway {
     private final String schema;
     private final String tableName;
     private final CriteriaColumnResolver columnResolver;
+    private final RuntimeColumnMapper columnMapper;
     private final CriteriaSqlCompiler criteriaCompiler = new CriteriaSqlCompiler();
 
     @SuppressWarnings("unchecked")
@@ -28,6 +29,7 @@ public class RuntimeTableGateway {
         this.schema = schema == null || schema.isBlank() ? operations.getDefaultSchemaName() : requireIdentifier(schema, "schema");
         this.tableName = requireIdentifier(tableName, "tableName");
         this.columnResolver = Objects.requireNonNull(columnResolver, "columnResolver must not be null");
+        this.columnMapper = columnResolver instanceof RuntimeColumnMapper mapper ? mapper : null;
     }
 
     public Object insert(Map<String, Object> values) {
@@ -39,6 +41,10 @@ public class RuntimeTableGateway {
     }
 
     public List<Map<String, Object>> query(Criteria criteria, PageRequest pageRequest, Sort... sorts) {
+        return toFieldRows(queryColumns(criteria, pageRequest, sorts));
+    }
+
+    public List<Map<String, Object>> queryColumns(Criteria criteria, PageRequest pageRequest, Sort... sorts) {
         Objects.requireNonNull(criteria, "criteria must not be null");
         Objects.requireNonNull(pageRequest, "pageRequest must not be null");
         CompiledCriteria compiled = criteriaCompiler.compile(criteria, columnResolver, databaseType());
@@ -59,6 +65,11 @@ public class RuntimeTableGateway {
     public PageResult<Map<String, Object>> pageQuery(Criteria criteria, PageRequest pageRequest, Sort... sorts) {
         long total = count(criteria);
         return PageResult.of(query(criteria, pageRequest, sorts), total, pageRequest);
+    }
+
+    public PageResult<Map<String, Object>> pageQueryColumns(Criteria criteria, PageRequest pageRequest, Sort... sorts) {
+        long total = count(criteria);
+        return PageResult.of(queryColumns(criteria, pageRequest, sorts), total, pageRequest);
     }
 
     public long count(Criteria criteria) {
@@ -88,6 +99,19 @@ public class RuntimeTableGateway {
         }
         values.forEach((field, value) -> columns.put(resolveColumn(field), value));
         return columns;
+    }
+
+    private List<Map<String, Object>> toFieldRows(List<Map<String, Object>> rows) {
+        if (columnMapper == null) {
+            return rows;
+        }
+        return rows.stream().map(this::toFieldMap).toList();
+    }
+
+    private Map<String, Object> toFieldMap(Map<String, Object> row) {
+        Map<String, Object> fields = new LinkedHashMap<>();
+        row.forEach((column, value) -> fields.put(columnMapper.resolveFieldName(column), value));
+        return fields;
     }
 
     private void appendOrderBy(StringBuilder sql, Sort... sorts) {

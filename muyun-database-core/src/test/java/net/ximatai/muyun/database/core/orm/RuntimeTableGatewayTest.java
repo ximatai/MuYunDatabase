@@ -57,6 +57,42 @@ class RuntimeTableGatewayTest {
     }
 
     @Test
+    void shouldMapQueryRowsToFieldsWhenRuntimeColumnMapperIsProvided() {
+        CapturingOperations operations = new CapturingOperations();
+        operations.queryResult = List.of(Map.of("id", "r-1", "record_title", "First", "version", 2));
+        RuntimeColumnMapper mapper = RuntimeColumnMapper.of(Map.of(
+                "id", "id",
+                "title", "record_title",
+                "version", "version"
+        ));
+        RuntimeTableGateway gateway = new RuntimeTableGateway(operations, "public", "runtime_record", mapper);
+
+        List<Map<String, Object>> records = gateway.query(
+                Criteria.of().eq("title", "First"),
+                PageRequest.of(1, 10)
+        );
+
+        assertEquals(List.of(Map.of("id", "r-1", "title", "First", "version", 2)), records);
+
+        List<Map<String, Object>> columnRecords = gateway.queryColumns(
+                Criteria.of().eq("title", "First"),
+                PageRequest.of(1, 10)
+        );
+
+        assertEquals(List.of(Map.of("id", "r-1", "record_title", "First", "version", 2)), columnRecords);
+    }
+
+    @Test
+    void runtimeColumnMapperShouldRejectDuplicateColumns() {
+        OrmException ex = assertThrows(OrmException.class, () -> RuntimeColumnMapper.of(Map.of(
+                "title", "record_title",
+                "name", "record_title"
+        )));
+
+        assertEquals(OrmException.Code.INVALID_MAPPING, ex.getCode());
+    }
+
+    @Test
     void shouldRejectUnknownFieldsBeforeCallingOperations() {
         CapturingOperations operations = new CapturingOperations();
         RuntimeTableGateway gateway = new RuntimeTableGateway(operations, "public", "runtime_record", this::resolveColumn);
@@ -98,6 +134,7 @@ class RuntimeTableGatewayTest {
         private Map<String, Object> queryParams;
         private String countSql;
         private int patchCalls;
+        private List<Map<String, Object>> queryResult = List.of(Map.of("id", "r-1"));
 
         @Override
         public IMetaDataLoader getMetaDataLoader() {
@@ -164,7 +201,7 @@ class RuntimeTableGatewayTest {
         public List<Map<String, Object>> query(String sql, Map<String, Object> params) {
             this.querySql = sql;
             this.queryParams = Map.copyOf(params);
-            return List.of(Map.of("id", "r-1"));
+            return queryResult;
         }
 
         @Override

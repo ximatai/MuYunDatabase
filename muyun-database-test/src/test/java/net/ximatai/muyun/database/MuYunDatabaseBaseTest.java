@@ -556,7 +556,12 @@ public abstract class MuYunDatabaseBaseTest {
                 db,
                 db.getDefaultSchemaName(),
                 "basic",
-                this::basicRuntimeColumn
+                RuntimeColumnMapper.of(Map.of(
+                        "id", "id",
+                        "name", "v_name",
+                        "age", "i_age",
+                        "b_flag", "b_flag"
+                ))
         );
         String marker = "gw_" + UUID.randomUUID().toString().substring(0, 12);
 
@@ -573,7 +578,13 @@ public abstract class MuYunDatabaseBaseTest {
                 Sort.asc("age")
         );
         assertEquals(1, queried.size());
-        assertEquals(marker, queried.getFirst().get("v_name"));
+        assertEquals(marker, queried.getFirst().get("name"));
+
+        List<Map<String, Object>> queriedColumns = gateway.queryColumns(
+                Criteria.of().eq("name", marker),
+                PageRequest.of(1, 10)
+        );
+        assertEquals(marker, queriedColumns.getFirst().get("v_name"));
 
         PageResult<Map<String, Object>> page = gateway.pageQuery(
                 Criteria.of().eq("name", marker),
@@ -589,16 +600,6 @@ public abstract class MuYunDatabaseBaseTest {
 
         assertEquals(1, gateway.deleteWhere(Map.of("id", id)));
         assertNull(db.getItem("basic", (String) id));
-    }
-
-    private String basicRuntimeColumn(String field) {
-        return switch (field) {
-            case "id" -> "id";
-            case "name", "v_name" -> "v_name";
-            case "age", "i_age" -> "i_age";
-            case "b_flag" -> "b_flag";
-            default -> null;
-        };
     }
 
     protected void testQuery() {

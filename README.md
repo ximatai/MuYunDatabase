@@ -95,7 +95,7 @@ class UserService {
 
 ## 底层能力（可选）
 
-`IDatabaseOperations` 依然可用于底层直调（Map + SQL），适合极少数需要手工控制的场景；常规业务开发建议默认使用 `@MuYunRepository + EntityDao`。底层条件更新/删除会拒绝空 where 或无有效 where 字段，不提供默认整表更新/整表删除捷径。运行时定义的单表 Map 记录可使用 `RuntimeTableGateway` 复用字段映射、`Criteria`、分页、排序、计数和条件写能力；迁移 dry-run 可通过 `MigrationResult.getChanges()` 获取结构化变化。
+`IDatabaseOperations` 依然可用于底层直调（Map + SQL），适合极少数需要手工控制的场景；常规业务开发建议默认使用 `@MuYunRepository + EntityDao`。底层条件更新/删除会拒绝空 where 或无有效 where 字段，不提供默认整表更新/整表删除捷径。运行时定义的单表 Map 记录可使用 `RuntimeTableGateway` 复用字段映射、`Criteria`、分页、排序、计数和条件写能力；使用 `RuntimeColumnMapper` 时查询默认返回逻辑字段 Map，物理列 Map 可通过 `queryColumns/pageQueryColumns` 获取。迁移 dry-run 可通过 `MigrationResult.getChanges()` 获取结构化变化。
 
 ## 兼容性说明
 
