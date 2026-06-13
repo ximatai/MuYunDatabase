@@ -11,6 +11,7 @@ slf4j = "2.0.17"
 logback = "1.5.21"
 spring-boot = "3.5.0"
 jackson = "2.18.1"
+quarkus = "3.22.3"
 
 [libraries]
 jdbi3-core = { module = "org.jdbi:jdbi3-core", version.ref = "jdbi3" }
@@ -35,6 +36,9 @@ spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-star
 spring-jdbc = { module = "org.springframework:spring-jdbc", version = "6.2.7" }
 spring-tx = { module = "org.springframework:spring-tx", version = "6.2.7" }
 jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
+quarkus-bom = { module = "io.quarkus.platform:quarkus-bom", version.ref = "quarkus" }
+quarkus-core = { module = "io.quarkus:quarkus-core" }
+quarkus-core-deployment = { module = "io.quarkus:quarkus-core-deployment" }
 
 [bundles]
 testcontainers-all = [
