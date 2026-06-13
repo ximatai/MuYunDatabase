@@ -225,6 +225,24 @@ class SchemaManagerTest {
         assertTrue(dryRun.getStatements().stream().anyMatch(sql -> sql.contains("create unique index")));
     }
 
+    @Test
+    void shouldTreatCommonDatabaseTypeAliasesAsAligned() {
+        FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("POSTGRESQL"));
+        existingInfo(loader);
+        loader.columns.get("public.contract").put("id", primaryKeyColumn("id", "character varying", 32));
+        loader.columns.get("public.contract").put("code", aliasedColumn("code", "character varying", 64));
+        loader.columns.get("public.contract").put("age", aliasedColumn("age", "integer", null));
+        FakeOperations operations = new FakeOperations(loader);
+        TableWrapper table = TableWrapper.withName("contract")
+                .setPrimaryKey(Column.of("id").setType(ColumnType.VARCHAR).setLength(32).setPrimaryKey())
+                .addColumn(Column.of("code").setType(ColumnType.VARCHAR).setLength(64))
+                .addColumn(Column.of("age").setType(ColumnType.INT));
+
+        MigrationResult dryRun = new SchemaManager(operations).ensureTable(table, MigrationOptions.dryRun());
+
+        assertFalse(dryRun.isChanged());
+    }
+
     private DBInfo existingInfo() {
         FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("POSTGRESQL"));
         return existingInfo(loader);
@@ -255,6 +273,24 @@ class SchemaManagerTest {
         column.setType("varchar");
         column.setLength(length);
         column.setNullable(true);
+        return column;
+    }
+
+    private DBColumn aliasedColumn(String name, String type, Integer length) {
+        DBColumn column = new DBColumn();
+        column.setName(name);
+        column.setType(type);
+        if (length != null) {
+            column.setLength(length);
+        }
+        column.setNullable(true);
+        return column;
+    }
+
+    private DBColumn primaryKeyColumn(String name, String type, Integer length) {
+        DBColumn column = aliasedColumn(name, type, length);
+        column.setPrimaryKey(true);
+        column.setNullable(false);
         return column;
     }
 

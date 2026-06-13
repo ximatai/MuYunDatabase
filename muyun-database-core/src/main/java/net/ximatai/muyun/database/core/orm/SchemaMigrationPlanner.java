@@ -176,7 +176,7 @@ class SchemaMigrationPlanner {
 
         DBColumn dbColumn = table.getColumn(column.getName());
 
-        if (!type.equalsIgnoreCase(dbColumn.getType()) || (column.getLength() != null && !column.getLength().equals(dbColumn.getLength()))) {
+        if (!sameColumnType(type, dbColumn.getType()) || (column.getLength() != null && !column.getLength().equals(dbColumn.getLength()))) {
             builder.addNonAdditive(MigrationChange.Type.ALTER_COLUMN_TYPE, column.getName(), dialect.alterColumnType(schemaDotTable, quotedColumnName, type + SchemaBuildRules.columnLength(column), baseColumnString));
         }
 
@@ -266,6 +266,26 @@ class SchemaMigrationPlanner {
             throw new OrmException(OrmException.Code.INVALID_MAPPING, "column type not provided: " + column.getName());
         }
         return type;
+    }
+
+    private boolean sameColumnType(String expectedType, String actualType) {
+        if (expectedType == null || actualType == null) {
+            return Objects.equals(expectedType, actualType);
+        }
+        return normalizeColumnType(expectedType).equals(normalizeColumnType(actualType));
+    }
+
+    private String normalizeColumnType(String type) {
+        String normalized = type.trim()
+                .toLowerCase(Locale.ROOT)
+                .replaceAll("\\s+", " ");
+        return switch (normalized) {
+            case "character varying" -> "varchar";
+            case "integer" -> "int";
+            case "boolean" -> "bool";
+            case "timestamp without time zone" -> "timestamp";
+            default -> normalized;
+        };
     }
 
     private void assertValidIdentifier(String identifier, String type) {

@@ -67,13 +67,13 @@ class QuarkusRepositoryCrudIntegrationTest {
 
     @MuYunRepository
     public interface CrudRepository extends EntityDao<CrudEntity, String> {
-        @SqlUpdate("update quarkus_crud_test set v_name = :name where id = :id")
+        @SqlUpdate("update public.quarkus_crud_test set v_name = :name where id = :id")
         int renameBySql(@Bind("id") String id, @Bind("name") String name);
 
-        @SqlQuery("select v_name from quarkus_crud_test where id = :id")
+        @SqlQuery("select v_name from public.quarkus_crud_test where id = :id")
         String findNameById(@Bind("id") String id);
 
-        @SqlQuery("select id, v_name as name, i_age as age from quarkus_crud_test where id = :id")
+        @SqlQuery("select id, v_name as name, i_age as age from public.quarkus_crud_test where id = :id")
         CrudEntity findBySqlObject(@Bind("id") String id);
     }
 
