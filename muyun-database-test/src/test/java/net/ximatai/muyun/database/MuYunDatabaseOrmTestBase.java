@@ -61,6 +61,57 @@ public abstract class MuYunDatabaseOrmTestBase extends MuYunDatabaseDdlTestBase 
     }
 
     @Test
+    void testSimpleOrmCrudWithCustomIdColumn() {
+        orm.ensureTable(OrmCustomIdEntity.class);
+
+        OrmCustomIdEntity entity = new OrmCustomIdEntity();
+        entity.bizId = UUID.randomUUID().toString();
+        entity.name = "custom_id_user";
+        entity.age = 11;
+
+        assertEquals(entity.bizId, orm.insert(entity));
+
+        OrmCustomIdEntity loaded = orm.findById(OrmCustomIdEntity.class, entity.bizId);
+        assertNotNull(loaded);
+        assertEquals("custom_id_user", loaded.name);
+        assertEquals(11, loaded.age);
+
+        loaded.name = "custom_id_user_v2";
+        loaded.age = 12;
+        assertEquals(1, orm.update(loaded));
+
+        OrmCustomIdEntity updated = orm.findById(OrmCustomIdEntity.class, entity.bizId);
+        assertNotNull(updated);
+        assertEquals("custom_id_user_v2", updated.name);
+        assertEquals(12, updated.age);
+
+        updated.name = "custom_id_user_v3";
+        updated.age = 13;
+        assertEquals(1, orm.upsert(updated));
+
+        OrmCustomIdEntity upserted = orm.findById(OrmCustomIdEntity.class, entity.bizId);
+        assertNotNull(upserted);
+        assertEquals("custom_id_user_v3", upserted.name);
+        assertEquals(13, upserted.age);
+
+        upserted.name = "custom_id_user_conditional";
+        upserted.age = 14;
+        assertEquals(1, orm.update(upserted, Map.of("name", "custom_id_user_v3")));
+        assertEquals(0, orm.update(upserted, Map.of("name", "missing")));
+
+        OrmCustomIdEntity conditionUpdated = orm.findById(OrmCustomIdEntity.class, entity.bizId);
+        assertNotNull(conditionUpdated);
+        assertEquals("custom_id_user_conditional", conditionUpdated.name);
+        assertEquals(14, conditionUpdated.age);
+
+        assertEquals(0, orm.deleteById(OrmCustomIdEntity.class, entity.bizId, Map.of("name", "missing")));
+        assertNotNull(orm.findById(OrmCustomIdEntity.class, entity.bizId));
+
+        assertEquals(1, orm.deleteById(OrmCustomIdEntity.class, entity.bizId, Map.of("name", "custom_id_user_conditional")));
+        assertNull(orm.findById(OrmCustomIdEntity.class, entity.bizId));
+    }
+
+    @Test
     void testSimpleOrmUpdateIgnoreNulls() {
         orm.ensureTable(OrmPatchEntity.class);
 

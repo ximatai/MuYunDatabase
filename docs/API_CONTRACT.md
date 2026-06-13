@@ -39,13 +39,14 @@ int upsert(T entity);
 
 1. `updateByIdAndCondition(T entity, Map<String, Object> conditions)` 以实体主键和附加条件共同定位记录。
 2. `deleteByIdAndCondition(ID id, Map<String, Object> conditions)` 以主键和附加条件共同定位记录。
-3. `conditions` 的 key 使用实体字段名，框架按实体映射解析为物理列名；实体元数据已映射的物理列名也可使用。
-4. 条件字段不存在或字段名不安全时，直接抛出 ORM 映射/条件异常，不拼接 SQL。
-5. 条件未命中时返回 `0`，不会抛出乐观锁或业务冲突异常；业务层可按影响行数解释冲突语义。
-6. 条件写仍是单表能力，不承载租户、软删、生命周期、权限等业务语义。
-7. 底层 Map 写入口 `patchUpdateItemWhere` / `deleteItemWhere` 必须提供至少一个表结构中存在的有效 where 字段；空 where 或仅包含未知字段时直接拒绝。
-8. 局部更新必须提供至少一个可更新字段；主键字段不会进入 SET 子句，只有主键或未知字段时直接拒绝。
-9. MuYunDatabase 默认不提供整表更新/整表删除捷径；确需批量操作时应使用显式 SQL 注解或调用方自有 SQL，并由业务侧承担权限、审计和风险控制。
+3. 静态 ORM 的主键列以实体元数据为准；`@Id(name = "...")` 声明的物理主键列会贯穿 `insert/find/update/delete/upsert` 和条件写执行路径，不回退到全局 `IDatabaseOperations.getPKName()`。
+4. `conditions` 的 key 使用实体字段名，框架按实体映射解析为物理列名；实体元数据已映射的物理列名也可使用。
+5. 条件字段不存在或字段名不安全时，直接抛出 ORM 映射/条件异常，不拼接 SQL。
+6. 条件未命中时返回 `0`，不会抛出乐观锁或业务冲突异常；业务层可按影响行数解释冲突语义。
+7. 条件写仍是单表能力，不承载租户、软删、生命周期、权限等业务语义。
+8. 底层 Map 写入口 `patchUpdateItemWhere` / `deleteItemWhere` 必须提供至少一个表结构中存在的有效 where 字段；空 where 或仅包含未知字段时直接拒绝。
+9. 局部更新必须提供至少一个可更新字段；主键字段不会进入 SET 子句，只有主键或未知字段时直接拒绝。
+10. MuYunDatabase 默认不提供整表更新/整表删除捷径；确需批量操作时应使用显式 SQL 注解或调用方自有 SQL，并由业务侧承担权限、审计和风险控制。
 
 ## 4. 启动期校验（Fail Fast）
 

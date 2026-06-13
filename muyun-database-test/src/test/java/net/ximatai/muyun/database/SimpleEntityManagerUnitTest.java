@@ -492,20 +492,30 @@ public class SimpleEntityManagerUnitTest {
 
         @Override
         public Object insertItem(String schema, String tableName, Map<String, Object> params) {
-            Object id = params.get(getPKName());
+            return insertItem(schema, tableName, params, getPKName());
+        }
+
+        @Override
+        public Object insertItem(String schema, String tableName, Map<String, Object> params, String pkName) {
+            Object id = params.get(pkName);
             if (id == null) {
                 id = String.valueOf(sequence.getAndIncrement());
             }
 
             Map<String, Object> row = new HashMap<>(params);
-            row.put(getPKName(), id);
+            row.put(pkName, id);
             table(schema, tableName).put(id, row);
             return id;
         }
 
         @Override
         public int updateItem(String schema, String tableName, Map<String, Object> params) {
-            Object id = params.get(getPKName());
+            return updateItem(schema, tableName, params, getPKName());
+        }
+
+        @Override
+        public int updateItem(String schema, String tableName, Map<String, Object> params, String pkName) {
+            Object id = params.get(pkName);
             if (id == null) {
                 throw new IllegalArgumentException("id is required");
             }
@@ -522,12 +532,22 @@ public class SimpleEntityManagerUnitTest {
 
         @Override
         public Map<String, Object> getItem(String schema, String tableName, Object id) {
+            return getItem(schema, tableName, id, getPKName());
+        }
+
+        @Override
+        public Map<String, Object> getItem(String schema, String tableName, Object id, String pkName) {
             Map<String, Object> row = table(schema, tableName).get(id);
             return row == null ? null : new HashMap<>(row);
         }
 
         @Override
         public int deleteItem(String schema, String tableName, Object id) {
+            return deleteItem(schema, tableName, id, getPKName());
+        }
+
+        @Override
+        public int deleteItem(String schema, String tableName, Object id, String pkName) {
             return table(schema, tableName).remove(id) != null ? 1 : 0;
         }
 
@@ -538,11 +558,16 @@ public class SimpleEntityManagerUnitTest {
 
         @Override
         public int atomicUpsertItem(String schema, String tableName, Map<String, Object> params) {
+            return atomicUpsertItem(schema, tableName, params, getPKName());
+        }
+
+        @Override
+        public int atomicUpsertItem(String schema, String tableName, Map<String, Object> params, String pkName) {
             atomicUpsertCalled = true;
             if (atomicUpsertThrow) {
                 throw new RuntimeException("atomic upsert failed");
             }
-            return upsertItem(schema, tableName, params);
+            return upsertItem(schema, tableName, params, pkName);
         }
 
         @Override

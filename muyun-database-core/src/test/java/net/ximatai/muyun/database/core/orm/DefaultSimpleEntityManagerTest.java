@@ -176,6 +176,47 @@ class DefaultSimpleEntityManagerTest {
         assertFalse(operations.nonAtomicUpsertCalled, "Should NOT fall back after atomic execution failure");
     }
 
+    @Test
+    void entityOperationsShouldUseMappedIdColumn() {
+        CapturingOperations operations = new CapturingOperations(true);
+        DefaultSimpleEntityManager manager = new DefaultSimpleEntityManager(operations);
+
+        CustomIdEntity entity = new CustomIdEntity();
+        entity.bizId = "biz-1";
+        entity.name = "custom-id";
+
+        assertEquals("biz-1", manager.insert(entity));
+        assertEquals("biz_id", operations.pkName);
+
+        manager.update(entity);
+        assertEquals("biz_id", operations.pkName);
+
+        manager.findById(CustomIdEntity.class, "biz-1");
+        assertEquals("biz_id", operations.pkName);
+
+        manager.deleteById(CustomIdEntity.class, "biz-1");
+        assertEquals("biz_id", operations.pkName);
+
+        manager.upsert(entity);
+        assertEquals("biz_id", operations.pkName);
+    }
+
+    @Test
+    void legacyUpsertInsertBranchShouldUseMappedIdColumn() {
+        CapturingOperations operations = new CapturingOperations(false);
+        operations.returnNullOnGet = true;
+        DefaultSimpleEntityManager manager = new DefaultSimpleEntityManager(operations, UpsertStrategy.LEGACY_ONLY);
+
+        CustomIdEntity entity = new CustomIdEntity();
+        entity.bizId = "biz-2";
+        entity.name = "custom-id";
+
+        assertEquals(1, manager.upsert(entity));
+        assertTrue(operations.legacyUpsertCalled);
+        assertTrue(operations.insertItemCalled);
+        assertEquals("biz_id", operations.pkName);
+    }
+
     @Table(name = "sample_role", schema = "sample_schema")
     static class SampleRole {
         @Id
@@ -213,9 +254,20 @@ class DefaultSimpleEntityManagerTest {
         }
     }
 
+    @Table(name = "custom_id_entity", schema = "sample_schema")
+    static class CustomIdEntity {
+        @Id(name = "biz_id")
+        @Column(length = 32)
+        String bizId;
+
+        @Column(name = "v_name", length = 64)
+        String name;
+    }
+
     static class CapturingOperations implements IDatabaseOperations<Object> {
         private String schema;
         private String table;
+        private String pkName;
         private Map<String, Object> where;
         private String capturedSql;
         private final boolean supportsAtomic;
@@ -224,7 +276,9 @@ class DefaultSimpleEntityManagerTest {
         boolean atomicUpsertCalled;
         boolean nonAtomicUpsertCalled;
         boolean legacyUpsertCalled;
+        boolean insertItemCalled;
         boolean throwOnAtomicUpsert;
+        boolean returnNullOnGet;
         int updateResult = 1;
         int deleteResult = 1;
 
@@ -256,6 +310,20 @@ class DefaultSimpleEntityManagerTest {
         public int patchUpdateItemWhere(String schema, String tableName, Map<String, Object> patchParams, Map<String, Object> whereParams) {
             this.schema = schema;
             this.table = tableName;
+            this.pkName = getPKName();
+            this.where = Map.copyOf(whereParams);
+            return updateResult;
+        }
+
+        @Override
+        public int patchUpdateItemWhere(String schema,
+                                        String tableName,
+                                        Map<String, Object> patchParams,
+                                        Map<String, Object> whereParams,
+                                        String pkName) {
+            this.schema = schema;
+            this.table = tableName;
+            this.pkName = pkName;
             this.where = Map.copyOf(whereParams);
             return updateResult;
         }
@@ -265,6 +333,42 @@ class DefaultSimpleEntityManagerTest {
             this.schema = schema;
             this.table = tableName;
             this.where = Map.copyOf(whereParams);
+            return deleteResult;
+        }
+
+        @Override
+        public Object insertItem(String schema, String tableName, Map<String, Object> params, String pkName) {
+            this.schema = schema;
+            this.table = tableName;
+            this.pkName = pkName;
+            this.insertItemCalled = true;
+            return params.get(pkName);
+        }
+
+        @Override
+        public int updateItem(String schema, String tableName, Map<String, Object> params, String pkName) {
+            this.schema = schema;
+            this.table = tableName;
+            this.pkName = pkName;
+            return updateResult;
+        }
+
+        @Override
+        public Map<String, Object> getItem(String schema, String tableName, Object id, String pkName) {
+            this.schema = schema;
+            this.table = tableName;
+            this.pkName = pkName;
+            if (returnNullOnGet) {
+                return null;
+            }
+            return Map.of(pkName, id, "v_name", "custom-id");
+        }
+
+        @Override
+        public int deleteItem(String schema, String tableName, Object id, String pkName) {
+            this.schema = schema;
+            this.table = tableName;
+            this.pkName = pkName;
             return deleteResult;
         }
 
@@ -354,8 +458,25 @@ class DefaultSimpleEntityManagerTest {
         }
 
         @Override
+        public int upsertItem(String schema, String tableName, Map<String, Object> params, String pkName) {
+            this.pkName = pkName;
+            this.nonAtomicUpsertCalled = true;
+            return 1;
+        }
+
+        @Override
         public int legacyUpsertItem(String schema, String tableName, Map<String, Object> params) {
             this.legacyUpsertCalled = true;
+            return 1;
+        }
+
+        @Override
+        public int legacyUpsertItem(String schema, String tableName, Map<String, Object> params, String pkName) {
+            this.pkName = pkName;
+            this.legacyUpsertCalled = true;
+            if (returnNullOnGet) {
+                return IDatabaseOperations.super.legacyUpsertItem(schema, tableName, params, pkName);
+            }
             return 1;
         }
 
@@ -366,6 +487,12 @@ class DefaultSimpleEntityManagerTest {
                 throw new RuntimeException("atomic upsert failed");
             }
             return 1;
+        }
+
+        @Override
+        public int atomicUpsertItem(String schema, String tableName, Map<String, Object> params, String pkName) {
+            this.pkName = pkName;
+            return atomicUpsertItem(schema, tableName, params);
         }
     }
 }

@@ -1016,6 +1016,19 @@ class OrmInstantEntity {
     public java.time.Instant createdAt;
 }
 
+@Table(name = "orm_custom_id_entity")
+class OrmCustomIdEntity {
+    @Id(name = "biz_id")
+    @net.ximatai.muyun.database.core.annotation.Column(length = 64)
+    public String bizId;
+
+    @net.ximatai.muyun.database.core.annotation.Column(name = "v_name", length = 32)
+    public String name;
+
+    @net.ximatai.muyun.database.core.annotation.Column(name = "i_age")
+    public Integer age;
+}
+
 @Table(name = "orm_dryrun_entity")
 class OrmDryRunEntity {
     @Id
