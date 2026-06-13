@@ -13,6 +13,7 @@ java {
 dependencies {
     implementation(project(":muyun-database-quarkus"))
     implementation(platform(libs.quarkus.bom))
+    implementation(libs.quarkus.arc.deployment)
     implementation(libs.quarkus.core.deployment)
 }
 

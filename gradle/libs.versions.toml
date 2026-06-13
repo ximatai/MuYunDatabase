@@ -37,7 +37,11 @@ spring-jdbc = { module = "org.springframework:spring-jdbc", version = "6.2.7" }
 spring-tx = { module = "org.springframework:spring-tx", version = "6.2.7" }
 jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
 quarkus-bom = { module = "io.quarkus.platform:quarkus-bom", version.ref = "quarkus" }
+quarkus-arc = { module = "io.quarkus:quarkus-arc" }
+quarkus-agroal = { module = "io.quarkus:quarkus-agroal" }
+quarkus-narayana-jta = { module = "io.quarkus:quarkus-narayana-jta" }
 quarkus-core = { module = "io.quarkus:quarkus-core" }
+quarkus-arc-deployment = { module = "io.quarkus:quarkus-arc-deployment" }
 quarkus-core-deployment = { module = "io.quarkus:quarkus-core-deployment" }
 
 [bundles]
