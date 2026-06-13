@@ -68,7 +68,7 @@ public class DefaultSimpleEntityManager implements SimpleEntityManager {
         Object currentId = meta.getIdField().read(entity);
 
         Map<String, Object> body = EntityMapper.toMap(meta, entity, false, currentId != null);
-        Object id = operations.insertItem(schema(meta), meta.getTableName(), body);
+        Object id = operations.insertItem(schema(meta), meta.getTableName(), body, meta.getIdColumnName());
 
         if (currentId == null && id != null) {
             meta.getIdField().write(entity, id);
@@ -98,7 +98,7 @@ public class DefaultSimpleEntityManager implements SimpleEntityManager {
         Map<String, Object> body = EntityMapper.toMap(meta, entity, includeNull, false);
         body.put(meta.getIdColumnName(), id);
 
-        return operations.updateItem(schema(meta), meta.getTableName(), body);
+        return operations.updateItem(schema(meta), meta.getTableName(), body, meta.getIdColumnName());
     }
 
     @Override
@@ -117,7 +117,7 @@ public class DefaultSimpleEntityManager implements SimpleEntityManager {
             where.putAll(resolveConditionColumns(meta, conditions));
         }
         where.put(meta.getIdColumnName(), id);
-        return operations.patchUpdateItemWhere(schema(meta), meta.getTableName(), body, where);
+        return operations.patchUpdateItemWhere(schema(meta), meta.getTableName(), body, where, meta.getIdColumnName());
     }
 
     @Override
@@ -131,7 +131,7 @@ public class DefaultSimpleEntityManager implements SimpleEntityManager {
         }
 
         Map<String, Object> body = EntityMapper.toMap(meta, entity, true, true);
-        return executeUpsert(schema(meta), meta.getTableName(), body);
+        return executeUpsert(schema(meta), meta.getTableName(), body, meta.getIdColumnName());
     }
 
     @Override
@@ -139,7 +139,7 @@ public class DefaultSimpleEntityManager implements SimpleEntityManager {
         Objects.requireNonNull(entityClass, "entityClass must not be null");
 
         EntityMeta meta = resolveMeta(entityClass);
-        Map<String, Object> row = operations.getItem(schema(meta), meta.getTableName(), id);
+        Map<String, Object> row = operations.getItem(schema(meta), meta.getTableName(), id, meta.getIdColumnName());
         return EntityMapper.fromMap(meta, row, entityClass);
     }
 
@@ -148,7 +148,7 @@ public class DefaultSimpleEntityManager implements SimpleEntityManager {
         Objects.requireNonNull(entityClass, "entityClass must not be null");
 
         EntityMeta meta = resolveMeta(entityClass);
-        return operations.deleteItem(schema(meta), meta.getTableName(), id);
+        return operations.deleteItem(schema(meta), meta.getTableName(), id, meta.getIdColumnName());
     }
 
     @Override
@@ -342,21 +342,21 @@ public class DefaultSimpleEntityManager implements SimpleEntityManager {
     }
 
     int executeUpsertForTest(String schema, String tableName, Map<String, Object> body) {
-        return executeUpsert(schema, tableName, body);
+        return executeUpsert(schema, tableName, body, operations.getPKName());
     }
 
-    private int executeUpsert(String schema, String tableName, Map<String, Object> body) {
+    private int executeUpsert(String schema, String tableName, Map<String, Object> body, String pkName) {
         if (upsertStrategy == UpsertStrategy.LEGACY_ONLY) {
-            return operations.legacyUpsertItem(schema, tableName, body);
+            return operations.legacyUpsertItem(schema, tableName, body, pkName);
         }
 
         if (!operations.supportsAtomicUpsert()) {
             if (upsertStrategy == UpsertStrategy.ATOMIC_ONLY) {
                 throw new OrmException(OrmException.Code.INVALID_MAPPING, "Atomic upsert is not supported by current database operations");
             }
-            return operations.upsertItem(schema, tableName, body);
+            return operations.upsertItem(schema, tableName, body, pkName);
         }
 
-        return operations.atomicUpsertItem(schema, tableName, body);
+        return operations.atomicUpsertItem(schema, tableName, body, pkName);
     }
 }

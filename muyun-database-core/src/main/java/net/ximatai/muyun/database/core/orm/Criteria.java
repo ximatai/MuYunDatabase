@@ -3,6 +3,7 @@ package net.ximatai.muyun.database.core.orm;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -11,6 +12,15 @@ public class Criteria {
 
     public static Criteria of() {
         return new Criteria();
+    }
+
+    public static Criteria copyOf(Criteria source) {
+        Objects.requireNonNull(source, "source must not be null");
+        Criteria copy = of();
+        if (!source.isEmpty()) {
+            copy.root.andGroup(CriteriaGroup.copyOf(source.getRoot()));
+        }
+        return copy;
     }
 
     public Criteria and(String field, CriteriaOperator operator, Object... values) {
@@ -40,6 +50,22 @@ public class Criteria {
 
     public Criteria orGroup(Consumer<CriteriaGroup> consumer) {
         root.orGroup(consumer);
+        return this;
+    }
+
+    public Criteria and(Criteria other) {
+        Objects.requireNonNull(other, "other must not be null");
+        if (!other.isEmpty()) {
+            root.andGroup(CriteriaGroup.copyOf(other.getRoot()));
+        }
+        return this;
+    }
+
+    public Criteria or(Criteria other) {
+        Objects.requireNonNull(other, "other must not be null");
+        if (!other.isEmpty()) {
+            root.orGroup(CriteriaGroup.copyOf(other.getRoot()));
+        }
         return this;
     }
 

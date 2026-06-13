@@ -81,9 +81,14 @@ abstract class AbstractJdbiDatabaseOperations<K> implements IDatabaseOperations<
 
     @Override
     public int atomicUpsertItem(String schema, String tableName, Map<String, Object> params) {
+        return atomicUpsertItem(schema, tableName, params, getPKName());
+    }
+
+    @Override
+    public int atomicUpsertItem(String schema, String tableName, Map<String, Object> params, String pkName) {
         DBTable table = getDBInfo().getSchema(schema).getTable(tableName);
         Map<String, Object> transformed = transformDataForDB(table, params);
-        String pk = getPKName();
+        String pk = pkName;
         Stream.of(pk, pk.toUpperCase(), pk.toLowerCase())
                 .map(transformed::get)
                 .filter(Objects::nonNull)

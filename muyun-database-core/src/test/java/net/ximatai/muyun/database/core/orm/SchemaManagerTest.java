@@ -39,6 +39,11 @@ class SchemaManagerTest {
         assertFalse(result.hasNonAdditiveChanges());
         assertTrue(result.getStatements().stream().anyMatch(sql -> sql.contains("create table")));
         assertTrue(result.getStatements().stream().anyMatch(sql -> sql.contains("create unique index")));
+        assertTrue(result.getChanges().stream().anyMatch(change -> change.getType() == MigrationChange.Type.CREATE_TABLE));
+        assertTrue(result.getChanges().stream().anyMatch(change -> change.getType() == MigrationChange.Type.ADD_COLUMN));
+        assertTrue(result.getChanges().stream().anyMatch(change -> change.getType() == MigrationChange.Type.CREATE_INDEX));
+        assertTrue(result.getChanges().stream().anyMatch(change -> change.getType() == MigrationChange.Type.DROP_TEMP_COLUMN));
+        assertTrue(result.getChanges().stream().noneMatch(MigrationChange::isNonAdditive));
         assertEquals(List.of(), operations.executedSql);
     }
 
@@ -101,12 +106,83 @@ class SchemaManagerTest {
         assertTrue(dryRun.isChanged());
         assertTrue(dryRun.hasNonAdditiveChanges());
         assertTrue(dryRun.getStatements().stream().anyMatch(sql -> sql.contains("drop column \"removed_name\"")));
+        assertTrue(dryRun.getChanges().stream().anyMatch(change ->
+                change.getType() == MigrationChange.Type.DROP_COLUMN
+                        && change.isNonAdditive()
+                        && "removed_name".equals(change.getTarget())));
 
         MigrationResult executed = new SchemaManager(operations).ensureTable(table, MigrationOptions.execute());
 
         assertTrue(executed.isChanged());
         assertTrue(executed.hasNonAdditiveChanges());
         assertTrue(operations.executedSql.stream().anyMatch(sql -> sql.contains("drop column \"removed_name\"")));
+    }
+
+    @Test
+    void shouldTreatRequiredColumnWithoutDefaultOnExistingTableAsNonAdditive() {
+        FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("POSTGRESQL"));
+        existingInfo(loader);
+        FakeOperations operations = new FakeOperations(loader);
+        TableWrapper table = TableWrapper.withName("contract")
+                .setPrimaryKey(Column.of("id").setType(ColumnType.VARCHAR).setLength(32).setPrimaryKey())
+                .addColumn(Column.of("required_code").setType(ColumnType.VARCHAR).setLength(64).setNullable(false));
+
+        MigrationResult dryRun = new SchemaManager(operations).ensureTable(table, MigrationOptions.dryRun());
+
+        assertTrue(dryRun.hasNonAdditiveChanges());
+        assertTrue(dryRun.getChanges().stream().anyMatch(change ->
+                change.getType() == MigrationChange.Type.ADD_COLUMN
+                        && change.isNonAdditive()
+                        && "required_code".equals(change.getTarget())));
+
+        OrmException exception = assertThrows(
+                OrmException.class,
+                () -> new SchemaManager(operations).ensureTable(table, MigrationOptions.strict())
+        );
+        assertEquals(OrmException.Code.STRICT_MIGRATION_REJECTED, exception.getCode());
+    }
+
+    @Test
+    void migrationResultShouldRejectMismatchedStatementsAndChanges() {
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> new MigrationResult(
+                        true,
+                        true,
+                        false,
+                        List.of("select 1"),
+                        List.of(MigrationChange.additive(MigrationChange.Type.RAW_SQL, null, "select 2"))
+                )
+        );
+
+        assertEquals("migration statements must match change SQL order", exception.getMessage());
+    }
+
+    @Test
+    void migrationResultShouldRejectMismatchedNonAdditiveFlagAndChanges() {
+        IllegalArgumentException missingFlag = assertThrows(
+                IllegalArgumentException.class,
+                () -> new MigrationResult(
+                        true,
+                        true,
+                        false,
+                        List.of("drop table contract"),
+                        List.of(MigrationChange.nonAdditive(MigrationChange.Type.RAW_SQL, null, "drop table contract"))
+                )
+        );
+        assertEquals("migration non-additive flag must match change details", missingFlag.getMessage());
+
+        IllegalArgumentException redundantFlag = assertThrows(
+                IllegalArgumentException.class,
+                () -> new MigrationResult(
+                        true,
+                        true,
+                        true,
+                        List.of("select 1"),
+                        List.of(MigrationChange.additive(MigrationChange.Type.RAW_SQL, null, "select 1"))
+                )
+        );
+        assertEquals("migration non-additive flag must match change details", redundantFlag.getMessage());
     }
 
     @Test

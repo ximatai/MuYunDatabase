@@ -16,6 +16,15 @@ public class CriteriaGroup implements CriteriaNode {
         return new CriteriaGroup();
     }
 
+    public static CriteriaGroup copyOf(CriteriaGroup source) {
+        Objects.requireNonNull(source, "source must not be null");
+        CriteriaGroup copy = create();
+        for (Entry entry : source.getEntries()) {
+            copy.add(entry.getJoin(), copyNode(entry.getNode()));
+        }
+        return copy;
+    }
+
     public CriteriaGroup and(String field, CriteriaOperator operator, Object... values) {
         return add(CriteriaJoin.AND, new CriteriaClause(field, operator, Arrays.asList(values)));
     }
@@ -204,6 +213,16 @@ public class CriteriaGroup implements CriteriaNode {
     private CriteriaGroup add(CriteriaJoin join, CriteriaNode node) {
         entries.add(new Entry(join, node));
         return this;
+    }
+
+    private static CriteriaNode copyNode(CriteriaNode node) {
+        if (node instanceof CriteriaClause clause) {
+            return new CriteriaClause(clause.getField(), clause.getOperator(), clause.getValues());
+        }
+        if (node instanceof CriteriaGroup group) {
+            return copyOf(group);
+        }
+        throw new OrmException(OrmException.Code.INVALID_CRITERIA, "Unsupported criteria node");
     }
 
     public static class Entry {

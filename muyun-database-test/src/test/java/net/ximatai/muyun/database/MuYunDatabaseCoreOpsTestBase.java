@@ -50,6 +50,12 @@ public abstract class MuYunDatabaseCoreOpsTestBase extends MuYunDatabaseBaseTest
 
     @Test
     @Override
+    protected void testRuntimeTableGateway() {
+        super.testRuntimeTableGateway();
+    }
+
+    @Test
+    @Override
     protected void testQuery() {
         super.testQuery();
     }

@@ -119,6 +119,16 @@ public interface IDatabaseOperations<K> {
      * @return 插入记录的主键ID
      */
     default K insertItem(String schema, String tableName, Map<String, Object> params) {
+        return insertItem(schema, tableName, params, getPKName());
+    }
+
+    /**
+     * 插入单条记录，并显式指定主键列名。
+     * 自动处理ID字段，支持自增ID和手动指定ID
+     *
+     * @return 插入记录的主键ID
+     */
+    default K insertItem(String schema, String tableName, Map<String, Object> params, String pkName) {
         DBTable table = resolveTable(schema, tableName);
         Map<String, Object> transformed = transformDataForDB(table, params);
         SqlPlanBuilder.InsertPlan plan = SqlPlanBuilder.prepareInsertPlan(
@@ -131,10 +141,10 @@ public interface IDatabaseOperations<K> {
         Map<String, Object> bindParams = SqlPlanBuilder.toBindMap(transformed, plan.columns(), plan.bindNames());
 
         // 使用Stream查找主键值
-        Optional<K> pkValue = findPrimaryKeyValue(params);
+        Optional<K> pkValue = findPrimaryKeyValue(params, pkName);
 
         return pkValue.map(value -> this.insertWithPK(plan.sql(), bindParams, value))
-                .orElseGet(() -> this.insert(plan.sql(), bindParams));
+                .orElseGet(() -> this.insert(plan.sql(), bindParams, pkName));
     }
 
     /**
@@ -142,8 +152,11 @@ public interface IDatabaseOperations<K> {
      */
     @SuppressWarnings("unchecked")
     private Optional<K> findPrimaryKeyValue(Map<String, Object> params) {
-        String pkName = getPKName();
+        return findPrimaryKeyValue(params, getPKName());
+    }
 
+    @SuppressWarnings("unchecked")
+    private Optional<K> findPrimaryKeyValue(Map<String, Object> params, String pkName) {
         return (Optional<K>) Stream.of(pkName, pkName.toUpperCase(), pkName.toLowerCase())
                 .map(params::get)
                 .filter(Objects::nonNull)
@@ -196,6 +209,15 @@ public interface IDatabaseOperations<K> {
      * @return 影响的行数
      */
     default int updateItem(String schema, String tableName, Map<String, Object> params) {
+        return updateItem(schema, tableName, params, getPKName());
+    }
+
+    /**
+     * 更新记录，并显式指定主键列名。
+     *
+     * @return 影响的行数
+     */
+    default int updateItem(String schema, String tableName, Map<String, Object> params, String pkName) {
         DBTable table = resolveTable(schema, tableName);
         Map<String, Object> transformed = transformDataForDB(table, params);
         SqlPlanBuilder.PreparedSql plan = SqlPlanBuilder.prepareUpdateSql(
@@ -203,7 +225,7 @@ public interface IDatabaseOperations<K> {
                 tableName,
                 transformed,
                 table.getColumnMap(),
-                getPKName(),
+                pkName,
                 getDBInfo().getDatabaseType()
         );
         return this.update(plan.sql(), plan.params());
@@ -242,6 +264,13 @@ public interface IDatabaseOperations<K> {
      * 按主键执行局部字段更新。
      */
     default int patchUpdateItem(String schema, String tableName, K id, Map<String, Object> patchParams) {
+        return patchUpdateItem(schema, tableName, id, patchParams, getPKName());
+    }
+
+    /**
+     * 按主键执行局部字段更新，并显式指定主键列名。
+     */
+    default int patchUpdateItem(String schema, String tableName, K id, Map<String, Object> patchParams, String pkName) {
         if (id == null) {
             throw new MuYunDatabaseException("The primary key value must not be null");
         }
@@ -255,7 +284,7 @@ public interface IDatabaseOperations<K> {
                 tableName,
                 transformedPatch,
                 table.getColumnMap(),
-                getPKName(),
+                pkName,
                 pkBindName,
                 getDBInfo().getDatabaseType()
         );
@@ -274,11 +303,19 @@ public interface IDatabaseOperations<K> {
                                      String tableName,
                                      Map<String, Object> patchParams,
                                      Map<String, Object> whereParams) {
+        return patchUpdateItemWhere(schema, tableName, patchParams, whereParams, getPKName());
+    }
+
+    default int patchUpdateItemWhere(String schema,
+                                     String tableName,
+                                     Map<String, Object> patchParams,
+                                     Map<String, Object> whereParams,
+                                     String pkName) {
         Map<String, Object> safePatch = patchParams == null ? Collections.emptyMap() : patchParams;
         Map<String, Object> safeWhere = whereParams == null ? Collections.emptyMap() : whereParams;
         DBTable table = resolveTable(schema, tableName);
         Map<String, Object> transformedPatch = transformDataForDB(table, safePatch);
-        transformedPatch.keySet().removeIf(key -> key.equalsIgnoreCase(getPKName()));
+        transformedPatch.keySet().removeIf(key -> key.equalsIgnoreCase(pkName));
         Map<String, Object> transformedWhere = transformDataForDB(table, safeWhere);
         SqlPlanBuilder.PreparedSql plan = SqlPlanBuilder.preparePatchUpdateSql(
                 schema,
@@ -286,7 +323,7 @@ public interface IDatabaseOperations<K> {
                 transformedPatch,
                 transformedWhere,
                 table.getColumnMap(),
-                getPKName(),
+                pkName,
                 getDBInfo().getDatabaseType()
         );
         return this.update(plan.sql(), plan.params());
@@ -298,32 +335,47 @@ public interface IDatabaseOperations<K> {
      * @return 影响的行数
      */
     default int upsertItem(String schema, String tableName, Map<String, Object> params) {
+        return upsertItem(schema, tableName, params, getPKName());
+    }
 
+    /**
+     * 新增或修改记录，并显式指定主键列名。
+     *
+     * @return 影响的行数
+     */
+    default int upsertItem(String schema, String tableName, Map<String, Object> params, String pkName) {
         if (supportsAtomicUpsert()) {
-            return atomicUpsertItem(schema, tableName, params);
+            return atomicUpsertItem(schema, tableName, params, pkName);
         }
 
-        return legacyUpsertItem(schema, tableName, params);
+        return legacyUpsertItem(schema, tableName, params, pkName);
     }
 
     /**
      * 使用传统 SELECT + INSERT/UPDATE 路径执行 upsert。
      */
     default int legacyUpsertItem(String schema, String tableName, Map<String, Object> params) {
+        return legacyUpsertItem(schema, tableName, params, getPKName());
+    }
 
-        Optional<K> pkValue = findPrimaryKeyValue(params);
+    /**
+     * 使用传统 SELECT + INSERT/UPDATE 路径执行 upsert，并显式指定主键列名。
+     */
+    default int legacyUpsertItem(String schema, String tableName, Map<String, Object> params, String pkName) {
+
+        Optional<K> pkValue = findPrimaryKeyValue(params, pkName);
 
         if (pkValue.isEmpty()) {
             throw new MuYunDatabaseException("The primary key value must not be null");
         }
 
-        Map<String, Object> row = this.getItem(schema, tableName, pkValue.get());
+        Map<String, Object> row = this.getItem(schema, tableName, pkValue.get(), pkName);
 
         if (row == null) {
-            this.insertItem(schema, tableName, params);
+            this.insertItem(schema, tableName, params, pkName);
             return 1;
         } else {
-            return this.updateItem(schema, tableName, params);
+            return this.updateItem(schema, tableName, params, pkName);
         }
 
     }
@@ -351,6 +403,16 @@ public interface IDatabaseOperations<K> {
         throw new UnsupportedOperationException("Atomic upsert is not supported by this IDatabaseOperations implementation");
     }
 
+    /**
+     * 使用数据库方言原子 upsert，并显式指定主键列名。
+     */
+    default int atomicUpsertItem(String schema, String tableName, Map<String, Object> params, String pkName) {
+        if (Objects.equals(pkName, getPKName())) {
+            return atomicUpsertItem(schema, tableName, params);
+        }
+        throw new UnsupportedOperationException("Atomic upsert with explicit primary key is not supported by this IDatabaseOperations implementation");
+    }
+
     default int atomicUpsertItem(String tableName, Map<String, Object> params) {
         return atomicUpsertItem(getDefaultSchemaName(), tableName, params);
     }
@@ -372,10 +434,19 @@ public interface IDatabaseOperations<K> {
      * @return 影响的行数
      */
     default int deleteItem(String schema, String tableName, K id) {
+        return deleteItem(schema, tableName, id, getPKName());
+    }
+
+    /**
+     * 删除记录，并显式指定主键列名。
+     *
+     * @return 影响的行数
+     */
+    default int deleteItem(String schema, String tableName, K id, String pkName) {
         DBTable dbTable = resolveTable(schema, tableName);
         Objects.requireNonNull(dbTable);
 
-        return this.delete("DELETE FROM " + quoteSchemaTable(schema, tableName) + " WHERE " + quoteIdentifier(getPKName()) + "=:id", Collections.singletonMap("id", id));
+        return this.delete("DELETE FROM " + quoteSchemaTable(schema, tableName) + " WHERE " + quoteIdentifier(pkName) + "=:id", Collections.singletonMap("id", id));
     }
 
     default int deleteItemWhere(String tableName, Map<String, Object> whereParams) {
@@ -409,10 +480,19 @@ public interface IDatabaseOperations<K> {
      * @return 记录映射，未找到时返回null
      */
     default Map<String, Object> getItem(String schema, String tableName, K id) {
+        return getItem(schema, tableName, id, getPKName());
+    }
+
+    /**
+     * 查询单条记录，并显式指定主键列名。
+     *
+     * @return 记录映射，未找到时返回null
+     */
+    default Map<String, Object> getItem(String schema, String tableName, K id, String pkName) {
         DBTable dbTable = resolveTable(schema, tableName);
         Objects.requireNonNull(dbTable);
 
-        return this.row("SELECT * FROM " + quoteSchemaTable(schema, tableName) + " WHERE " + quoteIdentifier(getPKName()) + "=:id", Collections.singletonMap("id", id));
+        return this.row("SELECT * FROM " + quoteSchemaTable(schema, tableName) + " WHERE " + quoteIdentifier(pkName) + "=:id", Collections.singletonMap("id", id));
     }
 
     // 基础CRUD操作方法
@@ -421,6 +501,16 @@ public interface IDatabaseOperations<K> {
      * 插入记录并返回主键
      */
     K insert(String sql, Map<String, Object> params);
+
+    /**
+     * 插入记录并返回指定主键列生成值。
+     */
+    default K insert(String sql, Map<String, Object> params, String pkName) {
+        if (Objects.equals(pkName, getPKName())) {
+            return insert(sql, params);
+        }
+        throw new UnsupportedOperationException("Insert with explicit primary key is not supported by this IDatabaseOperations implementation");
+    }
 
     /**
      * 插入记录并返回主键

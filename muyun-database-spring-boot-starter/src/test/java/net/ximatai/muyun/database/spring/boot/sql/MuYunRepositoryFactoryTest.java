@@ -73,8 +73,8 @@ class MuYunRepositoryFactoryTest {
         net.ximatai.muyun.database.core.metadata.DBInfo dbInfo = mock(net.ximatai.muyun.database.core.metadata.DBInfo.class);
         when(dbInfo.getDatabaseType()).thenReturn(net.ximatai.muyun.database.core.metadata.DBInfo.Type.POSTGRESQL);
         when(operations.getDBInfo()).thenReturn(dbInfo);
-        when(operations.insertItem(anyString(), anyString(), anyMap())).thenReturn("r-10");
-        when(operations.getItem(anyString(), anyString(), any())).thenReturn(Map.of("id", "r-10", "roleName", "hybrid-role"));
+        when(operations.insertItem(anyString(), anyString(), anyMap(), anyString())).thenReturn("r-10");
+        when(operations.getItem(anyString(), anyString(), any(), anyString())).thenReturn(Map.of("id", "r-10", "roleName", "hybrid-role"));
         when(operations.row(anyString(), anyMap())).thenAnswer(invocation -> {
             String sql = invocation.getArgument(0);
             if (sql.contains("COUNT")) {
@@ -120,8 +120,8 @@ class MuYunRepositoryFactoryTest {
         assertEquals(1L, count);
         assertEquals(1, affected);
 
-        verify(operations, times(1)).insertItem(anyString(), anyString(), anyMap());
-        verify(operations, times(1)).getItem(anyString(), anyString(), any());
+        verify(operations, times(1)).insertItem(anyString(), anyString(), anyMap(), eq("id"));
+        verify(operations, times(1)).getItem(anyString(), anyString(), any(), eq("id"));
         verify(jdbi, times(1)).withHandle(any());
     }
 
@@ -219,7 +219,7 @@ class MuYunRepositoryFactoryTest {
         net.ximatai.muyun.database.core.metadata.DBInfo dbInfo = mock(net.ximatai.muyun.database.core.metadata.DBInfo.class);
         when(dbInfo.getDatabaseType()).thenReturn(net.ximatai.muyun.database.core.metadata.DBInfo.Type.POSTGRESQL);
         when(operations.getDBInfo()).thenReturn(dbInfo);
-        when(operations.insertItem(anyString(), anyString(), anyMap())).thenReturn("r-20");
+        when(operations.insertItem(anyString(), anyString(), anyMap(), anyString())).thenReturn("r-20");
 
         Jdbi jdbi = mock(Jdbi.class);
         MuYunRepositoryFactory factory = new MuYunRepositoryFactory(operations, new MockEnvironment(), jdbi);
@@ -308,7 +308,7 @@ class MuYunRepositoryFactoryTest {
         net.ximatai.muyun.database.core.metadata.DBInfo dbInfo = mock(net.ximatai.muyun.database.core.metadata.DBInfo.class);
         when(dbInfo.getDatabaseType()).thenReturn(net.ximatai.muyun.database.core.metadata.DBInfo.Type.POSTGRESQL);
         when(operations.getDBInfo()).thenReturn(dbInfo);
-        when(operations.insertItem(anyString(), anyString(), anyMap())).thenReturn("r-30");
+        when(operations.insertItem(anyString(), anyString(), anyMap(), anyString())).thenReturn("r-30");
 
         Jdbi jdbi = mock(Jdbi.class);
         MuYunRepositoryFactory factory = new MuYunRepositoryFactory(operations, new MockEnvironment(), jdbi);
@@ -319,7 +319,7 @@ class MuYunRepositoryFactoryTest {
         role.setRoleName("indirect");
 
         assertEquals("r-30", dao.insert(role));
-        verify(operations, times(1)).insertItem(anyString(), anyString(), anyMap());
+        verify(operations, times(1)).insertItem(anyString(), anyString(), anyMap(), eq("id"));
         verify(jdbi, never()).withExtension(any(), any());
     }
 

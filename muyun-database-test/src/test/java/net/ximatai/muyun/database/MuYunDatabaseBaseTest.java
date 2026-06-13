@@ -469,6 +469,36 @@ public abstract class MuYunDatabaseBaseTest {
         assertEquals(1, ignoredPkPatch);
         assertEquals("pk_patch_ignored", db.getItem("basic", id).get("v_name"));
 
+        MuYunDatabaseException emptyWhere = assertThrows(
+                MuYunDatabaseException.class,
+                () -> db.patchUpdateItemWhere("basic", Map.of("v_name", "unsafe"), Map.of())
+        );
+        assertEquals("No where fields were provided for conditional patch update", emptyWhere.getMessage());
+
+        MuYunDatabaseException nullWhere = assertThrows(
+                MuYunDatabaseException.class,
+                () -> db.patchUpdateItemWhere("basic", Map.of("v_name", "unsafe"), null)
+        );
+        assertEquals("No where fields were provided for conditional patch update", nullWhere.getMessage());
+
+        MuYunDatabaseException unknownWhere = assertThrows(
+                MuYunDatabaseException.class,
+                () -> db.patchUpdateItemWhere("basic", Map.of("v_name", "unsafe"), Map.of("unknown_column", id))
+        );
+        assertEquals("No where fields were provided for conditional patch update", unknownWhere.getMessage());
+
+        MuYunDatabaseException noEffectivePatch = assertThrows(
+                MuYunDatabaseException.class,
+                () -> db.patchUpdateItemWhere("basic", Map.of("id", id), Map.of("id", id))
+        );
+        assertEquals("No updatable fields were provided for patch update", noEffectivePatch.getMessage());
+
+        MuYunDatabaseException nullPatch = assertThrows(
+                MuYunDatabaseException.class,
+                () -> db.patchUpdateItemWhere("basic", null, Map.of("id", id))
+        );
+        assertEquals("No updatable fields were provided for patch update", nullPatch.getMessage());
+
         MuYunDatabaseException ex = assertThrows(
                 MuYunDatabaseException.class,
                 () -> db.patchUpdateItem("basic", id, Map.of("id", id))
@@ -498,8 +528,78 @@ public abstract class MuYunDatabaseBaseTest {
         assertNotNull(conditionalId);
         assertEquals(0, db.deleteItemWhere("basic", Map.of("id", conditionalId, "i_age", 999)));
         assertNotNull(db.getItem("basic", conditionalId));
+
+        MuYunDatabaseException emptyWhere = assertThrows(
+                MuYunDatabaseException.class,
+                () -> db.deleteItemWhere("basic", Map.of())
+        );
+        assertEquals("No where fields were provided for conditional delete", emptyWhere.getMessage());
+
+        MuYunDatabaseException nullWhere = assertThrows(
+                MuYunDatabaseException.class,
+                () -> db.deleteItemWhere("basic", null)
+        );
+        assertEquals("No where fields were provided for conditional delete", nullWhere.getMessage());
+
+        MuYunDatabaseException unknownWhere = assertThrows(
+                MuYunDatabaseException.class,
+                () -> db.deleteItemWhere("basic", Map.of("unknown_column", conditionalId))
+        );
+        assertEquals("No where fields were provided for conditional delete", unknownWhere.getMessage());
+
         assertEquals(1, db.deleteItemWhere("basic", Map.of("id", conditionalId, "i_age", 5)));
         assertNull(db.getItem("basic", conditionalId));
+    }
+
+    protected void testRuntimeTableGateway() {
+        RuntimeTableGateway gateway = new RuntimeTableGateway(
+                db,
+                db.getDefaultSchemaName(),
+                "basic",
+                RuntimeColumnMapper.of(Map.of(
+                        "id", "id",
+                        "name", "v_name",
+                        "age", "i_age",
+                        "b_flag", "b_flag"
+                ))
+        );
+        String marker = "gw_" + UUID.randomUUID().toString().substring(0, 12);
+
+        Object id = gateway.insert(Map.of(
+                "name", marker,
+                "age", 21,
+                "b_flag", true
+        ));
+        assertNotNull(id);
+
+        List<Map<String, Object>> queried = gateway.query(
+                Criteria.of().eq("name", marker),
+                PageRequest.of(1, 10),
+                Sort.asc("age")
+        );
+        assertEquals(1, queried.size());
+        assertEquals(marker, queried.getFirst().get("name"));
+
+        List<Map<String, Object>> queriedColumns = gateway.queryColumns(
+                Criteria.of().eq("name", marker),
+                PageRequest.of(1, 10)
+        );
+        assertEquals(marker, queriedColumns.getFirst().get("v_name"));
+
+        PageResult<Map<String, Object>> page = gateway.pageQuery(
+                Criteria.of().eq("name", marker),
+                PageRequest.of(1, 10)
+        );
+        assertEquals(1L, page.getTotal());
+
+        assertEquals(1, gateway.patchWhere(
+                Map.of("name", "gateway_patch"),
+                Map.of("id", id, "age", 21)
+        ));
+        assertEquals("gateway_patch", db.getItem("basic", (String) id).get("v_name"));
+
+        assertEquals(1, gateway.deleteWhere(Map.of("id", id)));
+        assertNull(db.getItem("basic", (String) id));
     }
 
     protected void testQuery() {
@@ -915,6 +1015,19 @@ class OrmInstantEntity {
 
     @net.ximatai.muyun.database.core.annotation.Column(name = "t_created_at")
     public java.time.Instant createdAt;
+}
+
+@Table(name = "orm_custom_id_entity")
+class OrmCustomIdEntity {
+    @Id(name = "biz_id")
+    @net.ximatai.muyun.database.core.annotation.Column(length = 64)
+    public String bizId;
+
+    @net.ximatai.muyun.database.core.annotation.Column(name = "v_name", length = 32)
+    public String name;
+
+    @net.ximatai.muyun.database.core.annotation.Column(name = "i_age")
+    public Integer age;
 }
 
 @Table(name = "orm_dryrun_entity")

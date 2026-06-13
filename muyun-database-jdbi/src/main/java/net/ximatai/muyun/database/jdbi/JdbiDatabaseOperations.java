@@ -57,11 +57,16 @@ public class JdbiDatabaseOperations<K> extends AbstractJdbiDatabaseOperations<K>
 
     @Override
     public K insert(String sql, Map<String, Object> params) {
+        return insert(sql, params, getPKName());
+    }
+
+    @Override
+    public K insert(String sql, Map<String, Object> params, String pkName) {
         return withWriteRetry(() -> getJdbi().withHandle(handle ->
                 handle.createUpdate(sql)
                         .attachToHandleForCleanup()
                         .bindMap(params)
-                        .executeAndReturnGeneratedKeys(getPKName()).mapTo(pkType).one()));
+                        .executeAndReturnGeneratedKeys(pkName).mapTo(pkType).one()));
     }
 
     @Override
