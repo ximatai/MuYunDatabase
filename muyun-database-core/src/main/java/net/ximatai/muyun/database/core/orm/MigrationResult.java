@@ -33,6 +33,7 @@ public class MigrationResult {
         this.statements = new ArrayList<>(statements);
         this.changes = new ArrayList<>(changes);
         requireStatementsMatchChanges(this.statements, this.changes);
+        requireNonAdditiveMatchesChanges(hasNonAdditiveChanges, this.changes);
     }
 
     public static MigrationResult empty(MigrationOptions options) {
@@ -65,6 +66,13 @@ public class MigrationResult {
         List<String> changeStatements = changes.stream().map(MigrationChange::getSql).toList();
         if (!statements.equals(changeStatements)) {
             throw new IllegalArgumentException("migration statements must match change SQL order");
+        }
+    }
+
+    private static void requireNonAdditiveMatchesChanges(boolean hasNonAdditiveChanges, List<MigrationChange> changes) {
+        boolean actual = changes.stream().anyMatch(MigrationChange::isNonAdditive);
+        if (hasNonAdditiveChanges != actual) {
+            throw new IllegalArgumentException("migration non-additive flag must match change details");
         }
     }
 }

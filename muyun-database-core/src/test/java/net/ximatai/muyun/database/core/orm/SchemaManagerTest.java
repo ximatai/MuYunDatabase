@@ -159,6 +159,33 @@ class SchemaManagerTest {
     }
 
     @Test
+    void migrationResultShouldRejectMismatchedNonAdditiveFlagAndChanges() {
+        IllegalArgumentException missingFlag = assertThrows(
+                IllegalArgumentException.class,
+                () -> new MigrationResult(
+                        true,
+                        true,
+                        false,
+                        List.of("drop table contract"),
+                        List.of(MigrationChange.nonAdditive(MigrationChange.Type.RAW_SQL, null, "drop table contract"))
+                )
+        );
+        assertEquals("migration non-additive flag must match change details", missingFlag.getMessage());
+
+        IllegalArgumentException redundantFlag = assertThrows(
+                IllegalArgumentException.class,
+                () -> new MigrationResult(
+                        true,
+                        true,
+                        true,
+                        List.of("select 1"),
+                        List.of(MigrationChange.additive(MigrationChange.Type.RAW_SQL, null, "select 1"))
+                )
+        );
+        assertEquals("migration non-additive flag must match change details", redundantFlag.getMessage());
+    }
+
+    @Test
     void shouldRejectExplicitColumnDropInStrictMode() {
         FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("POSTGRESQL"));
         existingInfo(loader);

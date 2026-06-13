@@ -63,7 +63,8 @@ int upsert(T entity);
 4. `DEFAULT` 表示跟随全局策略。
 5. `MigrationResult.getStatements()` 保留 SQL 列表兼容输出。
 6. `MigrationResult.getChanges()` 提供结构化迁移变化，包含变化类型、目标、SQL 和是否 non-additive，供 dry-run、治理和审计使用。
-7. 旧构造器生成的 `RAW_SQL` change 是兼容降级结果，只表达整体 SQL 和聚合 non-additive 标记；`SchemaManager` 规划出的 changes 才提供逐条分类。
+7. `MigrationResult.hasNonAdditiveChanges()` 必须与 `getChanges()` 明细一致；使用结构化构造器时聚合标记和逐条 `MigrationChange.isNonAdditive()` 不一致会直接拒绝。
+8. 旧构造器生成的 `RAW_SQL` change 是兼容降级结果，只表达整体 SQL 和聚合 non-additive 标记；`SchemaManager` 规划出的 changes 才提供逐条分类。
 
 ## 6. Criteria 组合契约（稳定）
 
