@@ -17,6 +17,7 @@
 主文档：
 
 - 快速上手（初始化与最小可运行示例）：[`docs/QUICKSTART.md`](docs/QUICKSTART.md)
+- Quarkus 扩展接入说明（JVM MVP）：[`docs/QUARKUS.md`](docs/QUARKUS.md)
 - API 稳定契约（冻结）：[`docs/API_CONTRACT.md`](docs/API_CONTRACT.md)
 - 重构指南（DB 直调 / MyBatis-Plus 到 Repository）：[`docs/REFACTOR_GUIDE.md`](docs/REFACTOR_GUIDE.md)
 - 项目路线图（已做能力 + 未来优先级）：[`docs/ROADMAP.md`](docs/ROADMAP.md)
@@ -108,6 +109,8 @@ class UserService {
 - `muyun-database-core`：纯 `Java`，定义标准接口和核心逻辑
 - `muyun-database-jdbi`：基于 `jdbi` 的实现；普通 Java 项目推荐优先依赖此模块
 - `muyun-database-spring-boot-starter`：Spring Boot 自动装配与声明式事务桥接；Spring Boot 项目推荐优先依赖此模块
+- `muyun-database-quarkus`：Quarkus 扩展 runtime 模块，提供 CDI bean 与 Repository 代理（JVM MVP）
+- `muyun-database-quarkus-deployment`：Quarkus 扩展 deployment 模块，负责构建期扫描与 synthetic bean 注册
 - `muyun-database-jdbi-jdk8`：兼容 `Java8`，仅存在于 `jdbi-jdk8` 分支
 - `muyun-database-test`：测试模块，业务项目通常不依赖
 

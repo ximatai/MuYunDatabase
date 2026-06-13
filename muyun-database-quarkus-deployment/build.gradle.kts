@@ -15,6 +15,10 @@ dependencies {
     implementation(platform(libs.quarkus.bom))
     implementation(libs.quarkus.arc.deployment)
     implementation(libs.quarkus.core.deployment)
+
+    testImplementation(platform(libs.junit.bom))
+    testImplementation(libs.junit.jupiter)
+    testRuntimeOnly(libs.junit.platform.launcher)
 }
 
 tasks.test {

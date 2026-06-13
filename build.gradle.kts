@@ -9,7 +9,9 @@ val releasePublishModules = listOf(
     "muyun-database-core",
     "muyun-database-core-json-jackson",
     "muyun-database-jdbi",
-    "muyun-database-spring-boot-starter"
+    "muyun-database-spring-boot-starter",
+    "muyun-database-quarkus",
+    "muyun-database-quarkus-deployment"
 )
 
 allprojects {
