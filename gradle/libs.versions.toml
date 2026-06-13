@@ -39,11 +39,17 @@ jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", ver
 quarkus-bom = { module = "io.quarkus.platform:quarkus-bom", version.ref = "quarkus" }
 quarkus-arc = { module = "io.quarkus:quarkus-arc" }
 quarkus-agroal = { module = "io.quarkus:quarkus-agroal" }
+quarkus-jdbc-h2 = { module = "io.quarkus:quarkus-jdbc-h2" }
+quarkus-jdbc-postgresql = { module = "io.quarkus:quarkus-jdbc-postgresql" }
 quarkus-narayana-jta = { module = "io.quarkus:quarkus-narayana-jta" }
 quarkus-core = { module = "io.quarkus:quarkus-core" }
 quarkus-arc-api = { module = "io.quarkus.arc:arc" }
 quarkus-arc-deployment = { module = "io.quarkus:quarkus-arc-deployment" }
+quarkus-agroal-deployment = { module = "io.quarkus:quarkus-agroal-deployment" }
 quarkus-core-deployment = { module = "io.quarkus:quarkus-core-deployment" }
+quarkus-narayana-jta-deployment = { module = "io.quarkus:quarkus-narayana-jta-deployment" }
+quarkus-extension-processor = { module = "io.quarkus:quarkus-extension-processor", version.ref = "quarkus" }
+quarkus-junit5 = { module = "io.quarkus:quarkus-junit5" }
 
 [bundles]
 testcontainers-all = [
@@ -64,3 +70,4 @@ database-drivers = [
 ]
 
 [plugins]
+quarkus = { id = "io.quarkus", version.ref = "quarkus" }

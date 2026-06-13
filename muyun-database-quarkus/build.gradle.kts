@@ -13,24 +13,32 @@ java {
 dependencies {
     api(project(":muyun-database-jdbi"))
     implementation(platform(libs.quarkus.bom))
-    implementation(libs.quarkus.agroal)
-    implementation(libs.quarkus.arc)
+    api(libs.quarkus.agroal)
+    api(libs.quarkus.arc)
+    api(libs.quarkus.narayana.jta)
     implementation(libs.quarkus.arc.api)
     implementation(libs.quarkus.core)
-    implementation(libs.quarkus.narayana.jta)
-}
-
-tasks.processResources {
-    inputs.property("projectGroup", project.group.toString())
-    inputs.property("projectVersion", project.version.toString())
-    filesMatching("META-INF/quarkus-extension.properties") {
-        expand(
-            "projectGroup" to project.group.toString(),
-            "projectVersion" to project.version.toString()
-        )
-    }
 }
 
 tasks.test {
     useJUnitPlatform()
+}
+
+val validateQuarkusExtensionDescriptor by tasks.registering {
+    val descriptor = layout.projectDirectory.file("src/main/resources/META-INF/quarkus-extension.properties")
+    inputs.file(descriptor)
+    inputs.property("projectVersion", project.version.toString())
+
+    doLast {
+        val expectedArtifact = "net.ximatai.muyun.database:muyun-database-quarkus-deployment::jar:${project.version}"
+        val expectedLine = "deployment-artifact=$expectedArtifact"
+        val lines = descriptor.asFile.readLines()
+        require(lines.contains(expectedLine)) {
+            "Quarkus extension descriptor must contain '$expectedLine'."
+        }
+    }
+}
+
+tasks.named("processResources") {
+    dependsOn(validateQuarkusExtensionDescriptor)
 }

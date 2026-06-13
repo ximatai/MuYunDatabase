@@ -1,6 +1,7 @@
 package net.ximatai.muyun.database.quarkus;
 
 import io.quarkus.arc.DefaultBean;
+import io.agroal.api.AgroalDataSource;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Any;
 import jakarta.enterprise.inject.Instance;
@@ -15,8 +16,6 @@ import net.ximatai.muyun.database.jdbi.JdbiRecommendedPlugins;
 import org.eclipse.microprofile.config.Config;
 import org.jdbi.v3.core.Jdbi;
 
-import javax.sql.DataSource;
-
 @ApplicationScoped
 public class MuYunDatabaseProducer {
 
@@ -30,7 +29,7 @@ public class MuYunDatabaseProducer {
     @Produces
     @ApplicationScoped
     @DefaultBean
-    Jdbi jdbi(DataSource dataSource,
+    Jdbi jdbi(AgroalDataSource dataSource,
               MuYunDatabaseConfig config,
               @Any Instance<MuYunJdbiConfigurer> configurers) {
         Jdbi jdbi = Jdbi.create(dataSource);
@@ -54,9 +53,10 @@ public class MuYunDatabaseProducer {
     @Produces
     @ApplicationScoped
     @DefaultBean
-    IDatabaseOperations<?> databaseOperations(Jdbi jdbi,
-                                              JdbiMetaDataLoader metaDataLoader,
-                                              MuYunDatabaseConfig config) {
+    @SuppressWarnings("rawtypes")
+    IDatabaseOperations databaseOperations(Jdbi jdbi,
+                                           JdbiMetaDataLoader metaDataLoader,
+                                           MuYunDatabaseConfig config) {
         String pkName = config.getPrimaryKeyName();
         String defaultSchema = config.getDefaultSchema().orElse(null);
         return switch (config.getPrimaryKeyType()) {
@@ -77,7 +77,8 @@ public class MuYunDatabaseProducer {
     @Produces
     @ApplicationScoped
     @DefaultBean
-    SimpleEntityManager simpleEntityManager(IDatabaseOperations<?> operations, EntityMetaResolver entityMetaResolver) {
+    @SuppressWarnings("rawtypes")
+    SimpleEntityManager simpleEntityManager(IDatabaseOperations operations, EntityMetaResolver entityMetaResolver) {
         return new DefaultSimpleEntityManager(operations, entityMetaResolver);
     }
 
@@ -102,7 +103,8 @@ public class MuYunDatabaseProducer {
     @Produces
     @ApplicationScoped
     @DefaultBean
-    MuYunRepositoryFactory muYunRepositoryFactory(IDatabaseOperations<?> operations,
+    @SuppressWarnings("rawtypes")
+    MuYunRepositoryFactory muYunRepositoryFactory(IDatabaseOperations operations,
                                                   Jdbi jdbi,
                                                   SimpleEntityManager entityManager) {
         return new MuYunRepositoryFactory(operations, jdbi, entityManager);

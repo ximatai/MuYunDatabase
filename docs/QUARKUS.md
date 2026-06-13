@@ -38,7 +38,7 @@ muyun.database.install-postgres-plugins=true
 
 - `org.jdbi.v3.core.Jdbi`
 - `net.ximatai.muyun.database.jdbi.JdbiMetaDataLoader`
-- `net.ximatai.muyun.database.core.IDatabaseOperations<?>`
+- `net.ximatai.muyun.database.core.IDatabaseOperations`
 - `net.ximatai.muyun.database.core.orm.EntityMetaResolver`
 - `net.ximatai.muyun.database.core.orm.SimpleEntityManager`
 - `net.ximatai.muyun.database.core.orm.MigrationOptions`
