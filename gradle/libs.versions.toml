@@ -41,6 +41,7 @@ quarkus-arc = { module = "io.quarkus:quarkus-arc" }
 quarkus-agroal = { module = "io.quarkus:quarkus-agroal" }
 quarkus-narayana-jta = { module = "io.quarkus:quarkus-narayana-jta" }
 quarkus-core = { module = "io.quarkus:quarkus-core" }
+quarkus-arc-api = { module = "io.quarkus.arc:arc" }
 quarkus-arc-deployment = { module = "io.quarkus:quarkus-arc-deployment" }
 quarkus-core-deployment = { module = "io.quarkus:quarkus-core-deployment" }
 

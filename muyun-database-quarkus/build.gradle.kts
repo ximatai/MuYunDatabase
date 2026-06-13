@@ -15,6 +15,7 @@ dependencies {
     implementation(platform(libs.quarkus.bom))
     implementation(libs.quarkus.agroal)
     implementation(libs.quarkus.arc)
+    implementation(libs.quarkus.arc.api)
     implementation(libs.quarkus.core)
     implementation(libs.quarkus.narayana.jta)
 }

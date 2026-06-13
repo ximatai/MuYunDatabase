@@ -99,6 +99,15 @@ public class MuYunDatabaseProducer {
         return new MuYunSchemaManager(entityManager, migrationOptions);
     }
 
+    @Produces
+    @ApplicationScoped
+    @DefaultBean
+    MuYunRepositoryFactory muYunRepositoryFactory(IDatabaseOperations<?> operations,
+                                                  Jdbi jdbi,
+                                                  SimpleEntityManager entityManager) {
+        return new MuYunRepositoryFactory(operations, jdbi, entityManager);
+    }
+
     private static boolean isClassPresent(String className) {
         try {
             Class.forName(className, false, Thread.currentThread().getContextClassLoader());
