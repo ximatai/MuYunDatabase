@@ -49,6 +49,32 @@ class MuYunRepositoryQuarkusExtensionTest {
     }
 
     @Test
+    void processorResolvesRepositoryEntityTypeForNativeReflection() throws IOException {
+        Index index = indexOf(TestRepository.class, TestEntity.class);
+
+        assertEquals(
+                TestEntity.class.getName(),
+                new MuYunDatabaseQuarkusProcessor()
+                        .repositoryEntityType(index, DotName.createSimple(TestRepository.class))
+                        .orElseThrow()
+                        .toString()
+        );
+    }
+
+    @Test
+    void processorResolvesRepositoryEntityTypeThroughIntermediateGenericInterface() throws IOException {
+        Index index = indexOf(IndirectRepository.class, IntermediateRepository.class, IndirectEntity.class);
+
+        assertEquals(
+                IndirectEntity.class.getName(),
+                new MuYunDatabaseQuarkusProcessor()
+                        .repositoryEntityType(index, DotName.createSimple(IndirectRepository.class))
+                        .orElseThrow()
+                        .toString()
+        );
+    }
+
+    @Test
     void repositoryFactoryCreatesProxyAndInvokesDefaultMethods() {
         MuYunRepositoryFactory factory = new MuYunRepositoryFactory(fakeOperations(), null, fakeEntityManager());
 
@@ -198,12 +224,25 @@ class MuYunRepositoryQuarkusExtensionTest {
         }
     }
 
+    interface IntermediateRepository<T, ID> extends EntityDao<T, ID> {
+    }
+
+    @MuYunRepository
+    interface IndirectRepository extends IntermediateRepository<IndirectEntity, String> {
+    }
+
     @MuYunRepository
     static class InvalidRepositoryClass {
     }
 
     @Table(name = "quarkus_test_entity")
     public static class TestEntity {
+        @Id
+        public String id;
+    }
+
+    @Table(name = "quarkus_indirect_entity")
+    public static class IndirectEntity {
         @Id
         public String id;
     }
