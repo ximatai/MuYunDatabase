@@ -51,6 +51,13 @@ tasks.register("publishReleaseToSonatype") {
     }
 }
 
+tasks.register("publishReleaseToLocalRepository") {
+    group = "publishing"
+    description = "Publish release modules (core/jdbi/starter/quarkus) to the local build repositories."
+
+    dependsOn(releasePublishModules.map { ":$it:publishAllPublicationsToMavenRepository" })
+}
+
 subprojects {
     apply {
         plugin("java")

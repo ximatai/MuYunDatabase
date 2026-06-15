@@ -192,4 +192,10 @@ MUYUN_NATIVE_POSTGRES_PASSWORD=testpass \
 bash scripts/quarkus-release-gate.sh release
 ```
 
+Quarkus artifact 发布前还应跑白名单本地发布验证。不要用根级 `publishAllPublicationsToMavenRepository` 作为 release gate，因为它会尝试发布 integration-test 等非发布模块：
+
+```bash
+./gradlew publishReleaseToLocalRepository
+```
+
 本机执行需要 GraalVM `native-image` 可用；也可以按 Quarkus 原生镜像工具链要求改用容器构建参数。
