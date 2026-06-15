@@ -1,8 +1,8 @@
 package net.ximatai.muyun.database.jdbi;
 
 import org.jdbi.v3.core.Jdbi;
+import org.jdbi.v3.core.spi.JdbiPlugin;
 import org.jdbi.v3.jackson2.Jackson2Plugin;
-import org.jdbi.v3.postgres.PostgresPlugin;
 import org.jdbi.v3.sqlobject.SqlObjectPlugin;
 
 public final class JdbiRecommendedPlugins {
@@ -28,7 +28,16 @@ public final class JdbiRecommendedPlugins {
     }
 
     public static Jdbi installPostgres(Jdbi jdbi) {
-        jdbi.installPlugin(new PostgresPlugin());
+        jdbi.installPlugin(newPlugin("org.jdbi.v3.postgres.PostgresPlugin"));
         return jdbi;
+    }
+
+    private static JdbiPlugin newPlugin(String pluginClassName) {
+        try {
+            Class<?> pluginClass = Class.forName(pluginClassName, true, Thread.currentThread().getContextClassLoader());
+            return (JdbiPlugin) pluginClass.getDeclaredConstructor().newInstance();
+        } catch (ReflectiveOperationException | LinkageError | RuntimeException ex) {
+            throw new IllegalStateException("Failed to load Jdbi plugin: " + pluginClassName, ex);
+        }
     }
 }

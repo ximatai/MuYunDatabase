@@ -140,7 +140,7 @@ schemaManager.ensureTable(UserEntity.class);
 尚未承诺：
 
 - Quarkus dev mode reload
-- 完整 native image 构建矩阵
+- 完整 native image 构建矩阵；当前先提供 H2 native smoke
 
 ## 测试矩阵
 
@@ -156,4 +156,12 @@ CI 或发布前应强制 PostgreSQL 矩阵必须执行。此模式下如果 Dock
 ./gradlew :muyun-database-quarkus-integration-test:test -Pmuyun.postgres.it.required=true
 ```
 
-上述能力应作为下一轮 Quarkus 集成测试和 native 支持继续推进。
+native smoke 会构建 Quarkus native runner，并启动应用验证扩展的 build time 与 runtime init 链路。Quarkus 3.22 下 native 构建不能同时输出 JAR 和 native runner，因此需要关闭 JAR 输出：
+
+```bash
+./gradlew :muyun-database-quarkus-integration-test:testNative \
+  -Dquarkus.native.enabled=true \
+  -Dquarkus.package.jar.enabled=false
+```
+
+本机执行需要 GraalVM `native-image` 可用；也可以按 Quarkus 原生镜像工具链要求改用容器构建参数。
