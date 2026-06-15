@@ -5,6 +5,8 @@ import io.quarkus.deployment.annotations.ExecutionTime;
 import io.quarkus.deployment.annotations.Record;
 import io.quarkus.deployment.builditem.CombinedIndexBuildItem;
 import io.quarkus.deployment.builditem.FeatureBuildItem;
+import io.quarkus.deployment.builditem.GeneratedResourceBuildItem;
+import io.quarkus.deployment.builditem.nativeimage.NativeImageResourceBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.ReflectiveClassBuildItem;
 import io.quarkus.arc.deployment.AdditionalBeanBuildItem;
 import io.quarkus.arc.deployment.SyntheticBeanBuildItem;
@@ -13,7 +15,9 @@ import net.ximatai.muyun.database.quarkus.MuYunDatabaseRecorder;
 import net.ximatai.muyun.database.quarkus.MuYunDatabaseQuarkus;
 import net.ximatai.muyun.database.quarkus.MuYunDatabaseProducer;
 import net.ximatai.muyun.database.quarkus.MuYunRepository;
+import net.ximatai.muyun.database.quarkus.MuYunRepositorySchemaInitializer;
 import org.jboss.jandex.AnnotationInstance;
+import org.jboss.jandex.AnnotationValue;
 import org.jboss.jandex.ClassInfo;
 import org.jboss.jandex.DotName;
 import org.jboss.jandex.IndexView;
@@ -26,6 +30,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 public class MuYunDatabaseQuarkusProcessor {
 
@@ -41,6 +46,7 @@ public class MuYunDatabaseQuarkusProcessor {
     AdditionalBeanBuildItem beans() {
         return AdditionalBeanBuildItem.builder()
                 .addBeanClass(MuYunDatabaseProducer.class)
+                .addBeanClass(MuYunRepositorySchemaInitializer.class)
                 .setUnremovable()
                 .build();
     }
@@ -78,6 +84,25 @@ public class MuYunDatabaseQuarkusProcessor {
         return reflectiveEntities;
     }
 
+    @BuildStep
+    GeneratedResourceBuildItem repositorySchemaResource(CombinedIndexBuildItem index) {
+        String content = repositoryEntityBindings(index.getIndex()).stream()
+                .map(binding -> binding.entityType() + "|" + binding.alignTable().name())
+                .collect(Collectors.joining("\n"));
+        if (!content.isEmpty()) {
+            content = content + "\n";
+        }
+        return new GeneratedResourceBuildItem(
+                MuYunRepositorySchemaInitializer.RESOURCE,
+                content.getBytes(java.nio.charset.StandardCharsets.UTF_8)
+        );
+    }
+
+    @BuildStep
+    NativeImageResourceBuildItem repositorySchemaNativeResource() {
+        return new NativeImageResourceBuildItem(MuYunRepositorySchemaInitializer.RESOURCE);
+    }
+
     List<DotName> repositoryInterfaces(IndexView index) {
         List<DotName> repositories = new ArrayList<>();
         for (AnnotationInstance annotation : index.getAnnotations(MUYUN_REPOSITORY)) {
@@ -88,6 +113,20 @@ public class MuYunDatabaseQuarkusProcessor {
             repositories.add(repository.name());
         }
         return repositories;
+    }
+
+    List<RepositoryEntityBinding> repositoryEntityBindings(IndexView index) {
+        List<RepositoryEntityBinding> bindings = new ArrayList<>();
+        for (AnnotationInstance annotation : index.getAnnotations(MUYUN_REPOSITORY)) {
+            ClassInfo repository = annotation.target().asClass();
+            if (!repository.isInterface()) {
+                throw new IllegalStateException("@MuYunRepository must be used on an interface: " + repository.name());
+            }
+            repositoryEntityType(index, repository.name())
+                    .map(entity -> new RepositoryEntityBinding(entity, alignTable(annotation)))
+                    .ifPresent(bindings::add);
+        }
+        return bindings;
     }
 
     Optional<DotName> repositoryEntityType(IndexView index, DotName repositoryName) {
@@ -156,5 +195,16 @@ public class MuYunDatabaseQuarkusProcessor {
             return bindings.getOrDefault(type.asTypeVariable().identifier(), type);
         }
         return type;
+    }
+
+    private MuYunRepository.AlignTable alignTable(AnnotationInstance annotation) {
+        AnnotationValue value = annotation.value("alignTable");
+        if (value == null) {
+            return MuYunRepository.AlignTable.DEFAULT;
+        }
+        return MuYunRepository.AlignTable.valueOf(value.asEnum());
+    }
+
+    record RepositoryEntityBinding(DotName entityType, MuYunRepository.AlignTable alignTable) {
     }
 }

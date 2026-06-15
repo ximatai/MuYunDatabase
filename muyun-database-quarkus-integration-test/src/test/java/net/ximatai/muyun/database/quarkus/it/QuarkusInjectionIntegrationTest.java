@@ -51,7 +51,7 @@ class QuarkusInjectionIntegrationTest {
         assertEquals("pong", repository.ping());
     }
 
-    @MuYunRepository
+    @MuYunRepository(alignTable = MuYunRepository.AlignTable.DISABLED)
     interface InjectionTestRepository extends EntityDao<InjectionTestEntity, String> {
         default String ping() {
             return "pong";

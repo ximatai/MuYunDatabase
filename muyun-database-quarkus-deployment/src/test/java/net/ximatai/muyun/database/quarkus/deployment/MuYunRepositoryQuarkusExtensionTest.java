@@ -75,6 +75,31 @@ class MuYunRepositoryQuarkusExtensionTest {
     }
 
     @Test
+    void processorCollectsRepositoryEntityBindingsWithAlignMode() throws IOException {
+        Index index = indexOf(
+                TestRepository.class,
+                EnabledRepository.class,
+                DisabledRepository.class,
+                TestEntity.class,
+                EnabledEntity.class,
+                DisabledEntity.class
+        );
+
+        List<MuYunDatabaseQuarkusProcessor.RepositoryEntityBinding> bindings =
+                new MuYunDatabaseQuarkusProcessor().repositoryEntityBindings(index);
+
+        assertTrue(bindings.stream().anyMatch(binding ->
+                TestEntity.class.getName().equals(binding.entityType().toString())
+                        && binding.alignTable() == MuYunRepository.AlignTable.DEFAULT));
+        assertTrue(bindings.stream().anyMatch(binding ->
+                EnabledEntity.class.getName().equals(binding.entityType().toString())
+                        && binding.alignTable() == MuYunRepository.AlignTable.ENABLED));
+        assertTrue(bindings.stream().anyMatch(binding ->
+                DisabledEntity.class.getName().equals(binding.entityType().toString())
+                        && binding.alignTable() == MuYunRepository.AlignTable.DISABLED));
+    }
+
+    @Test
     void repositoryFactoryCreatesProxyAndInvokesDefaultMethods() {
         MuYunRepositoryFactory factory = new MuYunRepositoryFactory(fakeOperations(), null, fakeEntityManager());
 
@@ -231,6 +256,14 @@ class MuYunRepositoryQuarkusExtensionTest {
     interface IndirectRepository extends IntermediateRepository<IndirectEntity, String> {
     }
 
+    @MuYunRepository(alignTable = MuYunRepository.AlignTable.ENABLED)
+    interface EnabledRepository extends EntityDao<EnabledEntity, String> {
+    }
+
+    @MuYunRepository(alignTable = MuYunRepository.AlignTable.DISABLED)
+    interface DisabledRepository extends EntityDao<DisabledEntity, String> {
+    }
+
     @MuYunRepository
     static class InvalidRepositoryClass {
     }
@@ -243,6 +276,18 @@ class MuYunRepositoryQuarkusExtensionTest {
 
     @Table(name = "quarkus_indirect_entity")
     public static class IndirectEntity {
+        @Id
+        public String id;
+    }
+
+    @Table(name = "quarkus_enabled_entity")
+    public static class EnabledEntity {
+        @Id
+        public String id;
+    }
+
+    @Table(name = "quarkus_disabled_entity")
+    public static class DisabledEntity {
         @Id
         public String id;
     }

@@ -85,6 +85,13 @@ Repository 代理支持：
 
 当仓库继承 `EntityDao<T, ID>` 时，扩展会在 build time 解析实体类型并为实体注册 native reflection metadata，用于 `EntityMapper` 与 Jdbi `BeanMapper` 的反射访问。
 
+启动期表结构拉齐会复用同一份 build time 解析结果：
+
+- `muyun.database.repository-schema-mode=ENSURE` 时，`@MuYunRepository` 默认会在 Quarkus `StartupEvent` 自动执行实体表结构拉齐
+- `repository-schema-mode=NONE` 时，默认不自动拉齐
+- 仓库级 `@MuYunRepository(alignTable = ENABLED)` 可强制开启
+- 仓库级 `@MuYunRepository(alignTable = DISABLED)` 可关闭注入型或只读型仓库的启动期拉齐
+
 ## 事务与表结构
 
 Quarkus 应用可使用 `jakarta.transaction.Transactional` 包住同一个仓库中的 `EntityDao` 方法与 Jdbi SQL Object 方法。扩展依赖 Quarkus Agroal + Narayana JTA，已验证两类写入在同一事务边界内回滚。
@@ -125,13 +132,14 @@ schemaManager.ensureTable(UserEntity.class);
 - `EntityDao` CRUD、Criteria 查询、Jdbi SQL Object 混合仓库、SQL Object 返回实体自动 BeanMapper
 - `@Transactional` 下 `EntityDao` 与 Jdbi SQL Object 同事务回滚
 - `MuYunSchemaManager` 创建表、增量加列和幂等拉齐
+- `repository-schema-mode=ENSURE` 下 `@MuYunRepository` 启动期自动表结构拉齐
+- `@MuYunRepository(alignTable = DISABLED)` 仓库级关闭启动期拉齐
 - Repository 实体 native reflection metadata 预注册
 - PostgreSQL Testcontainers 矩阵覆盖 CRUD、SQL Object、事务回滚和 schema migration
 
 尚未承诺：
 
 - Quarkus dev mode reload
-- `@MuYunRepository.alignTable` 的启动期自动表结构拉齐
 - 完整 native image 构建矩阵
 
 ## 测试矩阵
