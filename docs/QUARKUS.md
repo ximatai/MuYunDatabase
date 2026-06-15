@@ -147,7 +147,7 @@ schemaManager.ensureTable(UserEntity.class);
 - Repository 实体 native reflection metadata 预注册
 - PostgreSQL Testcontainers 矩阵覆盖 CRUD、SQL Object、事务回滚和 schema migration
 - H2 native smoke 覆盖 native runner 内 Repository CRUD、SQL Object 和事务回滚
-- 外部 PostgreSQL native smoke 覆盖 native runner 内 PostgreSQL datasource 与 Jdbi PostgreSQL 插件路径
+- 外部 PostgreSQL native smoke 覆盖 native runner 内 PostgreSQL datasource，并通过 Jdbi `@Json` + PostgreSQL `jsonb` round-trip 验证 PostgreSQL 插件能力
 
 尚未承诺：
 
@@ -176,7 +176,7 @@ native smoke 会构建 Quarkus native runner，并启动应用验证扩展的 bu
   -Dquarkus.package.jar.enabled=false
 ```
 
-PostgreSQL native smoke 需要外部 PostgreSQL 实例，并显式开启 PostgreSQL datasource 与 Jdbi PostgreSQL 插件：
+PostgreSQL native smoke 需要外部 PostgreSQL 实例，并显式开启 PostgreSQL datasource 与 Jdbi PostgreSQL 插件。该 smoke 会在 native runner 内执行 Repository/事务 probe，并额外通过 Jdbi `@Json` 写入和读取 PostgreSQL `jsonb`：
 
 ```bash
 ./gradlew :muyun-database-quarkus-integration-test:testNative \

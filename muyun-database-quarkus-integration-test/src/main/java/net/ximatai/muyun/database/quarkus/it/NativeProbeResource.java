@@ -1,5 +1,6 @@
 package net.ximatai.muyun.database.quarkus.it;
 
+import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
@@ -9,6 +10,7 @@ import net.ximatai.muyun.database.core.annotation.Table;
 import net.ximatai.muyun.database.core.builder.ColumnType;
 import net.ximatai.muyun.database.core.orm.EntityDao;
 import net.ximatai.muyun.database.quarkus.MuYunRepository;
+import org.jdbi.v3.json.Json;
 import org.jdbi.v3.sqlobject.config.RegisterBeanMapper;
 import org.jdbi.v3.sqlobject.customizer.Bind;
 import org.jdbi.v3.sqlobject.statement.SqlQuery;
@@ -50,6 +52,18 @@ public class NativeProbeResource {
         return repository.findById(id) == null ? "transaction:rolled-back" : "transaction:leaked";
     }
 
+    @GET
+    @Path("/postgres-plugin")
+    public String postgresPlugin() {
+        String id = "native-probe-json-1";
+        repository.createPluginProbeTable();
+        repository.deletePluginProbe(id);
+        repository.insertJson(id, new NativeProbePayload("jsonb", 7));
+        NativeProbePayload payload = repository.findJson(id);
+        repository.deletePluginProbe(id);
+        return "postgres-plugin:" + payload.name() + ":" + payload.count();
+    }
+
     @MuYunRepository
     public interface NativeProbeRepository extends EntityDao<NativeProbeEntity, String> {
         @SqlUpdate("update public.quarkus_native_probe set v_name = :name where id = :id")
@@ -58,6 +72,23 @@ public class NativeProbeResource {
         @SqlQuery("select id, v_name as name from public.quarkus_native_probe where id = :id")
         @RegisterBeanMapper(NativeProbeEntity.class)
         NativeProbeEntity findViaSql(@Bind("id") String id);
+
+        @SqlUpdate("create table if not exists public.quarkus_native_plugin_probe (id varchar(64) primary key, payload jsonb not null)")
+        void createPluginProbeTable();
+
+        @SqlUpdate("delete from public.quarkus_native_plugin_probe where id = :id")
+        int deletePluginProbe(@Bind("id") String id);
+
+        @SqlUpdate("insert into public.quarkus_native_plugin_probe (id, payload) values (:id, :payload)")
+        int insertJson(@Bind("id") String id, @Bind("payload") @Json NativeProbePayload payload);
+
+        @SqlQuery("select payload from public.quarkus_native_plugin_probe where id = :id")
+        @Json
+        NativeProbePayload findJson(@Bind("id") String id);
+    }
+
+    @RegisterForReflection
+    public record NativeProbePayload(String name, int count) {
     }
 
     @Table(name = "quarkus_native_probe", schema = "public")

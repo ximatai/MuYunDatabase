@@ -18,11 +18,15 @@ class QuarkusNativePostgresSmokeIT {
     @TestHTTPResource("/muyun/native-probe/transaction")
     URI transactionUri;
 
+    @TestHTTPResource("/muyun/native-probe/postgres-plugin")
+    URI postgresPluginUri;
+
     @Test
     void nativeApplicationRunsRepositoryProbeAgainstPostgres() throws Exception {
         assumeTrue(Boolean.getBoolean("muyun.native.postgres.enabled"));
 
         assertEquals("repository:renamed", QuarkusNativeSmokeIT.get(repositoryUri));
         assertEquals("transaction:rolled-back", QuarkusNativeSmokeIT.get(transactionUri));
+        assertEquals("postgres-plugin:jsonb:7", QuarkusNativeSmokeIT.get(postgresPluginUri));
     }
 }
