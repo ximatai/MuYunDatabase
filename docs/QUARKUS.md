@@ -92,6 +92,15 @@ Repository 代理支持：
 - 仓库级 `@MuYunRepository(alignTable = ENABLED)` 可强制开启
 - 仓库级 `@MuYunRepository(alignTable = DISABLED)` 可关闭注入型或只读型仓库的启动期拉齐
 
+优先级如下：
+
+| `repository-schema-mode` | `alignTable` | 启动期是否拉齐 |
+| --- | --- | --- |
+| `ENSURE` | `DEFAULT` | 是 |
+| `NONE` | `DEFAULT` | 否 |
+| 任意 | `ENABLED` | 是 |
+| 任意 | `DISABLED` | 否 |
+
 ## 事务与表结构
 
 Quarkus 应用可使用 `jakarta.transaction.Transactional` 包住同一个仓库中的 `EntityDao` 方法与 Jdbi SQL Object 方法。扩展依赖 Quarkus Agroal + Narayana JTA，已验证两类写入在同一事务边界内回滚。
@@ -133,6 +142,7 @@ schemaManager.ensureTable(UserEntity.class);
 - `@Transactional` 下 `EntityDao` 与 Jdbi SQL Object 同事务回滚
 - `MuYunSchemaManager` 创建表、增量加列和幂等拉齐
 - `repository-schema-mode=ENSURE` 下 `@MuYunRepository` 启动期自动表结构拉齐
+- `repository-schema-mode=NONE` 下 `DEFAULT` 不自动拉齐，`ENABLED` 强制拉齐
 - `@MuYunRepository(alignTable = DISABLED)` 仓库级关闭启动期拉齐
 - Repository 实体 native reflection metadata 预注册
 - PostgreSQL Testcontainers 矩阵覆盖 CRUD、SQL Object、事务回滚和 schema migration
