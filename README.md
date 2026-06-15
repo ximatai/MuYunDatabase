@@ -37,7 +37,7 @@
 
 ```groovy
 dependencies {
-    implementation("net.ximatai.muyun.database:muyun-database-spring-boot-starter:3.26.8")
+    implementation("net.ximatai.muyun.database:muyun-database-spring-boot-starter:3.26.9")
 }
 ```
 
@@ -101,7 +101,7 @@ class UserService {
 
 ## 兼容性说明
 
-- 版本 `3.26.8` 兼容 `Java21` 及以上
+- 版本 `3.26.9` 兼容 `Java21` 及以上
 - 版本 `1.26.+` 兼容 `Java8`
 - 具体发布版本以仓库 release / Maven 中央仓库为准
 

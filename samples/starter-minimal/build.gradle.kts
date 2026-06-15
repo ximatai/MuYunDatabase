@@ -23,7 +23,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-aop")
     implementation("org.postgresql:postgresql:42.7.8")
 
-    implementation("net.ximatai.muyun.database:muyun-database-spring-boot-starter:3.26.8")
+    implementation("net.ximatai.muyun.database:muyun-database-spring-boot-starter:3.26.9")
 }
 
 tasks.test {
