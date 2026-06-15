@@ -165,29 +165,31 @@ schemaManager.ensureTable(UserEntity.class);
 CI 或发布前应强制 PostgreSQL 矩阵必须执行。此模式下如果 Docker 不可用会直接失败，避免“测试通过但 PostgreSQL 未验证”的假阳性：
 
 ```bash
-./gradlew :muyun-database-quarkus-integration-test:test -Pmuyun.postgres.it.required=true
+bash scripts/quarkus-release-gate.sh jvm-postgres
 ```
 
 native smoke 会构建 Quarkus native runner，并启动应用验证扩展的 build time 与 runtime init 链路。默认 H2 native smoke 会通过 HTTP probe 在 native runner 内执行 Repository CRUD、Jdbi SQL Object 和事务回滚。Quarkus 3.22 下 native 构建不能同时输出 JAR 和 native runner，因此需要关闭 JAR 输出：
 
 ```bash
-./gradlew :muyun-database-quarkus-integration-test:testNative \
-  -Dquarkus.native.enabled=true \
-  -Dquarkus.package.jar.enabled=false
+bash scripts/quarkus-release-gate.sh native-h2
 ```
 
 PostgreSQL native smoke 需要外部 PostgreSQL 实例，并显式开启 PostgreSQL datasource 与 Jdbi PostgreSQL 插件。该 smoke 会在 native runner 内执行 Repository/事务 probe，并额外通过 Jdbi `@Json` 写入和读取 PostgreSQL `jsonb`：
 
 ```bash
-./gradlew :muyun-database-quarkus-integration-test:testNative \
-  -Dquarkus.native.enabled=true \
-  -Dquarkus.package.jar.enabled=false \
-  -Dmuyun.native.postgres.enabled=true \
-  -Dquarkus.datasource.db-kind=postgresql \
-  -Dquarkus.datasource.jdbc.url=jdbc:postgresql://127.0.0.1:5432/muyun_native \
-  -Dquarkus.datasource.username=testuser \
-  -Dquarkus.datasource.password=testpass \
-  -Dquarkus.test.arg-line="-Dmuyun.database.default-schema=public -Dmuyun.database.install-postgres-plugins=true"
+MUYUN_NATIVE_POSTGRES_JDBC_URL=jdbc:postgresql://127.0.0.1:5432/muyun_native \
+MUYUN_NATIVE_POSTGRES_USERNAME=testuser \
+MUYUN_NATIVE_POSTGRES_PASSWORD=testpass \
+bash scripts/quarkus-release-gate.sh native-postgres
+```
+
+发布前完整 Quarkus gate 可运行：
+
+```bash
+MUYUN_NATIVE_POSTGRES_JDBC_URL=jdbc:postgresql://127.0.0.1:5432/muyun_native \
+MUYUN_NATIVE_POSTGRES_USERNAME=testuser \
+MUYUN_NATIVE_POSTGRES_PASSWORD=testpass \
+bash scripts/quarkus-release-gate.sh release
 ```
 
 本机执行需要 GraalVM `native-image` 可用；也可以按 Quarkus 原生镜像工具链要求改用容器构建参数。
