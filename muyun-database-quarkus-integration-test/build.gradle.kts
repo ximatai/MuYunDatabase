@@ -18,8 +18,13 @@ dependencies {
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)
     testImplementation(libs.quarkus.junit5)
+    testImplementation(libs.quarkus.jdbc.postgresql)
+    testImplementation(libs.testcontainers.postgresql)
 }
 
 tasks.test {
     useJUnitPlatform()
+    if (project.hasProperty("muyun.postgres.it.required")) {
+        systemProperty("muyun.postgres.it.required", project.property("muyun.postgres.it.required").toString())
+    }
 }

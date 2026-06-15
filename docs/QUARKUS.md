@@ -126,12 +126,26 @@ schemaManager.ensureTable(UserEntity.class);
 - `@Transactional` 下 `EntityDao` 与 Jdbi SQL Object 同事务回滚
 - `MuYunSchemaManager` 创建表、增量加列和幂等拉齐
 - Repository 实体 native reflection metadata 预注册
+- PostgreSQL Testcontainers 矩阵覆盖 CRUD、SQL Object、事务回滚和 schema migration
 
 尚未承诺：
 
 - Quarkus dev mode reload
 - `@MuYunRepository.alignTable` 的启动期自动表结构拉齐
 - 完整 native image 构建矩阵
-- PostgreSQL Testcontainers 矩阵验收
+
+## 测试矩阵
+
+默认 Quarkus integration test 会在 Docker 不可用时跳过 PostgreSQL Testcontainers 矩阵，避免影响普通本地开发：
+
+```bash
+./gradlew :muyun-database-quarkus-integration-test:test
+```
+
+CI 或发布前应强制 PostgreSQL 矩阵必须执行。此模式下如果 Docker 不可用会直接失败，避免“测试通过但 PostgreSQL 未验证”的假阳性：
+
+```bash
+./gradlew :muyun-database-quarkus-integration-test:test -Pmuyun.postgres.it.required=true
+```
 
 上述能力应作为下一轮 Quarkus 集成测试和 native 支持继续推进。
