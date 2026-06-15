@@ -43,9 +43,9 @@
 
 ## 发布门禁
 
-1. `core/jdbi/starter/test` 全部通过。
+1. `core/jdbi/starter/quarkus/test` 全部通过。
 2. 双库回归（MySQL/PostgreSQL）核心场景通过。
-3. 文档同步更新：`README.md`、`docs/API_CONTRACT.md`、`docs/QUICKSTART.md`、`docs/REFACTOR_GUIDE.md`。
+3. 文档同步更新：`README.md`、`docs/API_CONTRACT.md`、`docs/QUICKSTART.md`、`docs/REFACTOR_GUIDE.md`、`docs/QUARKUS.md`。
 
 ## 迁移反馈需求池
 

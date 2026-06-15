@@ -27,7 +27,7 @@ allprojects {
 
 tasks.register("publishReleaseToSonatype") {
     group = "publishing"
-    description = "Publish release modules (core/jdbi/starter) to Sonatype."
+    description = "Publish release modules (core/jdbi/starter/quarkus) to Sonatype."
 
     dependsOn(releasePublishModules.map { ":$it:clean" })
     dependsOn("cleanLocalDeploymentDir")

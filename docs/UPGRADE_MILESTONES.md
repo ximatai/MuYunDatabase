@@ -190,9 +190,9 @@ M1（正确性）→ M2（架构治理）→ M3（能力补齐）
 
 每个里程碑合入前需满足：
 
-1. `core / jdbi / starter / test` 全部通过。
+1. `core / jdbi / starter / quarkus / test` 全部通过。
 2. 双库回归（MySQL / PostgreSQL）核心场景通过。
-3. 文档同步更新：`README.md`、`docs/API_CONTRACT.md`、`docs/QUICKSTART.md`、`docs/REFACTOR_GUIDE.md`。
+3. 文档同步更新：`README.md`、`docs/API_CONTRACT.md`、`docs/QUICKSTART.md`、`docs/REFACTOR_GUIDE.md`、`docs/QUARKUS.md`。
 4. 无新增 `@Deprecated` 的默认启用路径（废弃 API 必须有替代方案）。
 
 ## 变更记录
