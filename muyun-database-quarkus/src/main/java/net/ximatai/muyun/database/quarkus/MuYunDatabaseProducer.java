@@ -15,6 +15,7 @@ import net.ximatai.muyun.database.jdbi.JdbiMetaDataLoader;
 import net.ximatai.muyun.database.jdbi.JdbiRecommendedPlugins;
 import org.eclipse.microprofile.config.Config;
 import org.jdbi.v3.core.Jdbi;
+import org.jdbi.v3.postgres.PostgresPlugin;
 
 @ApplicationScoped
 public class MuYunDatabaseProducer {
@@ -37,7 +38,7 @@ public class MuYunDatabaseProducer {
             JdbiRecommendedPlugins.installCommon(jdbi);
         }
         if (config.isInstallPostgresPlugins() && isClassPresent("org.postgresql.util.PGobject")) {
-            JdbiRecommendedPlugins.installPostgres(jdbi);
+            jdbi.installPlugin(new PostgresPlugin());
         }
         configurers.forEach(configurer -> configurer.configure(jdbi));
         return jdbi;

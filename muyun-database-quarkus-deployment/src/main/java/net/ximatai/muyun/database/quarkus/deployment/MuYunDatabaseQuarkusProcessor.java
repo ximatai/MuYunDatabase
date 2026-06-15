@@ -6,6 +6,7 @@ import io.quarkus.deployment.annotations.Record;
 import io.quarkus.deployment.builditem.CombinedIndexBuildItem;
 import io.quarkus.deployment.builditem.FeatureBuildItem;
 import io.quarkus.deployment.builditem.GeneratedResourceBuildItem;
+import io.quarkus.deployment.builditem.nativeimage.NativeImageProxyDefinitionBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.NativeImageResourceBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.ReflectiveClassBuildItem;
 import io.quarkus.arc.deployment.AdditionalBeanBuildItem;
@@ -82,6 +83,87 @@ public class MuYunDatabaseQuarkusProcessor {
                     .ifPresent(reflectiveEntities::add);
         }
         return reflectiveEntities;
+    }
+
+    @BuildStep
+    List<NativeImageProxyDefinitionBuildItem> repositoryProxiesForNative(CombinedIndexBuildItem index) {
+        List<NativeImageProxyDefinitionBuildItem> proxies = new ArrayList<>();
+        for (DotName repository : repositoryInterfaces(index.getIndex())) {
+            proxies.add(new NativeImageProxyDefinitionBuildItem(repository.toString()));
+        }
+        return proxies;
+    }
+
+    @BuildStep
+    ReflectiveClassBuildItem jdbiConfigReflection() {
+        return ReflectiveClassBuildItem.builder(
+                        "org.jdbi.v3.core.config.internal.ConfigCaches",
+                        "org.jdbi.v3.core.config.internal.ConfigCustomizerChain",
+                        "org.jdbi.v3.core.Handles",
+                        "org.jdbi.v3.core.argument.Arguments",
+                        "org.jdbi.v3.core.array.SqlArrayTypes",
+                        "org.jdbi.v3.core.collector.JdbiCollectors",
+                        "org.jdbi.v3.core.enums.Enums",
+                        "org.jdbi.v3.core.extension.Extensions",
+                        "org.jdbi.v3.core.internal.OnDemandExtensions",
+                        "org.jdbi.v3.core.mapper.ColumnMappers",
+                        "org.jdbi.v3.core.mapper.MapEntryMappers",
+                        "org.jdbi.v3.core.mapper.MapMappers",
+                        "org.jdbi.v3.core.mapper.Mappers",
+                        "org.jdbi.v3.core.mapper.RowMappers",
+                        "org.jdbi.v3.core.mapper.reflect.ReflectionMappers",
+                        "org.jdbi.v3.core.qualifier.Qualifiers",
+                        "org.jdbi.v3.core.statement.SqlStatements",
+                        "org.jdbi.v3.core.transaction.SerializableTransactionRunner$Configuration",
+                        "org.jdbi.v3.sqlobject.Handlers",
+                        "org.jdbi.v3.sqlobject.HandlerDecorators",
+                        "org.jdbi.v3.sqlobject.SqlObjects",
+                        "org.jdbi.v3.sqlobject.config.internal.RegisterBeanMapperImpl",
+                        "org.jdbi.v3.sqlobject.config.internal.RegisterBeanMappersImpl",
+                        "org.jdbi.v3.sqlobject.config.internal.RegisterColumnMapperImpl",
+                        "org.jdbi.v3.sqlobject.config.internal.RegisterColumnMappersImpl",
+                        "org.jdbi.v3.sqlobject.config.internal.RegisterConstructorMapperImpl",
+                        "org.jdbi.v3.sqlobject.config.internal.RegisterConstructorMappersImpl",
+                        "org.jdbi.v3.sqlobject.config.internal.RegisterFieldMapperImpl",
+                        "org.jdbi.v3.sqlobject.config.internal.RegisterFieldMappersImpl",
+                        "org.jdbi.v3.sqlobject.config.internal.RegisterRowMapperImpl",
+                        "org.jdbi.v3.sqlobject.config.internal.RegisterRowMappersImpl",
+                        "org.jdbi.v3.sqlobject.customizer.internal.AllowUnusedBindingsFactory",
+                        "org.jdbi.v3.sqlobject.customizer.internal.BindBeanFactory",
+                        "org.jdbi.v3.sqlobject.customizer.internal.BindBeanListFactory",
+                        "org.jdbi.v3.sqlobject.customizer.internal.BindFactory",
+                        "org.jdbi.v3.sqlobject.customizer.internal.BindFieldsFactory",
+                        "org.jdbi.v3.sqlobject.customizer.internal.BindListFactory",
+                        "org.jdbi.v3.sqlobject.customizer.internal.BindMapFactory",
+                        "org.jdbi.v3.sqlobject.customizer.internal.BindMethodsFactory",
+                        "org.jdbi.v3.sqlobject.customizer.internal.BindMethodsListFactory",
+                        "org.jdbi.v3.sqlobject.customizer.internal.BindPojoFactory",
+                        "org.jdbi.v3.sqlobject.customizer.internal.DefineFactory",
+                        "org.jdbi.v3.sqlobject.customizer.internal.DefineListFactory",
+                        "org.jdbi.v3.sqlobject.customizer.internal.DefineNamedBindingsFactory",
+                        "org.jdbi.v3.sqlobject.customizer.internal.FetchSizeFactory",
+                        "org.jdbi.v3.sqlobject.customizer.internal.MaxRowsFactory",
+                        "org.jdbi.v3.sqlobject.customizer.internal.OutParameterFactory",
+                        "org.jdbi.v3.sqlobject.customizer.internal.OutParameterListFactory",
+                        "org.jdbi.v3.sqlobject.customizer.internal.QueryTimeOutFactory",
+                        "org.jdbi.v3.sqlobject.customizer.internal.TimestampedFactory",
+                        "org.jdbi.v3.sqlobject.customizer.TimestampedConfig",
+                        "org.jdbi.v3.sqlobject.statement.internal.MapToFactory",
+                        "org.jdbi.v3.sqlobject.internal.CreateSqlObjectHandler",
+                        "org.jdbi.v3.sqlobject.statement.internal.SqlBatchHandler",
+                        "org.jdbi.v3.sqlobject.statement.internal.SqlCallHandler",
+                        "org.jdbi.v3.sqlobject.statement.internal.SqlQueryHandler",
+                        "org.jdbi.v3.sqlobject.statement.internal.SqlScriptsHandler",
+                        "org.jdbi.v3.sqlobject.statement.internal.SqlUpdateHandler",
+                        "org.jdbi.v3.sqlobject.statement.internal.SqlObjectStatementConfiguration",
+                        "org.jdbi.v3.json.JsonConfig",
+                        "org.jdbi.v3.jackson2.Jackson2Config",
+                        "org.jdbi.v3.postgres.PostgresTypes",
+                        "org.jdbi.v3.postgres.PostgresPlugin$VectorEnabler"
+                )
+                .constructors()
+                .reason("Jdbi ConfigRegistry constructs config objects reflectively")
+                .build();
     }
 
     @BuildStep

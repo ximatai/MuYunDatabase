@@ -146,11 +146,13 @@ schemaManager.ensureTable(UserEntity.class);
 - `@MuYunRepository(alignTable = DISABLED)` 仓库级关闭启动期拉齐
 - Repository 实体 native reflection metadata 预注册
 - PostgreSQL Testcontainers 矩阵覆盖 CRUD、SQL Object、事务回滚和 schema migration
+- H2 native smoke 覆盖 native runner 内 Repository CRUD、SQL Object 和事务回滚
+- 外部 PostgreSQL native smoke 覆盖 native runner 内 PostgreSQL datasource 与 Jdbi PostgreSQL 插件路径
 
 尚未承诺：
 
 - Quarkus dev mode reload
-- 完整 native image 构建矩阵；当前先提供 H2 native smoke
+- 完整 native image 构建矩阵；当前提供 H2 与外部 PostgreSQL native smoke
 
 ## 测试矩阵
 
@@ -166,12 +168,26 @@ CI 或发布前应强制 PostgreSQL 矩阵必须执行。此模式下如果 Dock
 ./gradlew :muyun-database-quarkus-integration-test:test -Pmuyun.postgres.it.required=true
 ```
 
-native smoke 会构建 Quarkus native runner，并启动应用验证扩展的 build time 与 runtime init 链路。Quarkus 3.22 下 native 构建不能同时输出 JAR 和 native runner，因此需要关闭 JAR 输出：
+native smoke 会构建 Quarkus native runner，并启动应用验证扩展的 build time 与 runtime init 链路。默认 H2 native smoke 会通过 HTTP probe 在 native runner 内执行 Repository CRUD、Jdbi SQL Object 和事务回滚。Quarkus 3.22 下 native 构建不能同时输出 JAR 和 native runner，因此需要关闭 JAR 输出：
 
 ```bash
 ./gradlew :muyun-database-quarkus-integration-test:testNative \
   -Dquarkus.native.enabled=true \
   -Dquarkus.package.jar.enabled=false
+```
+
+PostgreSQL native smoke 需要外部 PostgreSQL 实例，并显式开启 PostgreSQL datasource 与 Jdbi PostgreSQL 插件：
+
+```bash
+./gradlew :muyun-database-quarkus-integration-test:testNative \
+  -Dquarkus.native.enabled=true \
+  -Dquarkus.package.jar.enabled=false \
+  -Dmuyun.native.postgres.enabled=true \
+  -Dquarkus.datasource.db-kind=postgresql \
+  -Dquarkus.datasource.jdbc.url=jdbc:postgresql://127.0.0.1:5432/muyun_native \
+  -Dquarkus.datasource.username=testuser \
+  -Dquarkus.datasource.password=testpass \
+  -Dquarkus.test.arg-line="-Dmuyun.database.default-schema=public -Dmuyun.database.install-postgres-plugins=true"
 ```
 
 本机执行需要 GraalVM `native-image` 可用；也可以按 Quarkus 原生镜像工具链要求改用容器构建参数。
