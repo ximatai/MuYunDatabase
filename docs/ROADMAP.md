@@ -16,6 +16,7 @@
 6. `MigrationOptions`（`APPLY`、`DRY_RUN`、`DRY_RUN_STRICT`）和结构化 `MigrationChange`。
 7. Spring 声明式事务：`EntityDao` 方法与 Jdbi SQL 注解方法同边界回滚。
 8. 表结构拉齐策略：全局 `repository-schema-mode` + 仓库级 `alignTable` 覆盖。
+9. Quarkus 扩展：CDI bean、`@MuYunRepository` synthetic bean、启动期表结构拉齐、JVM/H2 native/PostgreSQL native smoke。
 
 ## 近期优先级
 
@@ -45,7 +46,8 @@
 
 1. `core/jdbi/starter/quarkus/test` 全部通过。
 2. 双库回归（MySQL/PostgreSQL）核心场景通过。
-3. 文档同步更新：`README.md`、`docs/API_CONTRACT.md`、`docs/QUICKSTART.md`、`docs/REFACTOR_GUIDE.md`、`docs/QUARKUS.md`。
+3. Quarkus 发布前执行 `bash scripts/quarkus-release-gate.sh release`，并用 `./gradlew publishReleaseToLocalRepository` 验证白名单发布模块。
+4. 文档同步更新：`README.md`、`docs/API_CONTRACT.md`、`docs/QUICKSTART.md`、`docs/REFACTOR_GUIDE.md`、`docs/QUARKUS.md`。
 
 ## 迁移反馈需求池
 

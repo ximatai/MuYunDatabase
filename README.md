@@ -1,6 +1,6 @@
 # MuYun-Database
 
-一个方便创建、修改表结构的工具库，核心依赖 `jdbi`，并提供 Spring Boot starter。支持 `MySQL`、`Postgres`。
+一个方便创建、修改表结构的工具库，核心依赖 `jdbi`，并提供 Spring Boot starter 与 Quarkus extension。支持 `MySQL`、`Postgres`。
 既是 [MuYun](https://github.com/ximatai/MuYun) 的一部分，也可以单独使用。
 
 ## 文档导航
@@ -118,8 +118,8 @@ class UserService {
 ## 设计摘要
 
 1. 聚焦单表高频能力：DDL、CRUD、条件查询、分页、事务一致性。
-2. 保持分层：`core` 定义规则、`jdbi` 负责执行、`starter` 负责装配。
+2. 保持分层：`core` 定义规则、`jdbi` 负责执行，Spring Boot starter 与 Quarkus extension 负责各自框架装配。
 3. 常规业务默认走 `@MuYunRepository + EntityDao`；仅在必要时回退更底层方式。
-4. 默认以 MySQL/Postgres 双库行为一致性为目标。
+4. 默认以 MySQL/Postgres 双库行为一致性为目标，并为 Quarkus native image 保留明确验证门禁。
 
 完整目标与优先级见 [`docs/ROADMAP.md`](docs/ROADMAP.md)。

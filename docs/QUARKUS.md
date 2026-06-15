@@ -101,6 +101,16 @@ Repository 代理支持：
 | 任意 | `ENABLED` | 是 |
 | 任意 | `DISABLED` | 否 |
 
+## 设计取舍
+
+Quarkus 接入保持独立 runtime/deployment 模块，而不是复用 Spring Boot starter：
+
+- `muyun-database-quarkus` 只包含 Quarkus runtime bean、Repository 代理、启动期 schema initializer 和用户可见 API
+- `muyun-database-quarkus-deployment` 只处理 build time 扫描、synthetic bean、native reflection/proxy/resource metadata
+- Repository 使用 `net.ximatai.muyun.database.quarkus.MuYunRepository` 独立注解，避免把 Spring 依赖带进 Quarkus 应用
+- Jdbi common plugin 默认安装；PostgreSQL 插件受 `install-postgres-plugins` 与 PostgreSQL driver class 双重条件保护
+- native image 支持以显式 build item 注册为主，避免运行期扫描和隐式反射
+
 ## 事务与表结构
 
 Quarkus 应用可使用 `jakarta.transaction.Transactional` 包住同一个仓库中的 `EntityDao` 方法与 Jdbi SQL Object 方法。扩展依赖 Quarkus Agroal + Narayana JTA，已验证两类写入在同一事务边界内回滚。
