@@ -28,6 +28,7 @@
 - 性能基线模板：[`docs/PERFORMANCE_BASELINE.md`](docs/PERFORMANCE_BASELINE.md)
 - 迁移反馈需求池（待评估）：[`docs/MIGRATION_FEEDBACK_BACKLOG.md`](docs/MIGRATION_FEEDBACK_BACKLOG.md)
 - starter 最小样板：[`samples/starter-minimal`](samples/starter-minimal)
+- Quarkus 最小样板：[`samples/quarkus-minimal`](samples/quarkus-minimal)
 - 用法示例测试：[`muyun-database-test/src/test/java/net/ximatai/muyun/database/MuYunDatabaseUsageExamplesTestBase.java`](muyun-database-test/src/test/java/net/ximatai/muyun/database/MuYunDatabaseUsageExamplesTestBase.java)
 
 ## 5 分钟上手
