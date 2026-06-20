@@ -7,6 +7,7 @@ import jakarta.enterprise.inject.Any;
 import jakarta.enterprise.inject.Instance;
 import jakarta.enterprise.inject.Produces;
 import net.ximatai.muyun.database.core.IDatabaseOperations;
+import net.ximatai.muyun.database.core.orm.DatabaseValueConverter;
 import net.ximatai.muyun.database.core.orm.DefaultSimpleEntityManager;
 import net.ximatai.muyun.database.core.orm.EntityMetaResolver;
 import net.ximatai.muyun.database.core.orm.MigrationOptions;
@@ -79,8 +80,13 @@ public class MuYunDatabaseProducer {
     @ApplicationScoped
     @DefaultBean
     @SuppressWarnings("rawtypes")
-    SimpleEntityManager simpleEntityManager(IDatabaseOperations operations, EntityMetaResolver entityMetaResolver) {
-        return new DefaultSimpleEntityManager(operations, entityMetaResolver);
+    SimpleEntityManager simpleEntityManager(IDatabaseOperations operations,
+                                            EntityMetaResolver entityMetaResolver,
+                                            Instance<DatabaseValueConverter> valueConverters) {
+        DatabaseValueConverter valueConverter = valueConverters.isUnsatisfied()
+                ? DatabaseValueConverter.DEFAULT
+                : valueConverters.get();
+        return new DefaultSimpleEntityManager(operations, entityMetaResolver, valueConverter);
     }
 
     @Produces

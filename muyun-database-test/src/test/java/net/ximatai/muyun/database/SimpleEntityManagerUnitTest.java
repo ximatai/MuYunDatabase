@@ -229,7 +229,7 @@ public class SimpleEntityManagerUnitTest {
     }
 
     @Test
-    void testEntityMapperWritesEnumCodeValue() {
+    void testEntityMapperWritesEnumNameByDefault() {
         InMemoryOperations operations = InMemoryOperations.emptyMeta();
         SimpleEntityManager entityManager = new DefaultSimpleEntityManager(operations);
 
@@ -243,7 +243,33 @@ public class SimpleEntityManagerUnitTest {
         assertNotNull(table);
         Map<String, Object> row = table.get(id);
         assertNotNull(row);
+        assertEquals("ACTIVE", row.get("status"));
+    }
+
+    @Test
+    void testEntityMapperUsesInjectedEnumConverter() {
+        InMemoryOperations operations = InMemoryOperations.emptyMeta();
+        SimpleEntityManager entityManager = new DefaultSimpleEntityManager(
+                operations,
+                new EntityMetaResolver(),
+                new DemoStatusCodeConverter()
+        );
+
+        DemoTask task = new DemoTask();
+        task.setStatus(DemoStatus.ACTIVE);
+
+        String id = entityManager.insert(task);
+        assertNotNull(id);
+
+        Map<Object, Map<String, Object>> table = operations.tables.get("public.demo_task");
+        assertNotNull(table);
+        Map<String, Object> row = table.get(id);
+        assertNotNull(row);
         assertEquals("A", row.get("status"));
+
+        DemoTask loaded = entityManager.findById(DemoTask.class, id);
+        assertNotNull(loaded);
+        assertEquals(DemoStatus.ACTIVE, loaded.getStatus());
     }
 
     @Test
@@ -423,6 +449,28 @@ public class SimpleEntityManagerUnitTest {
 
         DemoStatus(String code) {
             this.code = code;
+        }
+    }
+
+    private static class DemoStatusCodeConverter implements DatabaseValueConverter {
+        @Override
+        public Object toDatabaseValue(Object value) {
+            if (value instanceof DemoStatus status) {
+                return status.code;
+            }
+            return DatabaseValueConverter.DEFAULT.toDatabaseValue(value);
+        }
+
+        @Override
+        public Object fromDatabaseValue(Object value, Class<?> targetType) {
+            if (targetType == DemoStatus.class) {
+                for (DemoStatus status : DemoStatus.values()) {
+                    if (Objects.equals(status.code, value)) {
+                        return status;
+                    }
+                }
+            }
+            return DatabaseValueConverter.DEFAULT.fromDatabaseValue(value, targetType);
         }
     }
 

@@ -18,18 +18,30 @@ public class RuntimeTableGateway {
     private final String tableName;
     private final CriteriaColumnResolver columnResolver;
     private final RuntimeColumnMapper columnMapper;
-    private final CriteriaSqlCompiler criteriaCompiler = new CriteriaSqlCompiler();
+    private final DatabaseValueConverter valueConverter;
+    private final CriteriaSqlCompiler criteriaCompiler;
 
     @SuppressWarnings("unchecked")
     public RuntimeTableGateway(IDatabaseOperations<?> operations,
                                String schema,
                                String tableName,
                                CriteriaColumnResolver columnResolver) {
+        this(operations, schema, tableName, columnResolver, DatabaseValueConverter.DEFAULT);
+    }
+
+    @SuppressWarnings("unchecked")
+    public RuntimeTableGateway(IDatabaseOperations<?> operations,
+                               String schema,
+                               String tableName,
+                               CriteriaColumnResolver columnResolver,
+                               DatabaseValueConverter valueConverter) {
         this.operations = (IDatabaseOperations<Object>) Objects.requireNonNull(operations, "operations must not be null");
         this.schema = schema == null || schema.isBlank() ? operations.getDefaultSchemaName() : requireIdentifier(schema, "schema");
         this.tableName = requireIdentifier(tableName, "tableName");
         this.columnResolver = Objects.requireNonNull(columnResolver, "columnResolver must not be null");
         this.columnMapper = columnResolver instanceof RuntimeColumnMapper mapper ? mapper : null;
+        this.valueConverter = valueConverter == null ? DatabaseValueConverter.DEFAULT : valueConverter;
+        this.criteriaCompiler = new CriteriaSqlCompiler(this.valueConverter);
     }
 
     public Object insert(Map<String, Object> values) {
@@ -97,7 +109,7 @@ public class RuntimeTableGateway {
         if (values == null || values.isEmpty()) {
             return columns;
         }
-        values.forEach((field, value) -> columns.put(resolveColumn(field), value));
+        values.forEach((field, value) -> columns.put(resolveColumn(field), valueConverter.toDatabaseValue(value)));
         return columns;
     }
 

@@ -17,7 +17,7 @@ val releasePublishModules = listOf(
 allprojects {
     group = "net.ximatai.muyun.database"
 //    version = "1.0.0-SNAPSHOT"
-    version = "3.26.9"
+    version = "3.26.10"
 
     repositories {
         maven { url = uri("https://mirrors.cloud.tencent.com/repository/maven") }

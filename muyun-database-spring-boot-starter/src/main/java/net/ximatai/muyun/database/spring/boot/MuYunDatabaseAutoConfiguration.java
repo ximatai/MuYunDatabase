@@ -1,6 +1,7 @@
 package net.ximatai.muyun.database.spring.boot;
 
 import net.ximatai.muyun.database.core.IDatabaseOperations;
+import net.ximatai.muyun.database.core.orm.DatabaseValueConverter;
 import net.ximatai.muyun.database.core.orm.DefaultSimpleEntityManager;
 import net.ximatai.muyun.database.core.orm.EntityMetaResolver;
 import net.ximatai.muyun.database.core.orm.MigrationOptions;
@@ -85,8 +86,14 @@ public class MuYunDatabaseAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public SimpleEntityManager simpleEntityManager(IDatabaseOperations<?> operations, EntityMetaResolver entityMetaResolver) {
-        return new DefaultSimpleEntityManager(operations, entityMetaResolver);
+    public SimpleEntityManager simpleEntityManager(IDatabaseOperations<?> operations,
+                                                   EntityMetaResolver entityMetaResolver,
+                                                   ObjectProvider<DatabaseValueConverter> valueConverterProvider) {
+        return new DefaultSimpleEntityManager(
+                operations,
+                entityMetaResolver,
+                valueConverterProvider.getIfAvailable(() -> DatabaseValueConverter.DEFAULT)
+        );
     }
 
     @Bean

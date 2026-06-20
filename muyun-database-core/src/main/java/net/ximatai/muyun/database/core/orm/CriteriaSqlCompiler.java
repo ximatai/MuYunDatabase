@@ -17,8 +17,14 @@ public final class CriteriaSqlCompiler {
     private static final Pattern NAMED_PARAM_PATTERN = Pattern.compile(":([A-Za-z_][A-Za-z0-9_]*)");
 
     private final EnumMap<CriteriaOperator, ClauseRenderer> renderers = new EnumMap<>(CriteriaOperator.class);
+    private final DatabaseValueConverter valueConverter;
 
     public CriteriaSqlCompiler() {
+        this(DatabaseValueConverter.DEFAULT);
+    }
+
+    public CriteriaSqlCompiler(DatabaseValueConverter valueConverter) {
+        this.valueConverter = valueConverter == null ? DatabaseValueConverter.DEFAULT : valueConverter;
         renderers.put(CriteriaOperator.EQ, (clause, context) -> compare(clause, context, "="));
         renderers.put(CriteriaOperator.NE, (clause, context) -> compare(clause, context, "<>"));
         renderers.put(CriteriaOperator.GT, (clause, context) -> compare(clause, context, ">"));
@@ -91,7 +97,7 @@ public final class CriteriaSqlCompiler {
 
     private String compare(CriteriaClause clause, ClauseContext context, String op) {
         String key = "p" + context.nextParamIndex();
-        context.params.put(key, firstValue(clause));
+        context.params.put(key, valueConverter.toDatabaseValue(firstValue(clause)));
         return resolveColumn(clause, context) + " " + op + " :" + key;
     }
 
@@ -102,8 +108,8 @@ public final class CriteriaSqlCompiler {
         String key = "p" + context.nextParamIndex();
         String key1 = key + "_1";
         String key2 = key + "_2";
-        context.params.put(key1, clause.getValues().get(0));
-        context.params.put(key2, clause.getValues().get(1));
+        context.params.put(key1, valueConverter.toDatabaseValue(clause.getValues().get(0)));
+        context.params.put(key2, valueConverter.toDatabaseValue(clause.getValues().get(1)));
         return resolveColumn(clause, context) + " BETWEEN :" + key1 + " AND :" + key2;
     }
 
@@ -116,7 +122,7 @@ public final class CriteriaSqlCompiler {
         for (int i = 0; i < clause.getValues().size(); i++) {
             String listKey = key + "_" + i;
             holders.add(":" + listKey);
-            context.params.put(listKey, clause.getValues().get(i));
+            context.params.put(listKey, valueConverter.toDatabaseValue(clause.getValues().get(i)));
         }
         return resolveColumn(clause, context) + " IN (" + String.join(", ", holders) + ")";
     }
@@ -130,7 +136,7 @@ public final class CriteriaSqlCompiler {
         for (int i = 0; i < clause.getValues().size(); i++) {
             String listKey = key + "_" + i;
             holders.add(":" + listKey);
-            context.params.put(listKey, clause.getValues().get(i));
+            context.params.put(listKey, valueConverter.toDatabaseValue(clause.getValues().get(i)));
         }
         return resolveColumn(clause, context) + " NOT IN (" + String.join(", ", holders) + ")";
     }
@@ -194,7 +200,8 @@ public final class CriteriaSqlCompiler {
             matcher.appendReplacement(buffer, ":" + rewritten);
         }
         matcher.appendTail(buffer);
-        renamed.forEach((original, rewritten) -> context.params.put(rewritten, sourceParams.get(original)));
+        renamed.forEach((original, rewritten) ->
+                context.params.put(rewritten, valueConverter.toDatabaseValue(sourceParams.get(original))));
         return buffer.toString();
     }
 

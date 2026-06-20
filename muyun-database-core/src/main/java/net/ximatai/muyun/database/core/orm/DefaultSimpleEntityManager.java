@@ -17,6 +17,7 @@ public class DefaultSimpleEntityManager implements SimpleEntityManager {
     private final EntityMetaResolver metaResolver;
     private final UpsertStrategy upsertStrategy;
     private final CriteriaSqlCompiler criteriaCompiler;
+    private final DatabaseValueConverter valueConverter;
 
     @SuppressWarnings("unchecked")
     public DefaultSimpleEntityManager(IDatabaseOperations<?> operations) {
@@ -25,6 +26,12 @@ public class DefaultSimpleEntityManager implements SimpleEntityManager {
 
     public DefaultSimpleEntityManager(IDatabaseOperations<?> operations, EntityMetaResolver metaResolver) {
         this(operations, UpsertStrategy.ATOMIC_PREFERRED, metaResolver);
+    }
+
+    public DefaultSimpleEntityManager(IDatabaseOperations<?> operations,
+                                      EntityMetaResolver metaResolver,
+                                      DatabaseValueConverter valueConverter) {
+        this(operations, UpsertStrategy.ATOMIC_PREFERRED, metaResolver, valueConverter);
     }
 
     @SuppressWarnings("unchecked")
@@ -36,10 +43,19 @@ public class DefaultSimpleEntityManager implements SimpleEntityManager {
     public DefaultSimpleEntityManager(IDatabaseOperations<?> operations,
                                       UpsertStrategy upsertStrategy,
                                       EntityMetaResolver metaResolver) {
+        this(operations, upsertStrategy, metaResolver, DatabaseValueConverter.DEFAULT);
+    }
+
+    @SuppressWarnings("unchecked")
+    public DefaultSimpleEntityManager(IDatabaseOperations<?> operations,
+                                      UpsertStrategy upsertStrategy,
+                                      EntityMetaResolver metaResolver,
+                                      DatabaseValueConverter valueConverter) {
         this.operations = (IDatabaseOperations<Object>) operations;
         this.metaResolver = Objects.requireNonNull(metaResolver, "metaResolver must not be null");
         this.upsertStrategy = upsertStrategy == null ? UpsertStrategy.ATOMIC_PREFERRED : upsertStrategy;
-        this.criteriaCompiler = new CriteriaSqlCompiler();
+        this.valueConverter = valueConverter == null ? DatabaseValueConverter.DEFAULT : valueConverter;
+        this.criteriaCompiler = new CriteriaSqlCompiler(this.valueConverter);
     }
 
     protected EntityMeta resolveMeta(Class<?> entityClass) {
@@ -67,7 +83,7 @@ public class DefaultSimpleEntityManager implements SimpleEntityManager {
         EntityMeta meta = resolveMeta(entity.getClass());
         Object currentId = meta.getIdField().read(entity);
 
-        Map<String, Object> body = EntityMapper.toMap(meta, entity, false, currentId != null);
+        Map<String, Object> body = EntityMapper.toMap(meta, entity, false, currentId != null, valueConverter);
         Object id = operations.insertItem(schema(meta), meta.getTableName(), body, meta.getIdColumnName());
 
         if (currentId == null && id != null) {
@@ -95,7 +111,7 @@ public class DefaultSimpleEntityManager implements SimpleEntityManager {
         }
 
         boolean includeNull = safeStrategy == NullUpdateStrategy.INCLUDE_NULLS;
-        Map<String, Object> body = EntityMapper.toMap(meta, entity, includeNull, false);
+        Map<String, Object> body = EntityMapper.toMap(meta, entity, includeNull, false, valueConverter);
         body.put(meta.getIdColumnName(), id);
 
         return operations.updateItem(schema(meta), meta.getTableName(), body, meta.getIdColumnName());
@@ -111,7 +127,7 @@ public class DefaultSimpleEntityManager implements SimpleEntityManager {
             throw new OrmException(OrmException.Code.INVALID_ENTITY, "entity id must not be null");
         }
 
-        Map<String, Object> body = EntityMapper.toMap(meta, entity, true, false);
+        Map<String, Object> body = EntityMapper.toMap(meta, entity, true, false, valueConverter);
         Map<String, Object> where = new LinkedHashMap<>();
         if (conditions != null) {
             where.putAll(resolveConditionColumns(meta, conditions));
@@ -130,7 +146,7 @@ public class DefaultSimpleEntityManager implements SimpleEntityManager {
             throw new OrmException(OrmException.Code.INVALID_ENTITY, "entity id must not be null");
         }
 
-        Map<String, Object> body = EntityMapper.toMap(meta, entity, true, true);
+        Map<String, Object> body = EntityMapper.toMap(meta, entity, true, true, valueConverter);
         return executeUpsert(schema(meta), meta.getTableName(), body, meta.getIdColumnName());
     }
 
@@ -140,7 +156,7 @@ public class DefaultSimpleEntityManager implements SimpleEntityManager {
 
         EntityMeta meta = resolveMeta(entityClass);
         Map<String, Object> row = operations.getItem(schema(meta), meta.getTableName(), id, meta.getIdColumnName());
-        return EntityMapper.fromMap(meta, row, entityClass);
+        return EntityMapper.fromMap(meta, row, entityClass, valueConverter);
     }
 
     @Override
@@ -188,7 +204,7 @@ public class DefaultSimpleEntityManager implements SimpleEntityManager {
 
         List<Map<String, Object>> rows = operations.query(sql.toString(), params);
         return rows.stream()
-                .map(row -> EntityMapper.fromMap(meta, row, entityClass))
+                .map(row -> EntityMapper.fromMap(meta, row, entityClass, valueConverter))
                 .collect(Collectors.toList());
     }
 
@@ -237,7 +253,7 @@ public class DefaultSimpleEntityManager implements SimpleEntityManager {
 
         List<Map<String, Object>> rows = operations.query(sql.toString(), params);
         return rows.stream()
-                .map(row -> EntityMapper.fromMap(meta, row, entityClass))
+                .map(row -> EntityMapper.fromMap(meta, row, entityClass, valueConverter))
                 .collect(Collectors.toList());
     }
 
@@ -336,7 +352,7 @@ public class DefaultSimpleEntityManager implements SimpleEntityManager {
             if (columnName == null || !SqlIdentifiers.isSafe(columnName)) {
                 throw new OrmException(OrmException.Code.INVALID_CRITERIA, "Unknown or unsafe condition field: " + entry.getKey());
             }
-            resolved.put(columnName, entry.getValue());
+            resolved.put(columnName, valueConverter.toDatabaseValue(entry.getValue()));
         }
         return resolved;
     }

@@ -84,12 +84,20 @@ public class Criteria {
         return and(field, CriteriaOperator.EQ, value);
     }
 
+    public Criteria eqNullable(String field, Object value) {
+        return value == null ? isNull(field) : eq(field, value);
+    }
+
     public Criteria ne(String field, Object value) {
         return and(field, CriteriaOperator.NE, value);
     }
 
     public Criteria orEq(String field, Object value) {
         return or(field, CriteriaOperator.EQ, value);
+    }
+
+    public Criteria orEqNullable(String field, Object value) {
+        return value == null ? orIsNull(field) : orEq(field, value);
     }
 
     public Criteria orNe(String field, Object value) {

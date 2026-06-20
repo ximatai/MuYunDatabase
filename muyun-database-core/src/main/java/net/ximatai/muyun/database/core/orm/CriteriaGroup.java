@@ -70,6 +70,10 @@ public class CriteriaGroup implements CriteriaNode {
         return and(field, CriteriaOperator.EQ, value);
     }
 
+    public CriteriaGroup eqNullable(String field, Object value) {
+        return value == null ? isNull(field) : eq(field, value);
+    }
+
     public CriteriaGroup ne(String field, Object value) {
         return and(field, CriteriaOperator.NE, value);
     }
@@ -136,6 +140,10 @@ public class CriteriaGroup implements CriteriaNode {
 
     public CriteriaGroup orEq(String field, Object value) {
         return or(field, CriteriaOperator.EQ, value);
+    }
+
+    public CriteriaGroup orEqNullable(String field, Object value) {
+        return value == null ? orIsNull(field) : orEq(field, value);
     }
 
     public CriteriaGroup orNe(String field, Object value) {

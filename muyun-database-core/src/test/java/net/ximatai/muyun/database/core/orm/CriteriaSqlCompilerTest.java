@@ -28,6 +28,60 @@ class CriteriaSqlCompilerTest {
     }
 
     @Test
+    void shouldCompileEqNullableAsIsNullWhenValueIsNull() {
+        CompiledCriteria compiled = compiler.compile(
+                Criteria.of().eqNullable("tenant", null),
+                this::resolveColumn,
+                DBInfo.Type.POSTGRESQL
+        );
+
+        assertEquals("\"tenant_id\" IS NULL", compiled.getSql());
+        assertEquals(Map.of(), compiled.getParams());
+    }
+
+    @Test
+    void shouldCompileEqNullableAsEqWhenValueIsPresent() {
+        CompiledCriteria compiled = compiler.compile(
+                Criteria.of().eqNullable("tenant", "t1"),
+                this::resolveColumn,
+                DBInfo.Type.POSTGRESQL
+        );
+
+        assertEquals("\"tenant_id\" = :p0", compiled.getSql());
+        assertEquals(Map.of("p0", "t1"), compiled.getParams());
+    }
+
+    @Test
+    void shouldBindEnumNameByDefault() {
+        CompiledCriteria compiled = compiler.compile(
+                Criteria.of()
+                        .eq("status", TestStatus.ENABLED)
+                        .in("code", List.of(TestStatus.DISABLED, "custom")),
+                this::resolveColumn,
+                DBInfo.Type.POSTGRESQL
+        );
+
+        assertEquals("\"status\" = :p0 AND \"v_code\" IN (:p1_0, :p1_1)", compiled.getSql());
+        assertEquals(Map.of("p0", "ENABLED", "p1_0", "DISABLED", "p1_1", "custom"), compiled.getParams());
+    }
+
+    @Test
+    void shouldUseInjectedValueConverter() {
+        CriteriaSqlCompiler customCompiler = new CriteriaSqlCompiler(new TestStatusCodeConverter());
+
+        CompiledCriteria compiled = customCompiler.compile(
+                Criteria.of()
+                        .eq("status", TestStatus.ENABLED)
+                        .raw(SqlRawCondition.of("status <> :status", Map.of("status", TestStatus.DISABLED))),
+                this::resolveColumn,
+                DBInfo.Type.POSTGRESQL
+        );
+
+        assertEquals("\"status\" = :p0 AND status <> :sq1", compiled.getSql());
+        assertEquals(Map.of("p0", "enabled", "sq1", "disabled"), compiled.getParams());
+    }
+
+    @Test
     void shouldRejectUnknownFieldFromColumnResolver() {
         OrmException exception = assertThrows(
                 OrmException.class,
@@ -138,5 +192,35 @@ class CriteriaSqlCompilerTest {
     private static class StaticEntity {
         private String id;
         private String code;
+    }
+
+    private enum TestStatus {
+        ENABLED("enabled"),
+        DISABLED("disabled");
+
+        private final String code;
+
+        TestStatus(String code) {
+            this.code = code;
+        }
+
+        public String getCode() {
+            return code;
+        }
+    }
+
+    private static class TestStatusCodeConverter implements DatabaseValueConverter {
+        @Override
+        public Object toDatabaseValue(Object value) {
+            if (value instanceof TestStatus status) {
+                return status.getCode();
+            }
+            return DatabaseValueConverter.DEFAULT.toDatabaseValue(value);
+        }
+
+        @Override
+        public Object fromDatabaseValue(Object value, Class<?> targetType) {
+            return DatabaseValueConverter.DEFAULT.fromDatabaseValue(value, targetType);
+        }
     }
 }
