@@ -29,11 +29,14 @@ boolean existsById(ID id);
 T findById(ID id);
 List<T> query(Criteria criteria, PageRequest pageRequest, Sort... sorts);
 List<T> list(Criteria criteria, Sort... sorts);
+List<T> list(Criteria criteria, PageRequest pageRequest, Sort... sorts);
 PageResult<T> pageQuery(Criteria criteria, PageRequest pageRequest, Sort... sorts);
 PageResult<T> page(Criteria criteria, PageRequest pageRequest, Sort... sorts);
 long count(Criteria criteria);
 int upsert(T entity);
 ```
+
+说明：`list(Criteria, Sort...)` 表示不分页列表查询；`list(Criteria, PageRequest, Sort...)` 是分页兼容别名，语义等价于 `query(Criteria, PageRequest, Sort...)`。
 
 ## 3. 条件写契约（稳定）
 
