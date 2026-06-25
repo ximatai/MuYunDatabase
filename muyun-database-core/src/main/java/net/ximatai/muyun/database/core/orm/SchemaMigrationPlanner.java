@@ -176,7 +176,7 @@ class SchemaMigrationPlanner {
 
         DBColumn dbColumn = table.getColumn(column.getName());
 
-        if (!sameColumnType(type, dbColumn.getType()) || (column.getLength() != null && !column.getLength().equals(dbColumn.getLength()))) {
+        if (!sameColumnType(type, dbColumn.getType()) || columnLengthChanged(column, dbColumn)) {
             builder.addNonAdditive(MigrationChange.Type.ALTER_COLUMN_TYPE, column.getName(), dialect.alterColumnType(schemaDotTable, quotedColumnName, type + SchemaBuildRules.columnLength(column), baseColumnString));
         }
 
@@ -252,6 +252,13 @@ class SchemaMigrationPlanner {
 
     private boolean isNonAdditiveColumnAdd(Column column) {
         return !column.isNullable() && column.getDefaultValue() == null;
+    }
+
+    private boolean columnLengthChanged(Column column, DBColumn dbColumn) {
+        if (SchemaBuildRules.ignoresColumnLength(column)) {
+            return false;
+        }
+        return column.getLength() != null && !column.getLength().equals(dbColumn.getLength());
     }
 
     private String buildColumnString(Column column, String type) {

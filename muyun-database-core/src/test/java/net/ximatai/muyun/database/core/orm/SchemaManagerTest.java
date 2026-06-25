@@ -243,6 +243,64 @@ class SchemaManagerTest {
         assertFalse(dryRun.isChanged());
     }
 
+    @Test
+    void shouldMapLongTextForMysqlAndPostgres() {
+        FakeOperations mysqlOperations = new FakeOperations(new DBInfo("MYSQL"));
+        TableWrapper mysqlTable = TableWrapper.withName("contract")
+                .setSchema("public")
+                .setPrimaryKey(Column.of("id").setType(ColumnType.VARCHAR).setLength(32).setPrimaryKey())
+                .addColumn(Column.of("payload").setType(ColumnType.LONGTEXT));
+
+        MigrationResult mysqlDryRun = new SchemaManager(mysqlOperations).ensureTable(mysqlTable, MigrationOptions.dryRun());
+
+        assertTrue(mysqlDryRun.getStatements().stream().anyMatch(sql -> sql.contains("`payload` LONGTEXT")));
+
+        FakeOperations postgresOperations = new FakeOperations(new DBInfo("POSTGRESQL"));
+        TableWrapper postgresTable = TableWrapper.withName("contract")
+                .setSchema("public")
+                .setPrimaryKey(Column.of("id").setType(ColumnType.VARCHAR).setLength(32).setPrimaryKey())
+                .addColumn(Column.of("payload").setType(ColumnType.LONGTEXT));
+
+        MigrationResult postgresDryRun = new SchemaManager(postgresOperations).ensureTable(postgresTable, MigrationOptions.dryRun());
+
+        assertTrue(postgresDryRun.getStatements().stream().anyMatch(sql -> sql.contains("\"payload\" text")));
+    }
+
+    @Test
+    void shouldPlanTextToLongTextMigrationForMysql() {
+        FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("MYSQL"));
+        existingInfo(loader);
+        loader.columns.get("public.contract").put("payload", aliasedColumn("payload", "text", null));
+        FakeOperations operations = new FakeOperations(loader);
+        TableWrapper table = TableWrapper.withName("contract")
+                .setSchema("public")
+                .setPrimaryKey(Column.of("id").setType(ColumnType.VARCHAR).setLength(32).setPrimaryKey())
+                .addColumn(Column.of("payload").setType(ColumnType.LONGTEXT));
+
+        MigrationResult dryRun = new SchemaManager(operations).ensureTable(table, MigrationOptions.dryRun());
+
+        assertTrue(dryRun.hasNonAdditiveChanges());
+        assertTrue(dryRun.getStatements().stream().anyMatch(sql ->
+                sql.contains("modify column `payload` LONGTEXT")));
+    }
+
+    @Test
+    void shouldIgnoreLengthWhenComparingLongTextColumns() {
+        FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("MYSQL"));
+        existingInfo(loader);
+        loader.columns.get("public.contract").put("id", primaryKeyColumn("id", "varchar", 32));
+        loader.columns.get("public.contract").put("payload", aliasedColumn("payload", "longtext", null));
+        FakeOperations operations = new FakeOperations(loader);
+        TableWrapper table = TableWrapper.withName("contract")
+                .setSchema("public")
+                .setPrimaryKey(Column.of("id").setType(ColumnType.VARCHAR).setLength(32).setPrimaryKey())
+                .addColumn(Column.of("payload").setType(ColumnType.LONGTEXT).setLength(999));
+
+        MigrationResult dryRun = new SchemaManager(operations).ensureTable(table, MigrationOptions.dryRun());
+
+        assertFalse(dryRun.isChanged());
+    }
+
     private DBInfo existingInfo() {
         FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("POSTGRESQL"));
         return existingInfo(loader);

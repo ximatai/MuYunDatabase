@@ -17,6 +17,7 @@ public interface IColumnTypeTransform {
                 return "jsonb";
             case SET:
             case JSON_SET:
+            case LONGTEXT:
                 return "text";
             default:
                 return type.name();

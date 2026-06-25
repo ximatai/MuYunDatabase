@@ -22,9 +22,16 @@ public enum ColumnType {
     /**
      * 长文本类型
      * 适用于：文章内容、详细描述等大段文本
-     * 对应数据库：TEXT, LONGTEXT等
+     * 对应数据库：TEXT
      */
     TEXT,
+
+    /**
+     * 超长文本类型
+     * 适用于：大体积JSON、导入导出快照等可能超过TEXT上限的数据
+     * 对应数据库：LONGTEXT (MySQL), TEXT (PostgreSQL)
+     */
+    LONGTEXT,
 
     /**
      * 整数类型（32位）

@@ -52,7 +52,7 @@ public final class SchemaBuildRules {
     public static String columnLength(Column column) {
         String length = column.getLength() == null ? "" : "(" + column.getLength() + ")";
 
-        if (column.getType().equals(ColumnType.TEXT)) {
+        if (ignoresColumnLength(column)) {
             return "";
         }
 
@@ -63,6 +63,10 @@ public final class SchemaBuildRules {
         }
 
         return length;
+    }
+
+    public static boolean ignoresColumnLength(Column column) {
+        return column.getType().equals(ColumnType.TEXT) || column.getType().equals(ColumnType.LONGTEXT);
     }
 
     public static String columnDefinition(Column column, String mappedType, DBInfo.Type dbType) {
