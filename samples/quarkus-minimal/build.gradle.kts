@@ -8,7 +8,7 @@ version = "0.0.1-SNAPSHOT"
 
 allprojects {
     group = "net.ximatai.muyun.database"
-    version = "3.26.10"
+    version = "3.26.11"
 }
 
 java {
