@@ -57,6 +57,24 @@ class RuntimeTableGatewayTest {
     }
 
     @Test
+    void shouldListWithoutPagingSql() {
+        CapturingOperations operations = new CapturingOperations();
+        RuntimeTableGateway gateway = new RuntimeTableGateway(operations, "public", "runtime_record", this::resolveColumn);
+
+        List<Map<String, Object>> records = gateway.listColumns(
+                Criteria.of().eq("title", "First"),
+                Sort.desc("version")
+        );
+
+        assertEquals(List.of(Map.of("id", "r-1")), records);
+        assertTrue(operations.querySql.contains("FROM \"public\".\"runtime_record\""));
+        assertTrue(operations.querySql.contains("\"record_title\" = :p0"));
+        assertTrue(operations.querySql.contains("ORDER BY \"version\" DESC"));
+        assertTrue(!operations.querySql.contains("LIMIT"), "Unpaged SQL should not contain LIMIT: " + operations.querySql);
+        assertTrue(!operations.querySql.contains("OFFSET"), "Unpaged SQL should not contain OFFSET: " + operations.querySql);
+    }
+
+    @Test
     void shouldMapQueryRowsToFieldsWhenRuntimeColumnMapperIsProvided() {
         CapturingOperations operations = new CapturingOperations();
         operations.queryResult = List.of(Map.of("id", "r-1", "record_title", "First", "version", 2));

@@ -28,7 +28,7 @@ int deleteByIdAndCondition(ID id, Map<String, Object> conditions);
 boolean existsById(ID id);
 T findById(ID id);
 List<T> query(Criteria criteria, PageRequest pageRequest, Sort... sorts);
-List<T> list(Criteria criteria, PageRequest pageRequest, Sort... sorts);
+List<T> list(Criteria criteria, Sort... sorts);
 PageResult<T> pageQuery(Criteria criteria, PageRequest pageRequest, Sort... sorts);
 PageResult<T> page(Criteria criteria, PageRequest pageRequest, Sort... sorts);
 long count(Criteria criteria);
@@ -82,7 +82,7 @@ int upsert(T entity);
 1. `EntityDao` 聚焦单表高频场景。
 2. 复杂查询由 Jdbi SQL 注解方法或底层 SQL 承担。
 3. 不提供关系映射 ORM（`1:N/N:N`、级联、延迟加载）。
-4. `RuntimeTableGateway` 面向运行时定义的单表 Map 记录，输入 `schema/tableName/CriteriaColumnResolver` 后提供 `insert/query/queryColumns/pageQuery/pageQueryColumns/count/patchWhere/deleteWhere`。
+4. `RuntimeTableGateway` 面向运行时定义的单表 Map 记录，输入 `schema/tableName/CriteriaColumnResolver` 后提供 `insert/query/queryColumns/list/listColumns/pageQuery/pageQueryColumns/count/patchWhere/deleteWhere`。
 5. `RuntimeTableGateway` 只解析字段到物理列并复用 Criteria、分页、排序、count 和条件写 SQL 能力；不理解动态模块、生命周期、租户、软删、权限、审计或乐观锁语义。
 6. 当 `RuntimeTableGateway` 使用双向 `RuntimeColumnMapper` 构造时，`query/pageQuery` 默认返回逻辑字段 Map；需要物理列 Map 时使用 `queryColumns/pageQueryColumns`。
 7. 旧的单向 `CriteriaColumnResolver` 构造方式保持兼容，`query/pageQuery` 返回底层物理列 Map。

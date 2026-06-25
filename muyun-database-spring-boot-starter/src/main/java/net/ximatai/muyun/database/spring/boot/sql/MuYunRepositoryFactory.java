@@ -310,9 +310,10 @@ public class MuYunRepositoryFactory {
                 return EntityDaoMethodType.QUERY;
             }
             if ("list".equals(name)
-                    && (paramTypes.length == 2 || (paramTypes.length == 3 && paramTypes[2] == Sort[].class))
+                    && (paramTypes.length == 1
+                    || (paramTypes.length == 2 && (paramTypes[1] == PageRequest.class || paramTypes[1] == Sort[].class))
+                    || (paramTypes.length == 3 && paramTypes[1] == PageRequest.class && paramTypes[2] == Sort[].class))
                     && paramTypes[0] == Criteria.class
-                    && paramTypes[1] == PageRequest.class
                     && java.util.List.class.isAssignableFrom(returnType)) {
                 return EntityDaoMethodType.LIST;
             }
@@ -379,7 +380,7 @@ public class MuYunRepositoryFactory {
                 case "existsById" -> "boolean existsById(ID id)";
                 case "findById" -> "T findById(ID id)";
                 case "query" -> "List<T> query(Criteria criteria, PageRequest pageRequest, Sort... sorts)";
-                case "list" -> "List<T> list(Criteria criteria, PageRequest pageRequest, Sort... sorts)";
+                case "list" -> "List<T> list(Criteria criteria, Sort... sorts)";
                 case "pageQuery" -> "PageResult<T> pageQuery(Criteria criteria, PageRequest pageRequest, Sort... sorts)";
                 case "page" -> "PageResult<T> page(Criteria criteria, PageRequest pageRequest, Sort... sorts)";
                 case "count" -> "long count(Criteria criteria)";
@@ -403,7 +404,12 @@ public class MuYunRepositoryFactory {
                 case EXISTS_BY_ID -> entityManager.exists((Class<Object>) entityType, args[0]);
                 case FIND_BY_ID -> entityManager.findById((Class<Object>) entityType, args[0]);
                 case QUERY -> entityManager.query((Class<Object>) entityType, (Criteria) args[0], (PageRequest) args[1], extractSorts(args, 2));
-                case LIST -> entityManager.query((Class<Object>) entityType, (Criteria) args[0], (PageRequest) args[1], extractSorts(args, 2));
+                case LIST -> {
+                    if (args != null && args.length > 1 && args[1] instanceof PageRequest pageRequest) {
+                        yield entityManager.query((Class<Object>) entityType, (Criteria) args[0], pageRequest, extractSorts(args, 2));
+                    }
+                    yield entityManager.list((Class<Object>) entityType, (Criteria) args[0], extractSorts(args, 1));
+                }
                 case PAGE_QUERY -> entityManager.pageQuery((Class<Object>) entityType, (Criteria) args[0], (PageRequest) args[1], extractSorts(args, 2));
                 case PAGE -> entityManager.pageQuery((Class<Object>) entityType, (Criteria) args[0], (PageRequest) args[1], extractSorts(args, 2));
                 case COUNT -> entityManager.count((Class<Object>) entityType, (Criteria) args[0]);

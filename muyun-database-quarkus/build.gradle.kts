@@ -18,6 +18,10 @@ dependencies {
     api(libs.quarkus.narayana.jta)
     implementation(libs.quarkus.arc.api)
     implementation(libs.quarkus.core)
+
+    testImplementation(platform(libs.junit.bom))
+    testImplementation(libs.junit.jupiter)
+    testRuntimeOnly(libs.junit.platform.launcher)
 }
 
 tasks.test {

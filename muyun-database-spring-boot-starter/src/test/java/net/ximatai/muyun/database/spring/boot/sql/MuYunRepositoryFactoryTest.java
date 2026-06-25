@@ -253,6 +253,33 @@ class MuYunRepositoryFactoryTest {
     }
 
     @Test
+    void shouldDelegateUnpagedListToEntityManagerList() {
+        @SuppressWarnings("unchecked")
+        IDatabaseOperations<Object> operations = (IDatabaseOperations<Object>) mock(IDatabaseOperations.class);
+        SimpleEntityManager entityManager = mock(SimpleEntityManager.class);
+        DemoRole role = new DemoRole();
+        role.setId("r-42");
+        role.setRoleName("unpaged");
+        Criteria criteria = Criteria.of().eq("roleName", "unpaged");
+        Sort sort = Sort.asc("roleName");
+        when(entityManager.list(DemoRole.class, criteria, sort)).thenReturn(List.of(role));
+
+        MuYunRepositoryFactory factory = new MuYunRepositoryFactory(
+                operations,
+                new MockEnvironment(),
+                mock(Jdbi.class),
+                entityManager
+        );
+        PureEntityDao dao = factory.create(PureEntityDao.class);
+
+        List<DemoRole> records = dao.list(criteria, sort);
+
+        assertEquals(List.of(role), records);
+        verify(entityManager).list(DemoRole.class, criteria, sort);
+        verify(entityManager, never()).query(eq(DemoRole.class), eq(criteria), any(PageRequest.class), any());
+    }
+
+    @Test
     void shouldDelegateConditionalEntityDaoMethods() {
         @SuppressWarnings("unchecked")
         IDatabaseOperations<Object> operations = (IDatabaseOperations<Object>) mock(IDatabaseOperations.class);
@@ -363,7 +390,7 @@ class MuYunRepositoryFactoryTest {
 
     @MuYunRepository
     interface BrokenCrudSignatureDao extends EntityDao<DemoRole, String> {
-        List<DemoRole> list(Criteria criteria, PageRequest pageRequest, Sort sort);
+        List<DemoRole> list(Criteria criteria, String unsupported);
     }
 
     @MuYunRepository

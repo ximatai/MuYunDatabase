@@ -74,6 +74,23 @@ public class RuntimeTableGateway {
         return operations.query(sql.toString(), params);
     }
 
+    public List<Map<String, Object>> list(Criteria criteria, Sort... sorts) {
+        return toFieldRows(listColumns(criteria, sorts));
+    }
+
+    public List<Map<String, Object>> listColumns(Criteria criteria, Sort... sorts) {
+        Objects.requireNonNull(criteria, "criteria must not be null");
+        CompiledCriteria compiled = criteriaCompiler.compile(criteria, columnResolver, databaseType());
+
+        StringBuilder sql = new StringBuilder("SELECT * FROM ").append(qualifiedTable());
+        if (!compiled.getSql().isBlank()) {
+            sql.append(" WHERE ").append(compiled.getSql());
+        }
+        appendOrderBy(sql, sorts);
+
+        return operations.query(sql.toString(), compiled.getParams());
+    }
+
     public PageResult<Map<String, Object>> pageQuery(Criteria criteria, PageRequest pageRequest, Sort... sorts) {
         long total = count(criteria);
         return PageResult.of(query(criteria, pageRequest, sorts), total, pageRequest);

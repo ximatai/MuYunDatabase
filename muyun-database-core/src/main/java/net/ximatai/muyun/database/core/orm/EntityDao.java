@@ -31,6 +31,10 @@ public interface EntityDao<T, ID> {
         return query(criteria, pageRequest, sorts);
     }
 
+    default List<T> list(Criteria criteria, Sort... sorts) {
+        throw new UnsupportedOperationException("unpaged list is not supported by this EntityDao implementation");
+    }
+
     PageResult<T> pageQuery(Criteria criteria, PageRequest pageRequest, Sort... sorts);
 
     default PageResult<T> page(Criteria criteria, PageRequest pageRequest, Sort... sorts) {

@@ -69,6 +69,11 @@ public class DefaultCrudRepository<T, ID> implements CrudRepository<T, ID> {
     }
 
     @Override
+    public List<T> list(Criteria criteria, Sort... sorts) {
+        return entityManager.list(entityClass, criteria, sorts);
+    }
+
+    @Override
     public PageResult<T> pageQuery(Criteria criteria, PageRequest pageRequest, Sort... sorts) {
         return entityManager.pageQuery(entityClass, criteria, pageRequest, sorts);
     }

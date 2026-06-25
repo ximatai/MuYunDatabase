@@ -32,5 +32,7 @@ public interface CrudRepository<T, ID> {
         return query(criteria, pageRequest);
     }
 
+    List<T> list(Criteria criteria, Sort... sorts);
+
     PageResult<T> pageQuery(Criteria criteria, PageRequest pageRequest, Sort... sorts);
 }

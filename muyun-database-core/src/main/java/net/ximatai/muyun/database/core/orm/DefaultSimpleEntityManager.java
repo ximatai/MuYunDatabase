@@ -258,6 +258,28 @@ public class DefaultSimpleEntityManager implements SimpleEntityManager {
     }
 
     @Override
+    public <T> List<T> list(Class<T> entityClass, Criteria criteria, Sort... sorts) {
+        Objects.requireNonNull(entityClass, "entityClass must not be null");
+        Objects.requireNonNull(criteria, "criteria must not be null");
+
+        EntityMeta meta = resolveMeta(entityClass);
+        CompiledCriteria compiled = criteriaCompiler.compile(criteria, meta, databaseType());
+
+        StringBuilder sql = new StringBuilder("SELECT * FROM ")
+                .append(SqlIdentifiers.qualified(schema(meta), meta.getTableName(), databaseType()));
+        if (!compiled.getSql().isEmpty()) {
+            sql.append(" WHERE ").append(compiled.getSql());
+        }
+
+        appendOrderBy(sql, meta, sorts);
+
+        List<Map<String, Object>> rows = operations.query(sql.toString(), compiled.getParams());
+        return rows.stream()
+                .map(row -> EntityMapper.fromMap(meta, row, entityClass, valueConverter))
+                .collect(Collectors.toList());
+    }
+
+    @Override
     public <T> PageResult<T> pageQuery(Class<T> entityClass, Criteria criteria, PageRequest pageRequest) {
         return pageQuery(entityClass, criteria, pageRequest, new Sort[0]);
     }

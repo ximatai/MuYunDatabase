@@ -52,6 +52,10 @@ public interface SimpleEntityManager {
         return query(entityClass, criteria, pageRequest);
     }
 
+    default <T> List<T> list(Class<T> entityClass, Criteria criteria, Sort... sorts) {
+        throw new UnsupportedOperationException("unpaged list is not supported by this SimpleEntityManager implementation");
+    }
+
     default <T> PageResult<T> pageQuery(Class<T> entityClass, Criteria criteria, PageRequest pageRequest) {
         List<T> records = query(entityClass, criteria, pageRequest);
         return PageResult.unknownTotal(records, pageRequest);

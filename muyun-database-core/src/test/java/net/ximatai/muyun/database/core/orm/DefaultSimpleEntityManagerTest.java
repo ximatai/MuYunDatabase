@@ -115,6 +115,27 @@ class DefaultSimpleEntityManagerTest {
     }
 
     @Test
+    void listShouldGenerateUnpagedQuerySql() {
+        CapturingOperations operations = new CapturingOperations();
+        DefaultSimpleEntityManager manager = new DefaultSimpleEntityManager(operations);
+
+        List<SampleRole> records = manager.list(
+                SampleRole.class,
+                Criteria.of().eq("roleName", "admin"),
+                Sort.asc("roleName")
+        );
+
+        assertEquals(1, records.size());
+        assertEquals("r-1", records.get(0).getId());
+        assertNotNull(operations.capturedSql);
+        assertTrue(operations.capturedSql.contains("SELECT *"), "SQL should select records: " + operations.capturedSql);
+        assertTrue(operations.capturedSql.contains("WHERE"), "SQL should contain WHERE clause: " + operations.capturedSql);
+        assertTrue(operations.capturedSql.contains("ORDER BY"), "SQL should contain ORDER BY clause: " + operations.capturedSql);
+        assertFalse(operations.capturedSql.contains("LIMIT"), "Unpaged SQL should not contain LIMIT: " + operations.capturedSql);
+        assertFalse(operations.capturedSql.contains("OFFSET"), "Unpaged SQL should not contain OFFSET: " + operations.capturedSql);
+    }
+
+    @Test
     void existsShouldGenerateSelectOneSql() {
         CapturingOperations operations = new CapturingOperations();
         DefaultSimpleEntityManager manager = new DefaultSimpleEntityManager(operations);
@@ -270,6 +291,7 @@ class DefaultSimpleEntityManagerTest {
         private String pkName;
         private Map<String, Object> where;
         private String capturedSql;
+        private Map<String, Object> capturedParams;
         private final boolean supportsAtomic;
         private final DBInfo dbInfo;
 
@@ -408,7 +430,9 @@ class DefaultSimpleEntityManagerTest {
 
         @Override
         public List<Map<String, Object>> query(String sql, Map<String, Object> params) {
-            throw new UnsupportedOperationException();
+            this.capturedSql = sql;
+            this.capturedParams = params == null ? Map.of() : Map.copyOf(params);
+            return List.of(Map.of("id", "r-1", "tenant_id", "t-1", "role_name", "admin"));
         }
 
         @Override
