@@ -1,0 +1,52 @@
+name: Release to Maven Central
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish release artifacts
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      SONATYPE_TOKEN: ${{ secrets.SONATYPE_TOKEN }}
+      SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
+      SIGNING_KEY_ID: ${{ secrets.SIGNING_KEY_ID }}
+      SIGNING_SECRET_KEY: ${{ secrets.SIGNING_SECRET_KEY }}
+      SIGNING_SECRET_KEY_BASE64: ${{ secrets.SIGNING_SECRET_KEY_BASE64 }}
+      SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate Gradle Wrapper
+        uses: gradle/actions/wrapper-validation@af1da67850ed9a4cedd57bfd976089dd991e2582 # v4.0.0
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: "temurin"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@af1da67850ed9a4cedd57bfd976089dd991e2582 # v4.0.0
+
+      - name: Verify release tag
+        run: ./gradlew verifyReleaseTagVersion
+
+      - name: Verify release credentials
+        run: ./gradlew verifyReleaseCredentials
+
+      - name: Test
+        run: ./gradlew test
+
+      - name: Publish to Maven Central
+        run: ./gradlew publishReleaseToSonatype
