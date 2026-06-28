@@ -5,6 +5,8 @@ plugins {
     id("io.github.jeadyx.sonatype-uploader") version "2.8"
 }
 
+import java.util.Base64
+
 val releasePublishModules = listOf(
     "muyun-database-core",
     "muyun-database-core-json-jackson",
@@ -13,6 +15,43 @@ val releasePublishModules = listOf(
     "muyun-database-quarkus",
     "muyun-database-quarkus-deployment"
 )
+
+fun Project.releaseValue(propertyName: String, environmentName: String): String? {
+    return findProperty(propertyName)
+        ?.toString()
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() && it != "null" }
+        ?: providers.environmentVariable(environmentName)
+            .orNull
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+}
+
+fun Project.releaseSigningSecretKey(): String? {
+    releaseValue("signing.secretKey", "SIGNING_SECRET_KEY")?.let { return it }
+
+    return releaseValue("signing.secretKeyBase64", "SIGNING_SECRET_KEY_BASE64")?.let { encoded ->
+        String(Base64.getDecoder().decode(encoded), Charsets.UTF_8)
+    }
+}
+
+fun Project.releaseCredentialValues(): Map<String, String?> {
+    return mapOf(
+        "sonatype.token or SONATYPE_TOKEN" to releaseValue("sonatype.token", "SONATYPE_TOKEN"),
+        "sonatype.password or SONATYPE_PASSWORD" to releaseValue("sonatype.password", "SONATYPE_PASSWORD"),
+        "signing.keyId or SIGNING_KEY_ID" to releaseValue("signing.keyId", "SIGNING_KEY_ID"),
+        "signing.secretKey/signing.secretKeyBase64 or SIGNING_SECRET_KEY/SIGNING_SECRET_KEY_BASE64" to
+                releaseSigningSecretKey(),
+        "signing.password or SIGNING_PASSWORD" to releaseValue("signing.password", "SIGNING_PASSWORD")
+    )
+}
+
+fun Project.requireReleaseCredentials() {
+    val missing = releaseCredentialValues().filterValues { it.isNullOrBlank() }.keys
+    require(missing.isEmpty()) {
+        "Missing required Gradle properties for Sonatype publish: ${missing.joinToString(", ")}"
+    }
+}
 
 allprojects {
     group = "net.ximatai.muyun.database"
@@ -29,24 +68,35 @@ tasks.register("publishReleaseToSonatype") {
     group = "publishing"
     description = "Publish release modules (core/jdbi/starter/quarkus) to Sonatype."
 
+    dependsOn("verifyReleaseCredentials")
     dependsOn(releasePublishModules.map { ":$it:clean" })
     dependsOn("cleanLocalDeploymentDir")
     dependsOn(releasePublishModules.map { ":$it:publishToSonatype" })
 
     doFirst {
-        val requiredKeys = listOf(
-            "sonatype.token",
-            "sonatype.password",
-            "signing.keyId",
-            "signing.secretKey",
-            "signing.password"
-        )
-        val missing = requiredKeys.filter { key ->
-            val value = findProperty(key)?.toString()?.trim()
-            value.isNullOrEmpty() || value == "null"
-        }
-        require(missing.isEmpty()) {
-            "Missing required Gradle properties for Sonatype publish: ${missing.joinToString(", ")}"
+        requireReleaseCredentials()
+    }
+}
+
+tasks.register("verifyReleaseCredentials") {
+    group = "verification"
+    description = "Verify that all Sonatype and signing credentials are available."
+
+    doLast {
+        requireReleaseCredentials()
+    }
+}
+
+tasks.register("verifyReleaseTagVersion") {
+    group = "verification"
+    description = "Verify that the release tag matches the Gradle project version."
+
+    doLast {
+        val tag = releaseValue("release.tag", "GITHUB_REF_NAME")
+            ?: error("Missing release tag. Provide -Prelease.tag=v${project.version} or set GITHUB_REF_NAME.")
+        val expectedTag = "v${project.version}"
+        require(tag == expectedTag) {
+            "Release tag '$tag' does not match project version '${project.version}'. Expected '$expectedTag'."
         }
     }
 }
@@ -114,16 +164,16 @@ subprojects {
 
     sonatypeUploader {
         repositoryPath = layout.buildDirectory.dir("repo").get().asFile.path
-        tokenName = findProperty("sonatype.token").toString()
-        tokenPasswd = findProperty("sonatype.password").toString()
+        tokenName = releaseValue("sonatype.token", "SONATYPE_TOKEN").orEmpty()
+        tokenPasswd = releaseValue("sonatype.password", "SONATYPE_PASSWORD").orEmpty()
     }
 
     signing {
         sign(publishing.publications["mavenJava"])
         useInMemoryPgpKeys(
-            findProperty("signing.keyId").toString(),
-            findProperty("signing.secretKey").toString(),
-            findProperty("signing.password").toString()
+            releaseValue("signing.keyId", "SIGNING_KEY_ID").orEmpty(),
+            releaseSigningSecretKey().orEmpty(),
+            releaseValue("signing.password", "SIGNING_PASSWORD").orEmpty()
         )
     }
 
