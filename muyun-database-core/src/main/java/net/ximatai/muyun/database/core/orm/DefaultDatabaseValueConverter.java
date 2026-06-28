@@ -48,22 +48,22 @@ final class DefaultDatabaseValueConverter implements DatabaseValueConverter {
         }
 
         if (targetType == int.class || targetType == Integer.class) {
-            return ((Number) value).intValue();
+            return asNumber(value).intValue();
         }
         if (targetType == long.class || targetType == Long.class) {
-            return ((Number) value).longValue();
+            return asNumber(value).longValue();
         }
         if (targetType == double.class || targetType == Double.class) {
-            return ((Number) value).doubleValue();
+            return asNumber(value).doubleValue();
         }
         if (targetType == float.class || targetType == Float.class) {
-            return ((Number) value).floatValue();
+            return asNumber(value).floatValue();
         }
         if (targetType == short.class || targetType == Short.class) {
-            return ((Number) value).shortValue();
+            return asNumber(value).shortValue();
         }
         if (targetType == byte.class || targetType == Byte.class) {
-            return ((Number) value).byteValue();
+            return asNumber(value).byteValue();
         }
 
         if (targetType == boolean.class || targetType == Boolean.class) {
@@ -102,5 +102,12 @@ final class DefaultDatabaseValueConverter implements DatabaseValueConverter {
         }
 
         return value;
+    }
+
+    private static Number asNumber(Object value) {
+        if (value instanceof Number number) {
+            return number;
+        }
+        return new BigDecimal(value.toString().trim());
     }
 }

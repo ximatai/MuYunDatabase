@@ -5,13 +5,16 @@ import net.ximatai.muyun.database.core.IMetaDataLoader;
 import net.ximatai.muyun.database.core.annotation.Column;
 import net.ximatai.muyun.database.core.annotation.Id;
 import net.ximatai.muyun.database.core.annotation.Table;
+import net.ximatai.muyun.database.core.builder.ColumnType;
 import net.ximatai.muyun.database.core.metadata.DBInfo;
 import net.ximatai.muyun.database.core.metadata.DBSchema;
 import org.junit.jupiter.api.Test;
 
 import java.sql.Array;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -39,6 +42,21 @@ class DefaultSimpleEntityManagerTest {
     }
 
     @Test
+    void conditionalUpdateShouldUseFieldCodecForSetConditions() {
+        CapturingOperations operations = new CapturingOperations();
+        DefaultSimpleEntityManager manager = new DefaultSimpleEntityManager(operations);
+
+        RoleWithFlags role = new RoleWithFlags();
+        role.setId("r-1");
+
+        assertEquals(1, manager.update(role, Map.of(
+                "flags", new LinkedHashSet<>(List.of(Flag.ENABLED, Flag.DISABLED))
+        )));
+
+        assertEquals(Map.of("flags", "ENABLED,DISABLED", "id", "r-1"), operations.where);
+    }
+
+    @Test
     void conditionalUpdateShouldReturnZeroWhenNoRowsMatch() {
         CapturingOperations operations = new CapturingOperations();
         operations.updateResult = 0;
@@ -62,6 +80,18 @@ class DefaultSimpleEntityManagerTest {
         assertEquals("sample_schema", operations.schema);
         assertEquals("sample_role", operations.table);
         assertEquals(Map.of("tenant_id", "t-1", "id", "r-1"), operations.where);
+    }
+
+    @Test
+    void conditionalDeleteShouldUseFieldCodecForSetConditions() {
+        CapturingOperations operations = new CapturingOperations();
+        DefaultSimpleEntityManager manager = new DefaultSimpleEntityManager(operations);
+
+        assertEquals(1, manager.deleteById(RoleWithFlags.class, "r-1", Map.of(
+                "flags", new LinkedHashSet<>(List.of(Flag.ENABLED, Flag.DISABLED))
+        )));
+
+        assertEquals(Map.of("flags", "ENABLED,DISABLED", "id", "r-1"), operations.where);
     }
 
     @Test
@@ -273,6 +303,37 @@ class DefaultSimpleEntityManagerTest {
         public void setRoleName(String roleName) {
             this.roleName = roleName;
         }
+    }
+
+    @Table(name = "role_with_flags", schema = "sample_schema")
+    static class RoleWithFlags {
+        @Id
+        @Column(length = 32)
+        private String id;
+
+        @Column(name = "flags", type = ColumnType.SET)
+        private Set<Flag> flags;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(String id) {
+            this.id = id;
+        }
+
+        public Set<Flag> getFlags() {
+            return flags;
+        }
+
+        public void setFlags(Set<Flag> flags) {
+            this.flags = flags;
+        }
+    }
+
+    enum Flag {
+        ENABLED,
+        DISABLED
     }
 
     @Table(name = "custom_id_entity", schema = "sample_schema")

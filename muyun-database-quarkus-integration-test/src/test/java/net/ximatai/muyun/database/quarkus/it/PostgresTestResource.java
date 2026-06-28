@@ -13,11 +13,11 @@ public class PostgresTestResource implements QuarkusTestResourceLifecycleManager
 
     @Override
     public Map<String, String> start() {
-        if (!DockerClientFactory.instance().isDockerAvailable()) {
-            if (Boolean.getBoolean("muyun.postgres.it.required")) {
-                throw new IllegalStateException("PostgreSQL integration tests are required, but Docker is not available.");
-            }
+        if (!Boolean.getBoolean("muyun.postgres.it.required")) {
             return Map.of("muyun.test.postgres.enabled", "false");
+        }
+        if (!isDockerAvailable()) {
+            throw new IllegalStateException("PostgreSQL integration tests are required, but Docker is not available.");
         }
 
         postgres = new PostgreSQLContainer<>("postgres:17-alpine")
@@ -36,6 +36,10 @@ public class PostgresTestResource implements QuarkusTestResourceLifecycleManager
         config.put("muyun.database.default-schema", "public");
         config.put("muyun.database.install-postgres-plugins", "true");
         return config;
+    }
+
+    static boolean isDockerAvailable() {
+        return DockerClientFactory.instance().isDockerAvailable();
     }
 
     @Override

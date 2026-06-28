@@ -2,6 +2,8 @@ package net.ximatai.muyun.database.quarkus.it;
 
 import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
+import io.quarkus.test.junit.QuarkusTestProfile;
+import io.quarkus.test.junit.TestProfile;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
@@ -35,6 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 @QuarkusTest
+@TestProfile(QuarkusPostgresMatrixIntegrationTest.PostgresProfile.class)
 @QuarkusTestResource(value = PostgresTestResource.class, restrictToAnnotatedClass = true)
 class QuarkusPostgresMatrixIntegrationTest {
 
@@ -133,6 +136,28 @@ class QuarkusPostgresMatrixIntegrationTest {
                 .map(change -> change.getType() + ":" + change.getTarget() + ":" + change.getSql())
                 .toList()
                 .toString();
+    }
+
+    public static class PostgresProfile implements QuarkusTestProfile {
+        @Override
+        public Map<String, String> getConfigOverrides() {
+            if (!shouldUsePostgresProfile()) {
+                return Map.of("muyun.test.postgres.enabled", "false");
+            }
+            return Map.of(
+                    "quarkus.datasource.db-kind", "postgresql",
+                    "quarkus.datasource.devservices.enabled", "false",
+                    "quarkus.datasource.jdbc.url", "jdbc:postgresql://localhost:1/muyun_quarkus",
+                    "quarkus.datasource.username", "testuser",
+                    "quarkus.datasource.password", "testpass",
+                    "muyun.database.default-schema", "public",
+                    "muyun.database.install-postgres-plugins", "true"
+            );
+        }
+
+        private boolean shouldUsePostgresProfile() {
+            return Boolean.getBoolean("muyun.postgres.it.required");
+        }
     }
 
     @ApplicationScoped

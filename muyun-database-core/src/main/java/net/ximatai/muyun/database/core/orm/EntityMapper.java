@@ -1,12 +1,8 @@
 package net.ximatai.muyun.database.core.orm;
 
-import net.ximatai.muyun.database.core.builder.ColumnType;
-import net.ximatai.muyun.database.core.internal.JsonArrayParser;
-import net.ximatai.muyun.database.core.internal.JsonArrayParserLoader;
-
 import java.lang.reflect.Constructor;
-import java.lang.reflect.Modifier;
-import java.util.*;
+import java.util.HashMap;
+import java.util.Map;
 
 public final class EntityMapper {
 
@@ -34,7 +30,7 @@ public final class EntityMapper {
             if (value == null && !includeNull) {
                 continue;
             }
-            result.put(fieldMeta.getColumnName(), toDatabaseValue(fieldMeta, value, converter));
+            result.put(fieldMeta.getColumnName(), FieldValueCodec.toDatabaseValue(fieldMeta, value, converter));
         }
 
         return result;
@@ -61,7 +57,7 @@ public final class EntityMapper {
                 continue;
             }
 
-            Object converted = convertValue(value, fieldMeta, converter);
+            Object converted = FieldValueCodec.fromDatabaseValue(value, fieldMeta, converter);
             fieldMeta.write(entity, converted);
         }
 
@@ -81,18 +77,6 @@ public final class EntityMapper {
         return null;
     }
 
-    private static Object toDatabaseValue(EntityFieldMeta fieldMeta,
-                                          Object value,
-                                          DatabaseValueConverter valueConverter) {
-        if (fieldMeta.getColumnType() == ColumnType.SET) {
-            return toCsvSetValue(value);
-        }
-        if (fieldMeta.getColumnType() == ColumnType.JSON_SET) {
-            return toJsonSetValue(value);
-        }
-        return valueConverter.toDatabaseValue(value);
-    }
-
     private static <T> T instantiate(Class<T> entityClass) {
         try {
             Constructor<T> constructor = entityClass.getDeclaredConstructor();
@@ -106,170 +90,4 @@ public final class EntityMapper {
             );
         }
     }
-
-    private static Object convertValue(Object value,
-                                       EntityFieldMeta fieldMeta,
-                                       DatabaseValueConverter valueConverter) {
-        if (fieldMeta.getColumnType() == ColumnType.SET) {
-            return fromCsvSetValue(value, fieldMeta.getFieldType());
-        }
-        if (fieldMeta.getColumnType() == ColumnType.JSON_SET) {
-            return fromJsonSetValue(value, fieldMeta.getFieldType());
-        }
-
-        Class<?> targetType = fieldMeta.getFieldType();
-        return valueConverter.fromDatabaseValue(value, targetType);
-    }
-
-    private static String toCsvSetValue(Object value) {
-        if (value == null) {
-            return null;
-        }
-        LinkedHashSet<String> normalized = normalizeToSet(value, true);
-        return normalized.isEmpty() ? "" : String.join(",", normalized);
-    }
-
-    private static Object fromCsvSetValue(Object value, Class<?> targetType) {
-        LinkedHashSet<String> normalized = normalizeToSet(value, false);
-        return adaptCollection(normalized, targetType);
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Collection<String> instantiateCollection(Class<?> targetType) {
-        if (!Collection.class.isAssignableFrom(targetType)
-                || targetType.isInterface()
-                || Modifier.isAbstract(targetType.getModifiers())) {
-            return null;
-        }
-        try {
-            Constructor<?> constructor = targetType.getDeclaredConstructor();
-            constructor.setAccessible(true);
-            Object instance = constructor.newInstance();
-            if (instance instanceof Collection<?>) {
-                return (Collection<String>) instance;
-            }
-        } catch (Exception ignored) {
-            // fall through and use default LinkedHashSet
-        }
-        return null;
-    }
-
-    private static LinkedHashSet<String> normalizeToSet(Object value, boolean strictCsvValue) {
-        LinkedHashSet<String> normalized = new LinkedHashSet<>();
-        if (value == null) {
-            return normalized;
-        }
-        if (value instanceof String text) {
-            if (text.isBlank()) {
-                return normalized;
-            }
-            for (String part : text.split(",")) {
-                addNormalized(normalized, part, strictCsvValue);
-            }
-            return normalized;
-        }
-        if (value instanceof Collection<?> collection) {
-            for (Object item : collection) {
-                addNormalized(normalized, item, strictCsvValue);
-            }
-            return normalized;
-        }
-        addNormalized(normalized, value, strictCsvValue);
-        return normalized;
-    }
-
-    private static void addNormalized(LinkedHashSet<String> normalized, Object raw, boolean strictCsvValue) {
-        if (raw == null) {
-            return;
-        }
-        String text = String.valueOf(raw).trim();
-        if (strictCsvValue && text.contains(",")) {
-            throw new IllegalArgumentException("SET value cannot contain ',' in CSV storage: " + text);
-        }
-        if (!text.isEmpty()) {
-            normalized.add(text);
-        }
-    }
-
-    private static String toJsonSetValue(Object value) {
-        if (value == null) {
-            return null;
-        }
-        LinkedHashSet<String> normalized = new LinkedHashSet<>();
-        if (value instanceof Collection<?> collection) {
-            for (Object item : collection) {
-                if (item != null) {
-                    normalized.add(String.valueOf(item));
-                }
-            }
-        } else if (value instanceof String text && !text.isBlank()) {
-            String content = text.trim();
-            if (content.startsWith("[")) {
-                JsonArrayParser parser = JsonArrayParserLoader.get();
-                return parser.serialize(parser.parse(content));
-            }
-            normalized.add(content);
-        } else if (value != null) {
-            normalized.add(String.valueOf(value));
-        }
-        JsonArrayParser parser = JsonArrayParserLoader.get();
-        return parser.serialize(new ArrayList<>(normalized));
-    }
-
-    private static Object fromJsonSetValue(Object value, Class<?> targetType) {
-        if (value == null) {
-            return null;
-        }
-        LinkedHashSet<String> result = new LinkedHashSet<>();
-        if (value instanceof String text) {
-            if (text.isBlank()) {
-                return adaptCollection(result, targetType);
-            }
-            JsonArrayParser parser = JsonArrayParserLoader.get();
-            result.addAll(parser.parse(text));
-        } else if (value instanceof Collection<?> collection) {
-            for (Object item : collection) {
-                if (item != null) {
-                    result.add(String.valueOf(item));
-                }
-            }
-        } else {
-            result.add(String.valueOf(value));
-        }
-        return adaptCollection(result, targetType);
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Object adaptCollection(LinkedHashSet<String> elements, Class<?> targetType) {
-        if (Collection.class.isAssignableFrom(targetType) && targetType.isInterface()) {
-            if (List.class.isAssignableFrom(targetType)) {
-                return new ArrayList<>(elements);
-            }
-            if (Queue.class.isAssignableFrom(targetType)) {
-                return new LinkedList<>(elements);
-            }
-            return elements;
-        }
-        if (targetType.isAssignableFrom(LinkedHashSet.class)) {
-            return elements;
-        }
-        if (targetType.isAssignableFrom(TreeSet.class)
-                || SortedSet.class.isAssignableFrom(targetType)
-                || NavigableSet.class.isAssignableFrom(targetType)) {
-            return new TreeSet<>(elements);
-        }
-        if (targetType.isAssignableFrom(ArrayList.class)) {
-            return new ArrayList<>(elements);
-        }
-        if (targetType.isAssignableFrom(LinkedList.class)) {
-            return new LinkedList<>(elements);
-        }
-        Collection<String> customCollection = instantiateCollection(targetType);
-        if (customCollection != null) {
-            customCollection.addAll(elements);
-            return customCollection;
-        }
-        return elements;
-    }
-
 }
