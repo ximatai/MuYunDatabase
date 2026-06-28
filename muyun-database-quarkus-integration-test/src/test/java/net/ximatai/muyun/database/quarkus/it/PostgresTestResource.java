@@ -13,7 +13,7 @@ public class PostgresTestResource implements QuarkusTestResourceLifecycleManager
 
     @Override
     public Map<String, String> start() {
-        if (!DockerClientFactory.instance().isDockerAvailable()) {
+        if (!isDockerAvailable()) {
             if (Boolean.getBoolean("muyun.postgres.it.required")) {
                 throw new IllegalStateException("PostgreSQL integration tests are required, but Docker is not available.");
             }
@@ -36,6 +36,14 @@ public class PostgresTestResource implements QuarkusTestResourceLifecycleManager
         config.put("muyun.database.default-schema", "public");
         config.put("muyun.database.install-postgres-plugins", "true");
         return config;
+    }
+
+    static boolean isDockerAvailable() {
+        try {
+            return DockerClientFactory.instance().isDockerAvailable();
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     @Override
