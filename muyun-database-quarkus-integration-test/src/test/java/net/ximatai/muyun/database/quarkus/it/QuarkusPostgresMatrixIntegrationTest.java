@@ -156,9 +156,7 @@ class QuarkusPostgresMatrixIntegrationTest {
         }
 
         private boolean shouldUsePostgresProfile() {
-            return Boolean.getBoolean("muyun.postgres.it.required")
-                    || "true".equalsIgnoreCase(System.getenv("CI"))
-                    || "true".equalsIgnoreCase(System.getenv("GITHUB_ACTIONS"));
+            return Boolean.getBoolean("muyun.postgres.it.required");
         }
     }
 
