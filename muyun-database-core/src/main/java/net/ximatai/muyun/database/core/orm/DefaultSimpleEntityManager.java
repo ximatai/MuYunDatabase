@@ -370,13 +370,24 @@ public class DefaultSimpleEntityManager implements SimpleEntityManager {
     private Map<String, Object> resolveConditionColumns(EntityMeta meta, Map<String, Object> conditions) {
         Map<String, Object> resolved = new LinkedHashMap<>();
         for (Map.Entry<String, Object> entry : conditions.entrySet()) {
-            String columnName = meta.resolveColumnName(entry.getKey());
-            if (columnName == null || !SqlIdentifiers.isSafe(columnName)) {
+            EntityFieldMeta fieldMeta = resolveConditionField(meta, entry.getKey());
+            if (fieldMeta == null || !SqlIdentifiers.isSafe(fieldMeta.getColumnName())) {
                 throw new OrmException(OrmException.Code.INVALID_CRITERIA, "Unknown or unsafe condition field: " + entry.getKey());
             }
-            resolved.put(columnName, valueConverter.toDatabaseValue(entry.getValue()));
+            resolved.put(
+                    fieldMeta.getColumnName(),
+                    FieldValueCodec.toDatabaseValue(fieldMeta, entry.getValue(), valueConverter)
+            );
         }
         return resolved;
+    }
+
+    private EntityFieldMeta resolveConditionField(EntityMeta meta, String fieldOrColumn) {
+        EntityFieldMeta byField = meta.findByFieldName(fieldOrColumn);
+        if (byField != null) {
+            return byField;
+        }
+        return meta.findByColumnName(fieldOrColumn);
     }
 
     int executeUpsertForTest(String schema, String tableName, Map<String, Object> body) {
