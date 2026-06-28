@@ -20,7 +20,7 @@
 
 ```groovy
 dependencies {
-    implementation("net.ximatai.muyun.database:muyun-database-jdbi:3.26.11")
+    implementation("net.ximatai.muyun.database:muyun-database-jdbi:3.26.12")
 }
 ```
 
@@ -28,7 +28,7 @@ dependencies {
 <dependency>
   <groupId>net.ximatai.muyun.database</groupId>
   <artifactId>muyun-database-jdbi</artifactId>
-  <version>3.26.11</version>
+  <version>3.26.12</version>
 </dependency>
 ```
 
@@ -149,6 +149,7 @@ class ArticleEntity {
 2. 写入时忽略 `null` 元素、按集合语义去重、保留首次出现顺序；空集合写入为 `[]`，字段值为 `null` 时写入为 `null`。
 3. 读取或写入非法 JSON 数组字符串会直接失败，不会静默降级为单个元素。
 4. 核心模块内置轻量 JSON 数组解析器；如需使用 Jackson 解析器，可额外引入 `muyun-database-core-json-jackson`。
+5. 若集合字段声明了可识别泛型元素类型，自定义 `DatabaseValueConverter` 可作用于 SET/JSON_SET 的集合元素。
 
 ### 1.5 迁移控制（可选）
 
@@ -168,7 +169,7 @@ orm.ensureTable(UserEntity.class, MigrationOptions.dryRunStrict());
 
 ```groovy
 dependencies {
-    implementation("net.ximatai.muyun.database:muyun-database-spring-boot-starter:3.26.11")
+    implementation("net.ximatai.muyun.database:muyun-database-spring-boot-starter:3.26.12")
 }
 ```
 

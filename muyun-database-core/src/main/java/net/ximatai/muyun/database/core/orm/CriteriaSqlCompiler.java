@@ -52,14 +52,19 @@ public final class CriteriaSqlCompiler {
         Objects.requireNonNull(columnResolver, "columnResolver must not be null");
         Objects.requireNonNull(dbType, "dbType must not be null");
 
-        ClauseContext context = new ClauseContext(columnResolver, dbType);
+        ClauseContext context = new ClauseContext(columnResolver, dbType, null, valueConverter);
         String sql = compileGroup(criteria.getRoot(), context);
         return new CompiledCriteria(sql, context.params);
     }
 
     CompiledCriteria compile(Criteria criteria, EntityMeta meta, DBInfo.Type dbType) {
+        Objects.requireNonNull(criteria, "criteria must not be null");
         Objects.requireNonNull(meta, "meta must not be null");
-        return compile(criteria, meta::resolveColumnName, dbType);
+        Objects.requireNonNull(dbType, "dbType must not be null");
+
+        ClauseContext context = new ClauseContext(meta::resolveColumnName, dbType, meta, valueConverter);
+        String sql = compileGroup(criteria.getRoot(), context);
+        return new CompiledCriteria(sql, context.params);
     }
 
     private String compileGroup(CriteriaGroup group, ClauseContext context) {
@@ -97,7 +102,7 @@ public final class CriteriaSqlCompiler {
 
     private String compare(CriteriaClause clause, ClauseContext context, String op) {
         String key = "p" + context.nextParamIndex();
-        context.params.put(key, valueConverter.toDatabaseValue(firstValue(clause)));
+        context.params.put(key, context.toDatabaseValue(clause, firstValue(clause)));
         return resolveColumn(clause, context) + " " + op + " :" + key;
     }
 
@@ -108,8 +113,8 @@ public final class CriteriaSqlCompiler {
         String key = "p" + context.nextParamIndex();
         String key1 = key + "_1";
         String key2 = key + "_2";
-        context.params.put(key1, valueConverter.toDatabaseValue(clause.getValues().get(0)));
-        context.params.put(key2, valueConverter.toDatabaseValue(clause.getValues().get(1)));
+        context.params.put(key1, context.toDatabaseValue(clause, clause.getValues().get(0)));
+        context.params.put(key2, context.toDatabaseValue(clause, clause.getValues().get(1)));
         return resolveColumn(clause, context) + " BETWEEN :" + key1 + " AND :" + key2;
     }
 
@@ -122,7 +127,7 @@ public final class CriteriaSqlCompiler {
         for (int i = 0; i < clause.getValues().size(); i++) {
             String listKey = key + "_" + i;
             holders.add(":" + listKey);
-            context.params.put(listKey, valueConverter.toDatabaseValue(clause.getValues().get(i)));
+            context.params.put(listKey, context.toDatabaseValue(clause, clause.getValues().get(i)));
         }
         return resolveColumn(clause, context) + " IN (" + String.join(", ", holders) + ")";
     }
@@ -136,7 +141,7 @@ public final class CriteriaSqlCompiler {
         for (int i = 0; i < clause.getValues().size(); i++) {
             String listKey = key + "_" + i;
             holders.add(":" + listKey);
-            context.params.put(listKey, valueConverter.toDatabaseValue(clause.getValues().get(i)));
+            context.params.put(listKey, context.toDatabaseValue(clause, clause.getValues().get(i)));
         }
         return resolveColumn(clause, context) + " NOT IN (" + String.join(", ", holders) + ")";
     }
@@ -215,16 +220,42 @@ public final class CriteriaSqlCompiler {
     private static class ClauseContext {
         private final CriteriaColumnResolver columnResolver;
         private final DBInfo.Type dbType;
+        private final EntityMeta meta;
+        private final DatabaseValueConverter valueConverter;
         private final Map<String, Object> params = new HashMap<>();
         private int paramIndex;
 
-        private ClauseContext(CriteriaColumnResolver columnResolver, DBInfo.Type dbType) {
+        private ClauseContext(CriteriaColumnResolver columnResolver,
+                              DBInfo.Type dbType,
+                              EntityMeta meta,
+                              DatabaseValueConverter valueConverter) {
             this.columnResolver = columnResolver;
             this.dbType = dbType;
+            this.meta = meta;
+            this.valueConverter = valueConverter;
         }
 
         private int nextParamIndex() {
             return paramIndex++;
+        }
+
+        private Object toDatabaseValue(CriteriaClause clause, Object value) {
+            EntityFieldMeta fieldMeta = resolveFieldMeta(clause.getField());
+            if (fieldMeta == null) {
+                return valueConverter.toDatabaseValue(value);
+            }
+            return FieldValueCodec.toDatabaseValue(fieldMeta, value, valueConverter);
+        }
+
+        private EntityFieldMeta resolveFieldMeta(String fieldOrColumn) {
+            if (meta == null) {
+                return null;
+            }
+            EntityFieldMeta byField = meta.findByFieldName(fieldOrColumn);
+            if (byField != null) {
+                return byField;
+            }
+            return meta.findByColumnName(fieldOrColumn);
         }
     }
 

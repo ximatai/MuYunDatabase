@@ -96,5 +96,6 @@ int upsert(T entity);
 12. `ColumnType.JSON_SET` 必须通过 `@Column(type = ColumnType.JSON_SET)` 显式声明；默认 `Set<String>` 推断结果仍为 `ColumnType.SET`。
 13. `ColumnType.JSON_SET` 的元素按字符串处理：写入时忽略 `null` 元素、按集合语义去重、保留首次出现顺序；空集合写入为 `[]`，字段值为 `null` 时写入为 `null`。
 14. `ColumnType.JSON_SET` 读取非法 JSON 数组或写入非法 JSON 数组字符串时直接拒绝，不做静默降级。
+15. `ColumnType.SET` / `ColumnType.JSON_SET` 字段声明了可识别泛型元素类型时，自定义 `DatabaseValueConverter` 可作用于集合元素；`JSON_SET` 底层仍保持 JSON 字符串数组语义。
 
 下一步：若你在做历史项目改造，请按 [`REFACTOR_GUIDE.md`](REFACTOR_GUIDE.md) 的“推荐重构路径”执行。

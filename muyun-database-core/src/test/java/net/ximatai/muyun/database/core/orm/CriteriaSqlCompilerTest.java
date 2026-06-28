@@ -5,8 +5,10 @@ import net.ximatai.muyun.database.core.metadata.DBInfo;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -130,6 +132,30 @@ class CriteriaSqlCompilerTest {
     }
 
     @Test
+    void shouldUseFieldCodecWhenCompilingWithEntityMeta() throws NoSuchFieldException {
+        EntityFieldMeta id = fieldMeta("id", "id", ColumnType.VARCHAR, true);
+        EntityFieldMeta statuses = fieldMeta("statuses", "statuses", ColumnType.SET, false);
+        EntityMeta meta = new EntityMeta(
+                StaticEntity.class,
+                "test_entity",
+                null,
+                null,
+                List.of(id, statuses),
+                id
+        );
+        CriteriaSqlCompiler customCompiler = new CriteriaSqlCompiler(new TestStatusCodeConverter());
+
+        CompiledCriteria compiled = customCompiler.compile(
+                Criteria.of().eq("statuses", new LinkedHashSet<>(List.of(TestStatus.ENABLED, TestStatus.DISABLED))),
+                meta,
+                DBInfo.Type.POSTGRESQL
+        );
+
+        assertEquals("\"statuses\" = :p0", compiled.getSql());
+        assertEquals(Map.of("p0", "enabled,disabled"), compiled.getParams());
+    }
+
+    @Test
     void copyOfShouldSnapshotCriteria() {
         Criteria source = Criteria.of().eq("code", "A001");
         Criteria copy = Criteria.copyOf(source);
@@ -185,13 +211,21 @@ class CriteriaSqlCompilerTest {
     }
 
     private EntityFieldMeta fieldMeta(String fieldName, String columnName, boolean id) throws NoSuchFieldException {
+        return fieldMeta(fieldName, columnName, ColumnType.VARCHAR, id);
+    }
+
+    private EntityFieldMeta fieldMeta(String fieldName,
+                                      String columnName,
+                                      ColumnType columnType,
+                                      boolean id) throws NoSuchFieldException {
         Field field = StaticEntity.class.getDeclaredField(fieldName);
-        return new EntityFieldMeta(field, columnName, ColumnType.VARCHAR, id);
+        return new EntityFieldMeta(field, columnName, columnType, id);
     }
 
     private static class StaticEntity {
         private String id;
         private String code;
+        private Set<TestStatus> statuses;
     }
 
     private enum TestStatus {
