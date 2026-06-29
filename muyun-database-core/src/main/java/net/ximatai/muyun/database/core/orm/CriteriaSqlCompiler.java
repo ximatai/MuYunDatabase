@@ -180,33 +180,21 @@ public final class CriteriaSqlCompiler {
     }
 
     private String renderCollectionContains(CollectionField collection, String key, DBInfo.Type dbType) {
-        if (collection.fieldMeta.getColumnType() == ColumnType.JSON_SET) {
-            if (dbType == DBInfo.Type.POSTGRESQL) {
-                return "jsonb_exists(" + collection.columnSql + "::jsonb, :" + key + ")";
-            }
-            return "JSON_CONTAINS(CAST(" + collection.columnSql + " AS JSON), JSON_QUOTE(:" + key + "))";
-        }
-        if (dbType == DBInfo.Type.POSTGRESQL) {
-            return "POSITION(',' || :" + key + " || ',' IN ',' || COALESCE("
-                    + collection.columnSql + ", '') || ',') > 0";
-        }
-        return "FIND_IN_SET(:" + key + ", COALESCE(" + collection.columnSql + ", '')) > 0";
+        return CriteriaDialectExpressions.collectionContains(
+                dbType,
+                collection.fieldMeta.getColumnType(),
+                collection.columnSql,
+                ":" + key
+        );
     }
 
     private String renderCollectionEmpty(CriteriaClause clause, ClauseContext context, boolean not) {
         CollectionField collection = resolveCollectionField(clause, context);
-        String expression;
-        if (collection.fieldMeta.getColumnType() == ColumnType.JSON_SET) {
-            if (context.dbType == DBInfo.Type.POSTGRESQL) {
-                expression = "(" + collection.columnSql + " IS NULL OR jsonb_array_length("
-                        + collection.columnSql + "::jsonb) = 0)";
-            } else {
-                expression = "(" + collection.columnSql + " IS NULL OR JSON_LENGTH(CAST("
-                        + collection.columnSql + " AS JSON)) = 0)";
-            }
-        } else {
-            expression = "(" + collection.columnSql + " IS NULL OR " + collection.columnSql + " = '')";
-        }
+        String expression = CriteriaDialectExpressions.collectionIsEmpty(
+                context.dbType,
+                collection.fieldMeta.getColumnType(),
+                collection.columnSql
+        );
         return not ? "NOT " + expression : expression;
     }
 
