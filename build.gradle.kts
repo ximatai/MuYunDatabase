@@ -11,6 +11,13 @@ checkstyle {
     toolVersion = "13.7.0"
 }
 
+configurations.named("checkstyle") {
+    resolutionStrategy.force(
+        "org.apache.commons:commons-lang3:3.20.0",
+        "org.codehaus.plexus:plexus-utils:4.0.3"
+    )
+}
+
 val releasePublishModules = listOf(
     "muyun-database-core",
     "muyun-database-core-json-jackson",
