@@ -1,6 +1,6 @@
 plugins {
     java
-    id("io.quarkus") version "3.22.3"
+    id("io.quarkus") version "3.37.0"
 }
 
 group = "net.ximatai.muyun.database.samples"
@@ -18,7 +18,7 @@ java {
 }
 
 dependencies {
-    implementation(enforcedPlatform("io.quarkus.platform:quarkus-bom:3.22.3"))
+    implementation(enforcedPlatform("io.quarkus.platform:quarkus-bom:3.37.0"))
     implementation("io.quarkus:quarkus-rest")
     implementation("io.quarkus:quarkus-jdbc-h2")
     implementation(project(":muyun-database-quarkus"))

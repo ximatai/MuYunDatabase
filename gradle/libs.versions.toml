@@ -1,17 +1,17 @@
 [versions]
-jdbi3 = "3.50.0"
-junit = "6.0.1"
+jdbi3 = "3.53.0"
+junit = "6.1.1"
 testcontainers = "1.21.4"
 
-hikariCP = "7.0.2"
+hikariCP = "7.1.0"
 postgresql = "42.7.11"
-mysql = "9.5.0"
+mysql = "9.7.0"
 
 slf4j = "2.0.17"
-logback = "1.5.21"
-spring-boot = "3.5.0"
-jackson = "2.18.1"
-quarkus = "3.22.3"
+logback = "1.5.37"
+spring-boot = "4.1.0"
+jackson = "2.22.0"
+quarkus = "3.37.0"
 
 [libraries]
 jdbi3-core = { module = "org.jdbi:jdbi3-core", version.ref = "jdbi3" }
@@ -33,8 +33,8 @@ logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "lo
 spring-boot-autoconfigure = { module = "org.springframework.boot:spring-boot-autoconfigure", version.ref = "spring-boot" }
 spring-boot-configuration-processor = { module = "org.springframework.boot:spring-boot-configuration-processor", version.ref = "spring-boot" }
 spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test", version.ref = "spring-boot" }
-spring-jdbc = { module = "org.springframework:spring-jdbc", version = "6.2.7" }
-spring-tx = { module = "org.springframework:spring-tx", version = "6.2.7" }
+spring-jdbc = { module = "org.springframework:spring-jdbc", version = "7.0.8" }
+spring-tx = { module = "org.springframework:spring-tx", version = "7.0.8" }
 jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
 quarkus-bom = { module = "io.quarkus.platform:quarkus-bom", version.ref = "quarkus" }
 quarkus-arc = { module = "io.quarkus:quarkus-arc" }

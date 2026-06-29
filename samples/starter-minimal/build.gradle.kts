@@ -1,6 +1,5 @@
 plugins {
-    id("org.springframework.boot") version "3.5.0"
-    id("io.spring.dependency-management") version "1.1.7"
+    id("org.springframework.boot") version "4.1.0"
     java
 }
 
@@ -18,10 +17,11 @@ repositories {
 }
 
 dependencies {
-    implementation("org.springframework.boot:spring-boot-starter")
-    implementation("org.springframework.boot:spring-boot-starter-jdbc")
-    implementation("org.springframework.boot:spring-boot-starter-aop")
-    implementation("org.postgresql:postgresql:42.7.8")
+    implementation(platform("org.springframework.boot:spring-boot-dependencies:4.1.0"))
+
+    implementation("org.springframework.boot:spring-boot-starter:4.1.0")
+    implementation("org.springframework.boot:spring-boot-starter-jdbc:4.1.0")
+    implementation("org.postgresql:postgresql:42.7.11")
 
     implementation("net.ximatai.muyun.database:muyun-database-spring-boot-starter:3.26.14")
 }
