@@ -6,19 +6,24 @@
 
 ### 新增
 
-- 暂无。
+- 新增运行态表模型元数据 `TableMeta` / `FieldMeta` / `RuntimeFieldMeta`，让 runtime-defined records 可以显式提供字段名、列名、`ColumnType`、`elementColumnType`、字段 Java 类型和集合元素 Java 类型。
+- `RuntimeTableGateway + TableMeta` 路径支持 `SET` / `JSON_SET` / PostgreSQL `ARRAY` 集合 Criteria：`contains`、`containsAny`、`containsAll`、`isEmpty`、`isNotEmpty`。
+- `RuntimeTableGateway + TableMeta` 路径支持字段级 codec 和集合元素 `DatabaseValueConverter`，运行态集合字段的写入值、查询参数和读回值会按字段元数据转换。
 
 ### 变更
 
-- 暂无。
+- `RuntimeTableGateway` 使用 `TableMeta` 或双向 `RuntimeColumnMapper` 构造时，`query/list/pageQuery` 默认返回逻辑字段 Map；需要物理列 Map 时使用 `queryColumns/listColumns/pageQueryColumns`。
+- 静态实体和运行态表会在元数据解析阶段更早校验重复列、无效字段元数据和不支持的 `ARRAY` 元素类型，配置错误会提前以 `INVALID_MAPPING` 暴露。
 
 ### 修复
 
-- 暂无。
+- 补齐 `RuntimeTableGateway + TableMeta` 在真实 MySQL/PostgreSQL 下的 `SET`、`JSON_SET`、PostgreSQL `ARRAY` 集合 Criteria 回归验证。
 
 ### 迁移说明
 
-- 暂无。
+- 需要运行态集合 Criteria 或集合元素 codec 时，应从旧的单向 `CriteriaColumnResolver` 构造方式迁移到 `RuntimeTableGateway + TableMeta`。
+- 旧的单向 `CriteriaColumnResolver` 构造方式保持兼容，只承诺简单字段到物理列解析；不承诺集合 Criteria 和字段级集合 codec。
+- `query/list/pageQuery` 的返回键名可能因构造方式不同而不同：`TableMeta` / `RuntimeColumnMapper` 返回逻辑字段名，旧单向 resolver 返回底层物理列名。
 
 ## 3.26.13
 

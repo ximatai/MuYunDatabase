@@ -5,6 +5,7 @@
 - 适合对象：首次接入、需要最小可运行示例的同学
 - 建议前置：先浏览 [`../README.md`](../README.md) 了解模块边界
 - 若关注稳定语义与约束：继续阅读 [`API_CONTRACT.md`](API_CONTRACT.md)
+- 若需要迁移运行态字段配置：继续阅读 [`RUNTIME_METADATA_MIGRATION.md`](RUNTIME_METADATA_MIGRATION.md)
 
 ## 0. 前置条件
 
@@ -20,7 +21,7 @@
 
 ```groovy
 dependencies {
-    implementation("net.ximatai.muyun.database:muyun-database-jdbi:3.26.13")
+    implementation("net.ximatai.muyun.database:muyun-database-jdbi:3.26.14")
 }
 ```
 
@@ -28,7 +29,7 @@ dependencies {
 <dependency>
   <groupId>net.ximatai.muyun.database</groupId>
   <artifactId>muyun-database-jdbi</artifactId>
-  <version>3.26.13</version>
+  <version>3.26.14</version>
 </dependency>
 ```
 
@@ -151,6 +152,93 @@ class ArticleEntity {
 4. 核心模块内置轻量 JSON 数组解析器；如需使用 Jackson 解析器，可额外引入 `muyun-database-core-json-jackson`。
 5. 若集合字段声明了可识别泛型元素类型，自定义 `DatabaseValueConverter` 可作用于 SET/JSON_SET 的集合元素。
 
+### 1.4.2 运行态单表记录（`RuntimeTableGateway + TableMeta`）
+
+当表结构和字段模型来自运行时配置，而不是 Java 静态实体时，使用 `TableMeta` 声明字段元数据。这样运行态 Map 记录也能使用集合 Criteria、字段级 codec 和逻辑字段名返回。
+
+```java
+enum Status {
+    ENABLED("E"),
+    DISABLED("D");
+
+    private final String code;
+
+    Status(String code) {
+        this.code = code;
+    }
+
+    String code() {
+        return code;
+    }
+
+    static Status fromCode(String code) {
+        return "D".equals(code) ? DISABLED : ENABLED;
+    }
+}
+
+DatabaseValueConverter statusConverter = new DatabaseValueConverter() {
+    @Override
+    public Object toDatabaseValue(Object value) {
+        if (value instanceof Status status) {
+            return status.code();
+        }
+        return DatabaseValueConverter.DEFAULT.toDatabaseValue(value);
+    }
+
+    @Override
+    public Object fromDatabaseValue(Object value, Class<?> targetType) {
+        if (targetType == Status.class && value != null) {
+            return Status.fromCode(String.valueOf(value));
+        }
+        return DatabaseValueConverter.DEFAULT.fromDatabaseValue(value, targetType);
+    }
+};
+
+String tableName = "demo_runtime_user";
+new TableBuilder(db).build(TableWrapper.withName(tableName)
+        .setPrimaryKey(Column.of("id").setType(ColumnType.VARCHAR).setLength(64))
+        .addColumn(Column.of("v_name").setLength(64))
+        .addColumn(Column.of("csv_tags").setType(ColumnType.SET))
+        .addColumn(Column.of("json_statuses").setType(ColumnType.JSON_SET)));
+
+TableMeta tableMeta = TableMeta.builder(db.getDefaultSchemaName(), tableName)
+        .id("id", "id", ColumnType.VARCHAR, String.class)
+        .field("name", "v_name", ColumnType.VARCHAR, String.class)
+        .csvSet("tags", "csv_tags", Set.class, String.class)
+        .jsonSet("statuses", "json_statuses", Set.class, Status.class)
+        .build();
+
+RuntimeTableGateway users = RuntimeTableGateway.of(db, tableMeta, statusConverter);
+
+users.insert(Map.of(
+        "id", "u_1",
+        "name", "runtime-alice",
+        "tags", Set.of("admin", "report"),
+        "statuses", Set.of(Status.ENABLED)
+));
+
+List<Map<String, Object>> logicalRows = users.query(
+        Criteria.of().containsAny("statuses", List.of(Status.ENABLED)),
+        PageRequest.of(1, 20),
+        Sort.asc("name")
+);
+
+// query/list/pageQuery(...).getRecords() 返回逻辑字段名：name、tags、statuses
+Set<Status> statuses = (Set<Status>) logicalRows.getFirst().get("statuses");
+
+// queryColumns/listColumns/pageQueryColumns 返回物理列名：v_name、csv_tags、json_statuses
+List<Map<String, Object>> columnRows = users.listColumns(
+        Criteria.of().contains("tags", "admin")
+);
+Object rawJsonStatuses = columnRows.getFirst().get("json_statuses");
+```
+
+说明：
+
+1. `RuntimeTableGateway` 旧的 `CriteriaColumnResolver` 构造方式仍可用于简单字段到列名解析，但不承诺集合字段 codec。
+2. 需要 `contains` / `containsAny` / `containsAll` / `isEmpty` / `isNotEmpty` 时，应优先使用 `TableMeta` 构造入口。
+3. PostgreSQL 原生数组字段使用 `TableMeta.builder(...).array("labels", "labels", ColumnType.VARCHAR, List.class, String.class)` 声明。
+
 ### 1.5 迁移控制（可选）
 
 ```java
@@ -169,7 +257,7 @@ orm.ensureTable(UserEntity.class, MigrationOptions.dryRunStrict());
 
 ```groovy
 dependencies {
-    implementation("net.ximatai.muyun.database:muyun-database-spring-boot-starter:3.26.13")
+    implementation("net.ximatai.muyun.database:muyun-database-spring-boot-starter:3.26.14")
 }
 ```
 

@@ -45,8 +45,10 @@ import java.sql.SQLException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -600,6 +602,91 @@ public abstract class MuYunDatabaseBaseTest {
 
         assertEquals(1, gateway.deleteWhere(Map.of("id", id)));
         assertNull(db.getItem("basic", (String) id));
+    }
+
+    protected void testRuntimeTableGatewayCollectionCriteriaAgainstDatabase() {
+        String tableName = "runtime_collection_record";
+        TableWrapper table = TableWrapper.withName(tableName)
+                .setPrimaryKey(getPrimaryKey())
+                .addColumn(Column.of("v_marker").setType(ColumnType.VARCHAR).setLength(64))
+                .addColumn(Column.of("csv_tags").setType(ColumnType.SET))
+                .addColumn(Column.of("json_statuses").setType(ColumnType.JSON_SET));
+        new TableBuilder(db).build(table);
+        db.execute("delete from " + tableName);
+
+        String marker = "runtime_collection_" + UUID.randomUUID().toString().substring(0, 12);
+        RuntimeTableGateway gateway = new RuntimeTableGateway(
+                db,
+                TableMeta.builder(db.getDefaultSchemaName(), tableName)
+                        .id("id", "id", getDatabaseType() == DatabaseType.MYSQL ? ColumnType.BIGINT : ColumnType.VARCHAR, Object.class)
+                        .field("marker", "v_marker", ColumnType.VARCHAR, String.class)
+                        .csvSet("csvTags", "csv_tags", Set.class, String.class)
+                        .jsonSet("jsonStatuses", "json_statuses", Set.class, CollectionStatus.class)
+                        .build(),
+                new CollectionStatusCodeConverter()
+        );
+
+        gateway.insert(Map.of(
+                "marker", marker,
+                "csvTags", new LinkedHashSet<>(List.of("red", "blue")),
+                "jsonStatuses", new LinkedHashSet<>(List.of(CollectionStatus.ENABLED))
+        ));
+        gateway.insert(Map.of(
+                "marker", marker,
+                "csvTags", new LinkedHashSet<>(List.of("green")),
+                "jsonStatuses", new LinkedHashSet<>(List.of(CollectionStatus.DISABLED))
+        ));
+        gateway.insert(Map.of(
+                "marker", marker,
+                "csvTags", new LinkedHashSet<>(),
+                "jsonStatuses", new LinkedHashSet<>()
+        ));
+
+        assertEquals(1L, gateway.count(Criteria.of().eq("marker", marker).contains("csvTags", "red")));
+        assertEquals(1L, gateway.count(Criteria.of().eq("marker", marker).containsAny(
+                "csvTags",
+                List.of("red", "yellow")
+        )));
+        assertEquals(1L, gateway.count(Criteria.of().eq("marker", marker).containsAny(
+                "jsonStatuses",
+                List.of(CollectionStatus.DISABLED)
+        )));
+        assertEquals(1L, gateway.count(Criteria.of().eq("marker", marker).containsAll(
+                "csvTags",
+                List.of("red", "blue")
+        )));
+        assertEquals(1L, gateway.count(Criteria.of().eq("marker", marker).isEmpty("csvTags")));
+        assertEquals(1L, gateway.count(Criteria.of().eq("marker", marker).isEmpty("jsonStatuses")));
+
+        assertEquals(1, gateway.patchWhere(
+                Map.of("jsonStatuses", new LinkedHashSet<>(List.of(CollectionStatus.ENABLED, CollectionStatus.DISABLED))),
+                Map.of("marker", marker, "csvTags", new LinkedHashSet<>(List.of("green")))
+        ));
+        assertEquals(1L, gateway.count(Criteria.of().eq("marker", marker).containsAll(
+                "jsonStatuses",
+                List.of(CollectionStatus.ENABLED, CollectionStatus.DISABLED)
+        )));
+
+        List<Map<String, Object>> decoded = gateway.list(
+                Criteria.of().eq("marker", marker).contains("jsonStatuses", CollectionStatus.ENABLED),
+                Sort.asc("marker")
+        );
+        assertEquals(2, decoded.size());
+        assertTrue(decoded.stream().allMatch(row -> row.get("jsonStatuses") instanceof Set<?>));
+        assertTrue(decoded.stream().anyMatch(row -> ((Set<?>) row.get("jsonStatuses")).contains(CollectionStatus.ENABLED)));
+
+        List<Map<String, Object>> paged = gateway.query(
+                Criteria.of().eq("marker", marker).containsAny("csvTags", List.of("red", "green")),
+                PageRequest.of(1, 10)
+        );
+        assertEquals(2, paged.size());
+        assertTrue(paged.stream().allMatch(row -> row.get("csvTags") instanceof Set<?>));
+
+        List<Map<String, Object>> raw = gateway.listColumns(
+                Criteria.of().eq("marker", marker).contains("jsonStatuses", CollectionStatus.ENABLED)
+        );
+        assertTrue(raw.stream().allMatch(row -> row.containsKey("json_statuses")));
+        assertTrue(raw.stream().noneMatch(row -> row.containsKey("jsonStatuses")));
     }
 
     protected void testQuery() {

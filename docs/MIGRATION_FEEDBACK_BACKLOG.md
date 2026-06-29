@@ -94,6 +94,54 @@
 1. 给出边界决策清单（适合 Repository / 适合底层 SQL）。
 2. 至少提供 1 组复杂场景示例。
 
+### [P1][待评估] 7. Runtime TableMeta Builder 便捷 API
+
+- 问题：`TableMeta.builder(...)` 当前需要调用方反复提供 `ColumnType`、字段 Java 类型和集合元素类型，动态模型接入代码偏啰嗦。
+- 目标：在不新增第二套 runtime 元数据入口的前提下，补充更语义化的 builder 快捷方法。
+- 候选 API：
+1. `varchar(fieldName, columnName)` / `text(...)` / `longText(...)`。
+2. `jsonSetOf(fieldName, columnName, elementJavaType)`。
+3. `arrayOf(fieldName, columnName, elementColumnType, elementJavaType)`。
+- 影响面：
+1. `muyun-database-core` 的 `TableMeta.Builder`。
+2. Quickstart 和 runtime 迁移指南示例。
+- 验收：
+1. 现有 `field/csvSet/jsonSet/array` 方法保持兼容。
+2. 新快捷方法只减少样板代码，不改变字段元数据语义。
+3. Builder 单元测试覆盖默认字段类型、集合元素类型和 ARRAY 元素列类型。
+
+### [P2][待评估] 8. RuntimeTableGateway 方法级 JavaDoc
+
+- 问题：`RuntimeTableGateway` 已有类级说明，但各查询方法的返回字段名差异需要读文档才能确认。
+- 目标：在公开方法 JavaDoc 中直接说明逻辑字段 Map、物理列 Map、Criteria 编译和 codec 行为。
+- 影响面：
+1. `RuntimeTableGateway`。
+2. 发布 javadoc。
+- 验收：
+1. `query/list/pageQuery` 明确返回逻辑字段名的条件。
+2. `queryColumns/listColumns/pageQueryColumns` 明确返回物理列名。
+3. 旧 `CriteriaColumnResolver` 构造方式的能力边界不被夸大。
+
+### [P2][待评估] 9. Runtime 元数据边界测试矩阵扩展
+
+- 问题：当前已覆盖主路径和真实库回归，但部分边界场景仍分散在单元测试中，长期演进时容易漏看。
+- 目标：补一组面向 runtime 元数据的边界测试矩阵。
+- 候选场景：
+1. 字段名和列名交叉冲突。
+2. 未知字段、空字段、非法列名。
+3. `DatabaseValueConverter` 在写入、查询参数、读回路径抛异常。
+4. `containsAny` / `containsAll` 空集合语义。
+5. 非 PostgreSQL 使用 `ARRAY` 的失败路径。
+- 影响面：
+1. `muyun-database-core` 单元测试。
+2. `muyun-database-test` 双库回归测试。
+- 验收：
+1. 每个边界场景有明确异常类型或返回语义断言。
+2. MySQL/PostgreSQL 差异有专门用例说明。
+3. 不扩大 runtime API 的业务语义边界。
+4. 优先补单元测试，真实库回归只覆盖跨库差异或 SQL 方言相关场景。
+
 ## 变更记录
 
 1. 初始版本：迁移实战反馈归档（待评估池）。
+2. 增补 Runtime Table 元数据治理后的候选增强项：Builder 便捷 API、方法级 JavaDoc、边界测试矩阵。

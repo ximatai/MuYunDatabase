@@ -11,11 +11,17 @@ import java.util.Objects;
 
 /**
  * Single-table Map gateway for runtime-defined records.
+ * <p>
+ * Use the {@link TableMeta} constructors or factory methods when runtime
+ * fields need typed conversion, collection Criteria operators, or logical field
+ * names in query results. The legacy {@link CriteriaColumnResolver}
+ * constructors are kept for simple field-to-column Criteria resolution.
  */
 public class RuntimeTableGateway {
     private final IDatabaseOperations<Object> operations;
     private final String schema;
     private final String tableName;
+    private final TableMeta tableMeta;
     private final CriteriaColumnResolver columnResolver;
     private final RuntimeColumnMapper columnMapper;
     private final DatabaseValueConverter valueConverter;
@@ -38,18 +44,52 @@ public class RuntimeTableGateway {
         this.operations = (IDatabaseOperations<Object>) Objects.requireNonNull(operations, "operations must not be null");
         this.schema = schema == null || schema.isBlank() ? operations.getDefaultSchemaName() : requireIdentifier(schema, "schema");
         this.tableName = requireIdentifier(tableName, "tableName");
+        this.tableMeta = null;
         this.columnResolver = Objects.requireNonNull(columnResolver, "columnResolver must not be null");
         this.columnMapper = columnResolver instanceof RuntimeColumnMapper mapper ? mapper : null;
         this.valueConverter = valueConverter == null ? DatabaseValueConverter.DEFAULT : valueConverter;
         this.criteriaCompiler = new CriteriaSqlCompiler(this.valueConverter);
     }
 
+    @SuppressWarnings("unchecked")
+    public RuntimeTableGateway(IDatabaseOperations<?> operations,
+                               TableMeta tableMeta) {
+        this(operations, tableMeta, DatabaseValueConverter.DEFAULT);
+    }
+
+    @SuppressWarnings("unchecked")
+    public RuntimeTableGateway(IDatabaseOperations<?> operations,
+                               TableMeta tableMeta,
+                               DatabaseValueConverter valueConverter) {
+        this.operations = (IDatabaseOperations<Object>) Objects.requireNonNull(operations, "operations must not be null");
+        this.tableMeta = Objects.requireNonNull(tableMeta, "tableMeta must not be null");
+        this.schema = tableMeta.getSchema() == null || tableMeta.getSchema().isBlank()
+                ? operations.getDefaultSchemaName()
+                : requireIdentifier(tableMeta.getSchema(), "schema");
+        this.tableName = requireIdentifier(tableMeta.getTableName(), "tableName");
+        this.columnResolver = tableMeta;
+        this.columnMapper = tableMeta;
+        this.valueConverter = valueConverter == null ? DatabaseValueConverter.DEFAULT : valueConverter;
+        this.criteriaCompiler = new CriteriaSqlCompiler(this.valueConverter);
+    }
+
+    public static RuntimeTableGateway of(IDatabaseOperations<?> operations,
+                                         TableMeta tableMeta,
+                                         DatabaseValueConverter valueConverter) {
+        return new RuntimeTableGateway(operations, tableMeta, valueConverter);
+    }
+
+    public static RuntimeTableGateway of(IDatabaseOperations<?> operations,
+                                         TableMeta tableMeta) {
+        return new RuntimeTableGateway(operations, tableMeta);
+    }
+
     public Object insert(Map<String, Object> values) {
-        Map<String, Object> columns = toColumnMap(values);
+        Map<String, Object> columns = toColumnMap(values, OrmException.Code.INVALID_ENTITY);
         if (columns.isEmpty()) {
             throw new OrmException(OrmException.Code.INVALID_ENTITY, "runtime table insert values must not be empty");
         }
-        return operations.insertItem(schema, tableName, columns);
+        return operations.insertItem(schema, tableName, columns, primaryKeyColumnName());
     }
 
     public List<Map<String, Object>> query(Criteria criteria, PageRequest pageRequest, Sort... sorts) {
@@ -59,7 +99,7 @@ public class RuntimeTableGateway {
     public List<Map<String, Object>> queryColumns(Criteria criteria, PageRequest pageRequest, Sort... sorts) {
         Objects.requireNonNull(criteria, "criteria must not be null");
         Objects.requireNonNull(pageRequest, "pageRequest must not be null");
-        CompiledCriteria compiled = criteriaCompiler.compile(criteria, columnResolver, databaseType());
+        CompiledCriteria compiled = compile(criteria);
 
         StringBuilder sql = new StringBuilder("SELECT * FROM ").append(qualifiedTable());
         if (!compiled.getSql().isBlank()) {
@@ -80,7 +120,7 @@ public class RuntimeTableGateway {
 
     public List<Map<String, Object>> listColumns(Criteria criteria, Sort... sorts) {
         Objects.requireNonNull(criteria, "criteria must not be null");
-        CompiledCriteria compiled = criteriaCompiler.compile(criteria, columnResolver, databaseType());
+        CompiledCriteria compiled = compile(criteria);
 
         StringBuilder sql = new StringBuilder("SELECT * FROM ").append(qualifiedTable());
         if (!compiled.getSql().isBlank()) {
@@ -103,7 +143,7 @@ public class RuntimeTableGateway {
 
     public long count(Criteria criteria) {
         Objects.requireNonNull(criteria, "criteria must not be null");
-        CompiledCriteria compiled = criteriaCompiler.compile(criteria, columnResolver, databaseType());
+        CompiledCriteria compiled = compile(criteria);
 
         StringBuilder sql = new StringBuilder("SELECT COUNT(*) AS total_count FROM ").append(qualifiedTable());
         if (!compiled.getSql().isBlank()) {
@@ -114,19 +154,37 @@ public class RuntimeTableGateway {
     }
 
     public int patchWhere(Map<String, Object> patchValues, Map<String, Object> whereValues) {
-        return operations.patchUpdateItemWhere(schema, tableName, toColumnMap(patchValues), toColumnMap(whereValues));
+        return operations.patchUpdateItemWhere(
+                schema,
+                tableName,
+                toColumnMap(patchValues, OrmException.Code.INVALID_ENTITY),
+                toColumnMap(whereValues, OrmException.Code.INVALID_CRITERIA),
+                primaryKeyColumnName()
+        );
     }
 
     public int deleteWhere(Map<String, Object> whereValues) {
-        return operations.deleteItemWhere(schema, tableName, toColumnMap(whereValues));
+        return operations.deleteItemWhere(schema, tableName, toColumnMap(whereValues, OrmException.Code.INVALID_CRITERIA));
     }
 
-    private Map<String, Object> toColumnMap(Map<String, Object> values) {
+    private Map<String, Object> toColumnMap(Map<String, Object> values, OrmException.Code conversionErrorCode) {
         Map<String, Object> columns = new LinkedHashMap<>();
         if (values == null || values.isEmpty()) {
             return columns;
         }
-        values.forEach((field, value) -> columns.put(resolveColumn(field), valueConverter.toDatabaseValue(value)));
+        values.forEach((field, value) -> {
+            FieldMeta fieldMeta = resolveFieldMeta(field);
+            String column = fieldMeta == null ? resolveColumn(field) : fieldMeta.getColumnName();
+            Object databaseValue;
+            try {
+                databaseValue = fieldMeta == null
+                        ? valueConverter.toDatabaseValue(value)
+                        : FieldValueCodec.toDatabaseValue(fieldMeta, value, valueConverter);
+            } catch (IllegalArgumentException ex) {
+                throw new OrmException(conversionErrorCode, ex.getMessage(), ex);
+            }
+            columns.put(column, databaseValue);
+        });
         return columns;
     }
 
@@ -139,7 +197,19 @@ public class RuntimeTableGateway {
 
     private Map<String, Object> toFieldMap(Map<String, Object> row) {
         Map<String, Object> fields = new LinkedHashMap<>();
-        row.forEach((column, value) -> fields.put(columnMapper.resolveFieldName(column), value));
+        row.forEach((column, value) -> {
+            FieldMeta fieldMeta = resolveFieldMetaByColumn(column);
+            String fieldName = columnMapper.resolveFieldName(column);
+            Object fieldValue;
+            try {
+                fieldValue = fieldMeta == null ? value : FieldValueCodec.fromDatabaseValue(value, fieldMeta, valueConverter);
+            } catch (OrmException ex) {
+                throw ex;
+            } catch (RuntimeException ex) {
+                throw new OrmException(OrmException.Code.INVALID_ENTITY, ex.getMessage(), ex);
+            }
+            fields.put(fieldName, fieldValue);
+        });
         return fields;
     }
 
@@ -168,12 +238,44 @@ public class RuntimeTableGateway {
         return column;
     }
 
+    private FieldMeta resolveFieldMeta(String fieldOrColumn) {
+        if (tableMeta == null) {
+            return null;
+        }
+        FieldMeta byField = tableMeta.findByFieldName(fieldOrColumn);
+        if (byField != null) {
+            return byField;
+        }
+        return tableMeta.findByColumnName(fieldOrColumn);
+    }
+
+    private FieldMeta resolveFieldMetaByColumn(String columnName) {
+        if (tableMeta == null) {
+            return null;
+        }
+        return tableMeta.findByColumnName(columnName);
+    }
+
+    private CompiledCriteria compile(Criteria criteria) {
+        if (tableMeta != null) {
+            return criteriaCompiler.compile(criteria, tableMeta, databaseType());
+        }
+        return criteriaCompiler.compile(criteria, columnResolver, databaseType());
+    }
+
     private String qualifiedTable() {
         return SqlIdentifiers.qualified(schema, tableName, databaseType());
     }
 
     private DBInfo.Type databaseType() {
         return operations.getDBInfo().getDatabaseType();
+    }
+
+    private String primaryKeyColumnName() {
+        if (tableMeta == null || tableMeta.getIdField() == null) {
+            return operations.getPKName();
+        }
+        return tableMeta.getIdField().getColumnName();
     }
 
     private static String requireIdentifier(String value, String name) {

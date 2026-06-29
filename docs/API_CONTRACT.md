@@ -5,6 +5,7 @@
 - 适合对象：需要确认“能做/不能做”边界的研发与评审
 - 建议前置：先跑通 [`QUICKSTART.md`](QUICKSTART.md) 再看本契约
 - 若目标是迁移落地：继续阅读 [`REFACTOR_GUIDE.md`](REFACTOR_GUIDE.md)
+- 若目标是运行态字段元数据迁移：继续阅读 [`RUNTIME_METADATA_MIGRATION.md`](RUNTIME_METADATA_MIGRATION.md)
 
 ## 1. 统一 DAO 契约
 
@@ -75,7 +76,7 @@ int upsert(T entity);
 2. `criteria.and(other)` / `criteria.or(other)` 按组组合另一个 `Criteria` 的快照；`other` 后续修改不会影响组合结果。
 3. 旧的 `andGroup(CriteriaGroup)` / `orGroup(CriteriaGroup)` 保持既有行为，适合调用方显式管理 group 生命周期。
 4. `SET` / `JSON_SET` / `ARRAY` 字段支持集合查询：`contains(field, value)`、`containsAny(field, values)`、`containsAll(field, values)`、`isEmpty(field)`、`isNotEmpty(field)`，并提供对应 `or*` 方法。
-5. 集合查询只支持静态实体 ORM 路径，因为编译器需要实体字段元数据判断 `ColumnType` 并执行字段级 codec；公开 `CriteriaColumnResolver` 路径和 `RuntimeTableGateway` 不承诺支持集合查询。
+5. 集合查询支持具备字段元数据的静态实体 ORM 路径和 `RuntimeTableGateway + TableMeta` 路径；只有单向 `CriteriaColumnResolver` 的公开编译路径不承诺支持集合查询。
 6. 集合查询用于非 `SET` / `JSON_SET` / `ARRAY` 字段时直接抛出 `INVALID_CRITERIA`。
 7. `containsAny(field, List.of())` 固定编译为 false 条件；`containsAll(field, List.of())` 固定编译为 true 条件。
 8. `contains` / `containsAny` / `containsAll` 的元素参数会经过集合元素 codec；例如声明了可识别泛型元素类型且配置了自定义 `DatabaseValueConverter` 时，枚举 code 会参与查询参数绑定。
@@ -91,24 +92,26 @@ int upsert(T entity);
 1. `EntityDao` 聚焦单表高频场景。
 2. 复杂查询由 Jdbi SQL 注解方法或底层 SQL 承担。
 3. 不提供关系映射 ORM（`1:N/N:N`、级联、延迟加载）。
-4. `RuntimeTableGateway` 面向运行时定义的单表 Map 记录，输入 `schema/tableName/CriteriaColumnResolver` 后提供 `insert/query/queryColumns/list/listColumns/pageQuery/pageQueryColumns/count/patchWhere/deleteWhere`。
-5. `RuntimeTableGateway` 只解析字段到物理列并复用 Criteria、分页、排序、count 和条件写 SQL 能力；不理解动态模块、生命周期、租户、软删、权限、审计或乐观锁语义。
-6. 当 `RuntimeTableGateway` 使用双向 `RuntimeColumnMapper` 构造时，`query/pageQuery` 默认返回逻辑字段 Map；需要物理列 Map 时使用 `queryColumns/pageQueryColumns`。
-7. 旧的单向 `CriteriaColumnResolver` 构造方式保持兼容，`query/pageQuery` 返回底层物理列 Map。
-8. `RuntimeTableGateway` 遇到未知字段或不安全列名时直接拒绝；`insert` 无有效字段时直接拒绝。
-9. `Set<String>` 字段默认推断为 `ColumnType.SET`，使用 CSV 语义存入 `text` 列。
-10. `ColumnType.SET` 写入时不允许元素包含英文逗号 `,`（否则拒绝写入），以避免 CSV 不可逆解析。
-11. `ColumnType.SET` 支持集合 Criteria 查询，但属于 CSV 兼容路径；复杂、高频集合查询建议优先使用 `ColumnType.JSON_SET`。
-12. `ColumnType.JSON_SET` 使用 JSON 字符串数组语义存入 `text` 列，适用于元素可能包含逗号的字符串集合，也是长期推荐的跨数据库集合查询主路径。
-13. `ColumnType.JSON_SET` 必须通过 `@Column(type = ColumnType.JSON_SET)` 显式声明；默认 `Set<String>` 推断结果仍为 `ColumnType.SET`。
-14. `ColumnType.JSON_SET` 的元素按字符串处理：写入时忽略 `null` 元素、按集合语义去重、保留首次出现顺序；空集合写入为 `[]`，字段值为 `null` 时写入为 `null`。
-15. `ColumnType.JSON_SET` 读取非法 JSON 数组或写入非法 JSON 数组字符串时直接拒绝，不做静默降级。
-16. `ColumnType.SET` / `ColumnType.JSON_SET` 字段声明了可识别泛型元素类型时，自定义 `DatabaseValueConverter` 可作用于集合元素；`JSON_SET` 底层仍保持 JSON 字符串数组语义。
-17. `ColumnType.ARRAY` 表示 PostgreSQL 原生数组列，必须通过 `@Column(type = ColumnType.ARRAY, elementType = ...)` 显式声明，或在 `type = ARRAY` 且字段为 `List<T>` / Java数组时由系统推断元素类型。
-18. `ColumnType.ARRAY` 第一阶段只支持 PostgreSQL；MySQL 不做 JSON 降级，建表/迁移、读写和 ARRAY 集合查询都会直接拒绝或由底层数据库拒绝。
-19. `ColumnType.ARRAY` 写入只接受 `Collection` 或 Java 数组；空集合写入为空数组，字段值为 `null` 时写入为 `null`，不接受 CSV 字符串解析。
-20. `ColumnType.ARRAY` 读取时按字段声明适配：`List<T>` 返回 `ArrayList<T>`，`Set<T>` 返回 `LinkedHashSet<T>`，`T[]` 返回 Java 数组；元素会经过字段级 `DatabaseValueConverter`。
-21. `ColumnType.ARRAY` 的集合查询复用 `contains` / `containsAny` / `containsAll` / `isEmpty` / `isNotEmpty` API，PostgreSQL 下分别使用原生数组操作符和 `cardinality`。
-22. `ColumnType.VARCHAR_ARRAY` / `ColumnType.INT_ARRAY` 属于遗留枚举，不作为新代码推荐入口；新数组列统一使用 `ColumnType.ARRAY + elementType`。
+4. `RuntimeTableGateway` 面向运行时定义的单表 Map 记录，输入 `TableMeta` 后提供 `insert/query/queryColumns/list/listColumns/pageQuery/pageQueryColumns/count/patchWhere/deleteWhere`。
+5. `TableMeta` 是运行态表模型元数据，包含 schema、tableName、字段名、列名、`ColumnType`、`elementColumnType`、字段 Java 类型、集合元素 Java 类型和可选 id 字段。
+6. `RuntimeTableGateway + TableMeta` 路径会按字段元数据执行字段级 codec、集合元素 codec 和集合 Criteria 编译，支持 `SET` / `JSON_SET` / PostgreSQL `ARRAY`。
+7. `RuntimeTableGateway` 只理解运行态单表字段元数据并复用 Criteria、分页、排序、count 和条件写 SQL 能力；不理解动态模块、生命周期、租户、软删、权限、审计或乐观锁语义。
+8. 当 `RuntimeTableGateway` 使用 `TableMeta` 或双向 `RuntimeColumnMapper` 构造时，`query/list/pageQuery` 默认返回逻辑字段 Map；需要物理列 Map 时使用 `queryColumns/listColumns/pageQueryColumns`。
+9. 旧的单向 `CriteriaColumnResolver` 构造方式保持兼容，只提供字段到物理列解析，不承诺集合 Criteria 和字段级集合 codec；`query/list/pageQuery` 返回底层物理列 Map。
+10. `RuntimeTableGateway` 遇到未知字段或不安全列名时直接拒绝；`insert` 无有效字段时直接拒绝。
+11. `Set<String>` 字段默认推断为 `ColumnType.SET`，使用 CSV 语义存入 `text` 列。
+12. `ColumnType.SET` 写入时不允许元素包含英文逗号 `,`（否则拒绝写入），以避免 CSV 不可逆解析。
+13. `ColumnType.SET` 支持集合 Criteria 查询，但属于 CSV 兼容路径；复杂、高频集合查询建议优先使用 `ColumnType.JSON_SET`。
+14. `ColumnType.JSON_SET` 使用 JSON 字符串数组语义存入 `text` 列，适用于元素可能包含逗号的字符串集合，也是长期推荐的跨数据库集合查询主路径。
+15. `ColumnType.JSON_SET` 必须通过 `@Column(type = ColumnType.JSON_SET)` 或 `TableMeta` 显式声明；默认 `Set<String>` 推断结果仍为 `ColumnType.SET`。
+16. `ColumnType.JSON_SET` 的元素按字符串处理：写入时忽略 `null` 元素、按集合语义去重、保留首次出现顺序；空集合写入为 `[]`，字段值为 `null` 时写入为 `null`。
+17. `ColumnType.JSON_SET` 读取非法 JSON 数组或写入非法 JSON 数组字符串时直接拒绝，不做静默降级。
+18. `ColumnType.SET` / `ColumnType.JSON_SET` 字段声明了可识别泛型元素类型或 `TableMeta` 提供集合元素 Java 类型时，自定义 `DatabaseValueConverter` 可作用于集合元素；`JSON_SET` 底层仍保持 JSON 字符串数组语义。
+19. `ColumnType.ARRAY` 表示 PostgreSQL 原生数组列，必须通过 `@Column(type = ColumnType.ARRAY, elementType = ...)` / `TableMeta` 显式声明元素类型，或在 `type = ARRAY` 且字段为 `List<T>` / Java数组时由系统推断元素类型。
+20. `ColumnType.ARRAY` 第一阶段只支持 PostgreSQL；MySQL 不做 JSON 降级，建表/迁移、读写和 ARRAY 集合查询都会直接拒绝或由底层数据库拒绝。
+21. `ColumnType.ARRAY` 写入只接受 `Collection` 或 Java 数组；空集合写入为空数组，字段值为 `null` 时写入为 `null`，不接受 CSV 字符串解析。
+22. `ColumnType.ARRAY` 读取时按字段声明适配：`List<T>` 返回 `ArrayList<T>`，`Set<T>` 返回 `LinkedHashSet<T>`，`T[]` 返回 Java 数组；元素会经过字段级 `DatabaseValueConverter`。
+23. `ColumnType.ARRAY` 的集合查询复用 `contains` / `containsAny` / `containsAll` / `isEmpty` / `isNotEmpty` API，PostgreSQL 下分别使用原生数组操作符和 `cardinality`。
+24. `ColumnType.VARCHAR_ARRAY` / `ColumnType.INT_ARRAY` 属于遗留枚举，不作为新代码推荐入口；新数组列统一使用 `ColumnType.ARRAY + elementType`。
 
-下一步：若你在做历史项目改造，请按 [`REFACTOR_GUIDE.md`](REFACTOR_GUIDE.md) 的“推荐重构路径”执行。
+下一步：若你在做历史项目改造，请按 [`REFACTOR_GUIDE.md`](REFACTOR_GUIDE.md) 的“推荐重构路径”执行；若你在做运行态字段元数据迁移，请按 [`RUNTIME_METADATA_MIGRATION.md`](RUNTIME_METADATA_MIGRATION.md) 执行。

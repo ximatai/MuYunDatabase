@@ -6,7 +6,7 @@ import net.ximatai.muyun.database.core.annotation.TypeMapper;
 import java.lang.reflect.Field;
 import java.util.Optional;
 
-public class EntityFieldMeta {
+public class EntityFieldMeta implements FieldMeta {
     private final Field field;
     private final String fieldName;
     private final String columnName;
@@ -34,30 +34,37 @@ public class EntityFieldMeta {
         this.field.setAccessible(true);
     }
 
+    @Override
     public String getFieldName() {
         return fieldName;
     }
 
+    @Override
     public String getColumnName() {
         return columnName;
     }
 
+    @Override
     public ColumnType getColumnType() {
         return columnType;
     }
 
+    @Override
     public ColumnType getElementColumnType() {
         return elementColumnType;
     }
 
+    @Override
     public boolean isId() {
         return id;
     }
 
+    @Override
     public Class<?> getFieldType() {
         return field.getType();
     }
 
+    @Override
     public Optional<Class<?>> getCollectionElementType() {
         return collectionElementType;
     }
