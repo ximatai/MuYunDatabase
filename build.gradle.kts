@@ -183,6 +183,25 @@ subprojects {
         options.addBooleanOption("Xwerror", false)
     }
 
+    tasks.withType<Test>().configureEach {
+        useJUnitPlatform {
+            providers.gradleProperty("muyun.test.includeTags")
+                .orNull
+                ?.split(",")
+                ?.map { it.trim() }
+                ?.filter { it.isNotEmpty() }
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { includeTags(*it.toTypedArray()) }
+            providers.gradleProperty("muyun.test.excludeTags")
+                .orNull
+                ?.split(",")
+                ?.map { it.trim() }
+                ?.filter { it.isNotEmpty() }
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { excludeTags(*it.toTypedArray()) }
+        }
+    }
+
     tasks.matching { it.name == "publishToSonatype" }.configureEach {
         dependsOn("publishAllPublicationsToMavenRepository")
     }

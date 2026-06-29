@@ -9,6 +9,7 @@ import net.ximatai.muyun.database.spring.boot.txprobe.TxProbeBeanRepository;
 import net.ximatai.muyun.database.spring.boot.txprobe.TxProbeOrmEntity;
 import net.ximatai.muyun.database.spring.boot.txprobe.TxProbeRepository;
 import net.ximatai.muyun.database.spring.boot.sql.annotation.EnableMuYunRepositories;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -28,6 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+@Tag("db")
 @Testcontainers(disabledWithoutDocker = true)
 class MuYunDatabaseStarterTransactionalIntegrationTest {
 

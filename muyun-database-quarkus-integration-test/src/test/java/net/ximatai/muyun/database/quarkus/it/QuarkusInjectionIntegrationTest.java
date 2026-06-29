@@ -11,12 +11,14 @@ import net.ximatai.muyun.database.quarkus.MuYunRepository;
 import net.ximatai.muyun.database.quarkus.MuYunRepositoryFactory;
 import net.ximatai.muyun.database.quarkus.MuYunSchemaManager;
 import org.jdbi.v3.core.Jdbi;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+@Tag("quarkus-it")
 @QuarkusTest
 class QuarkusInjectionIntegrationTest {
 

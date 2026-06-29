@@ -76,9 +76,47 @@
 1. 常规竞争（`testAtomicUpsertConcurrent`）。
 2. 高竞争（`testAtomicUpsertConcurrentHighContention`）。
 
+## 5. CI 分层命令
+
+CI 将测试拆为三类，减少 PR 反馈时间，同时保留 master/release 的完整门禁。
+
+1. Fast test：排除 Docker 真库和 Quarkus integration。
+
+```bash
+./gradlew test \
+  -Pmuyun.test.excludeTags=db,quarkus-it \
+  -x :muyun-database-quarkus-integration-test:test
+```
+
+2. DB regression：只跑标记为 `db` 的 Testcontainers / 真库回归。
+
+```bash
+./gradlew :muyun-database-test:test :muyun-database-spring-boot-starter:test \
+  -Pmuyun.test.includeTags=db
+```
+
+3. Quarkus integration：只跑标记为 `quarkus-it` 的 Quarkus 集成测试。
+
+```bash
+./gradlew :muyun-database-quarkus-integration-test:test \
+  -Pmuyun.test.includeTags=quarkus-it
+```
+
+4. Full test：release 与本地完整验证仍使用全量入口。
+
+```bash
+./gradlew test
+```
+
+标签约定：
+
+1. `@Tag("db")` 表示需要真实数据库或 Testcontainers。
+2. `@Tag("quarkus-it")` 表示需要 Quarkus test bootstrap。
+3. 未打标签的测试应保持轻量、可作为 PR fast test 的默认覆盖。
+
 ---
 
-## 5. 可选稳定性检查
+## 6. 可选稳定性检查
 
 ```bash
 ./gradlew :muyun-database-test:test \

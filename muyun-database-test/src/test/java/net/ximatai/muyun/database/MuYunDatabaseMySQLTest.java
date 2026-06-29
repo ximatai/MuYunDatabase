@@ -2,11 +2,13 @@ package net.ximatai.muyun.database;
 
 import net.ximatai.muyun.database.core.builder.Column;
 import net.ximatai.muyun.database.core.builder.PredefinedColumn;
+import org.junit.jupiter.api.Tag;
 import org.testcontainers.containers.JdbcDatabaseContainer;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+@Tag("db")
 @Testcontainers
 public class MuYunDatabaseMySQLTest extends MuYunDatabaseUsageExamplesTestBase {
 

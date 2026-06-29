@@ -10,11 +10,13 @@ import net.ximatai.muyun.database.core.builder.ColumnType;
 import net.ximatai.muyun.database.core.orm.MigrationChange;
 import net.ximatai.muyun.database.core.orm.MigrationResult;
 import net.ximatai.muyun.database.quarkus.MuYunSchemaManager;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+@Tag("quarkus-it")
 @QuarkusTest
 class QuarkusSchemaMigrationIntegrationTest {
 

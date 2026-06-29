@@ -24,6 +24,7 @@ import org.eclipse.microprofile.config.Config;
 import org.jdbi.v3.sqlobject.customizer.Bind;
 import org.jdbi.v3.sqlobject.statement.SqlQuery;
 import org.jdbi.v3.sqlobject.statement.SqlUpdate;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -36,6 +37,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+@Tag("quarkus-it")
+@Tag("db")
 @QuarkusTest
 @TestProfile(QuarkusPostgresMatrixIntegrationTest.PostgresProfile.class)
 @QuarkusTestResource(value = PostgresTestResource.class, restrictToAnnotatedClass = true)

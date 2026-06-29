@@ -8,10 +8,12 @@ import net.ximatai.muyun.database.core.annotation.Table;
 import net.ximatai.muyun.database.core.builder.ColumnType;
 import net.ximatai.muyun.database.core.orm.EntityDao;
 import net.ximatai.muyun.database.quarkus.MuYunRepository;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+@Tag("quarkus-it")
 @QuarkusTest
 class QuarkusRepositoryAutoSchemaIntegrationTest {
 
