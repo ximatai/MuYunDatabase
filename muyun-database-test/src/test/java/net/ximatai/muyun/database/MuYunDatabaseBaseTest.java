@@ -1083,6 +1083,80 @@ class OrmSpecialTableEntity {
     public Integer age;
 }
 
+@Table(name = "orm_collection_query_entity")
+class OrmCollectionQueryEntity {
+    @Id
+    @net.ximatai.muyun.database.core.annotation.Column(length = 64)
+    public String id;
+
+    @net.ximatai.muyun.database.core.annotation.Column(name = "v_marker", length = 32)
+    public String marker;
+
+    @net.ximatai.muyun.database.core.annotation.Column(name = "v_name", length = 32)
+    public String name;
+
+    @net.ximatai.muyun.database.core.annotation.Column(
+            name = "csv_tags",
+            type = net.ximatai.muyun.database.core.builder.ColumnType.SET
+    )
+    public java.util.Set<String> csvTags;
+
+    @net.ximatai.muyun.database.core.annotation.Column(
+            name = "json_tags",
+            type = net.ximatai.muyun.database.core.builder.ColumnType.JSON_SET
+    )
+    public java.util.Set<String> jsonTags;
+
+    @net.ximatai.muyun.database.core.annotation.Column(
+            name = "statuses",
+            type = net.ximatai.muyun.database.core.builder.ColumnType.JSON_SET
+    )
+    public java.util.Set<CollectionStatus> statuses;
+}
+
+enum CollectionStatus {
+    ENABLED("enabled"),
+    DISABLED("disabled");
+
+    private final String code;
+
+    CollectionStatus(String code) {
+        this.code = code;
+    }
+
+    String code() {
+        return code;
+    }
+
+    static CollectionStatus fromCode(Object value) {
+        String text = String.valueOf(value);
+        for (CollectionStatus status : values()) {
+            if (status.code.equals(text)) {
+                return status;
+            }
+        }
+        throw new IllegalArgumentException("Unknown collection status code: " + text);
+    }
+}
+
+class CollectionStatusCodeConverter implements DatabaseValueConverter {
+    @Override
+    public Object toDatabaseValue(Object value) {
+        if (value instanceof CollectionStatus status) {
+            return status.code();
+        }
+        return DatabaseValueConverter.DEFAULT.toDatabaseValue(value);
+    }
+
+    @Override
+    public Object fromDatabaseValue(Object value, Class<?> targetType) {
+        if (targetType == CollectionStatus.class) {
+            return CollectionStatus.fromCode(value);
+        }
+        return DatabaseValueConverter.DEFAULT.fromDatabaseValue(value, targetType);
+    }
+}
+
 interface SqlObjectBasicDao {
 
     @SqlUpdate("insert into <table>(v_name, i_age) values(:name, :age)")

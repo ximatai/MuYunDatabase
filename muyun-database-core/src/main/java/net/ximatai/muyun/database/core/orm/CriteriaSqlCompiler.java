@@ -1,5 +1,6 @@
 package net.ximatai.muyun.database.core.orm;
 
+import net.ximatai.muyun.database.core.builder.ColumnType;
 import net.ximatai.muyun.database.core.metadata.DBInfo;
 
 import java.util.ArrayList;
@@ -42,6 +43,13 @@ public final class CriteriaSqlCompiler {
         renderers.put(CriteriaOperator.EXISTS, (clause, context) -> renderExists(clause, context, false));
         renderers.put(CriteriaOperator.NOT_EXISTS, (clause, context) -> renderExists(clause, context, true));
         renderers.put(CriteriaOperator.RAW, this::renderRaw);
+        renderers.put(CriteriaOperator.CONTAINS, this::renderContains);
+        renderers.put(CriteriaOperator.CONTAINS_ANY,
+                (clause, context) -> renderContainsMulti(clause, context, " OR ", "1 = 0"));
+        renderers.put(CriteriaOperator.CONTAINS_ALL,
+                (clause, context) -> renderContainsMulti(clause, context, " AND ", "1 = 1"));
+        renderers.put(CriteriaOperator.IS_EMPTY, (clause, context) -> renderCollectionEmpty(clause, context, false));
+        renderers.put(CriteriaOperator.IS_NOT_EMPTY, (clause, context) -> renderCollectionEmpty(clause, context, true));
     }
 
     /**
@@ -146,6 +154,89 @@ public final class CriteriaSqlCompiler {
         return resolveColumn(clause, context) + " NOT IN (" + String.join(", ", holders) + ")";
     }
 
+    private String renderContains(CriteriaClause clause, ClauseContext context) {
+        if (clause.getValues().size() != 1) {
+            throw new OrmException(OrmException.Code.INVALID_CRITERIA, "CONTAINS requires exactly one value");
+        }
+        CollectionField collection = resolveCollectionField(clause, context);
+        String key = bindCollectionElement(collection.fieldMeta, clause.getValues().get(0), context);
+        return renderCollectionContains(collection, key, context.dbType);
+    }
+
+    private String renderContainsMulti(CriteriaClause clause,
+                                       ClauseContext context,
+                                       String joiner,
+                                       String emptyExpression) {
+        CollectionField collection = resolveCollectionField(clause, context);
+        if (clause.getValues().isEmpty()) {
+            return emptyExpression;
+        }
+        List<String> parts = new ArrayList<>();
+        for (Object value : clause.getValues()) {
+            String key = bindCollectionElement(collection.fieldMeta, value, context);
+            parts.add(renderCollectionContains(collection, key, context.dbType));
+        }
+        return "(" + String.join(joiner, parts) + ")";
+    }
+
+    private String renderCollectionContains(CollectionField collection, String key, DBInfo.Type dbType) {
+        if (collection.fieldMeta.getColumnType() == ColumnType.JSON_SET) {
+            if (dbType == DBInfo.Type.POSTGRESQL) {
+                return "jsonb_exists(" + collection.columnSql + "::jsonb, :" + key + ")";
+            }
+            return "JSON_CONTAINS(CAST(" + collection.columnSql + " AS JSON), JSON_QUOTE(:" + key + "))";
+        }
+        if (dbType == DBInfo.Type.POSTGRESQL) {
+            return "POSITION(',' || :" + key + " || ',' IN ',' || COALESCE("
+                    + collection.columnSql + ", '') || ',') > 0";
+        }
+        return "FIND_IN_SET(:" + key + ", COALESCE(" + collection.columnSql + ", '')) > 0";
+    }
+
+    private String renderCollectionEmpty(CriteriaClause clause, ClauseContext context, boolean not) {
+        CollectionField collection = resolveCollectionField(clause, context);
+        String expression;
+        if (collection.fieldMeta.getColumnType() == ColumnType.JSON_SET) {
+            if (context.dbType == DBInfo.Type.POSTGRESQL) {
+                expression = "(" + collection.columnSql + " IS NULL OR jsonb_array_length("
+                        + collection.columnSql + "::jsonb) = 0)";
+            } else {
+                expression = "(" + collection.columnSql + " IS NULL OR JSON_LENGTH(CAST("
+                        + collection.columnSql + " AS JSON)) = 0)";
+            }
+        } else {
+            expression = "(" + collection.columnSql + " IS NULL OR " + collection.columnSql + " = '')";
+        }
+        return not ? "NOT " + expression : expression;
+    }
+
+    private CollectionField resolveCollectionField(CriteriaClause clause, ClauseContext context) {
+        EntityFieldMeta fieldMeta = context.requireFieldMeta(clause.getField());
+        if (fieldMeta.getColumnType() != ColumnType.SET && fieldMeta.getColumnType() != ColumnType.JSON_SET) {
+            throw new OrmException(
+                    OrmException.Code.INVALID_CRITERIA,
+                    clause.getOperator() + " requires SET or JSON_SET field: " + clause.getField()
+            );
+        }
+        String columnSql = resolveColumn(clause, context);
+        return new CollectionField(fieldMeta, columnSql);
+    }
+
+    private String bindCollectionElement(EntityFieldMeta fieldMeta, Object value, ClauseContext context) {
+        String encoded;
+        try {
+            encoded = FieldValueCodec.toCollectionElementDatabaseValue(fieldMeta, value, valueConverter);
+        } catch (IllegalArgumentException ex) {
+            throw new OrmException(OrmException.Code.INVALID_CRITERIA, ex.getMessage(), ex);
+        }
+        if (encoded == null) {
+            throw new OrmException(OrmException.Code.INVALID_CRITERIA, "Collection criteria value must not be null or blank");
+        }
+        String key = "p" + context.nextParamIndex();
+        context.params.put(key, encoded);
+        return key;
+    }
+
     private String renderInSubQuery(CriteriaClause clause, ClauseContext context, boolean notIn) {
         SqlSubQuery subQuery = asSubQuery(clause);
         String rewritten = rewriteNamedParams(subQuery.getSql(), subQuery.getParams(), context);
@@ -217,6 +308,9 @@ public final class CriteriaSqlCompiler {
         return clause.getValues().get(0);
     }
 
+    private record CollectionField(EntityFieldMeta fieldMeta, String columnSql) {
+    }
+
     private static class ClauseContext {
         private final CriteriaColumnResolver columnResolver;
         private final DBInfo.Type dbType;
@@ -256,6 +350,17 @@ public final class CriteriaSqlCompiler {
                 return byField;
             }
             return meta.findByColumnName(fieldOrColumn);
+        }
+
+        private EntityFieldMeta requireFieldMeta(String fieldOrColumn) {
+            EntityFieldMeta fieldMeta = resolveFieldMeta(fieldOrColumn);
+            if (fieldMeta == null) {
+                throw new OrmException(
+                        OrmException.Code.INVALID_CRITERIA,
+                        "Collection criteria requires entity metadata for field: " + fieldOrColumn
+                );
+            }
+            return fieldMeta;
         }
     }
 

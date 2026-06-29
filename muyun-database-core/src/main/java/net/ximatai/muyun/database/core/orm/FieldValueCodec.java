@@ -48,6 +48,24 @@ final class FieldValueCodec {
         return valueConverter.fromDatabaseValue(value, targetType);
     }
 
+    static String toCollectionElementDatabaseValue(EntityFieldMeta fieldMeta,
+                                                   Object value,
+                                                   DatabaseValueConverter valueConverter) {
+        Object converted = convertCollectionItem(value, valueConverter);
+        if (converted == null) {
+            return null;
+        }
+        String text = String.valueOf(converted);
+        if (fieldMeta.getColumnType() == ColumnType.SET) {
+            text = text.trim();
+            if (text.contains(",")) {
+                throw new IllegalArgumentException("SET value cannot contain ',' in CSV storage: " + text);
+            }
+            return text.isEmpty() ? null : text;
+        }
+        return text;
+    }
+
     private static String toCsvSetValue(Object value, DatabaseValueConverter valueConverter) {
         if (value == null) {
             return null;

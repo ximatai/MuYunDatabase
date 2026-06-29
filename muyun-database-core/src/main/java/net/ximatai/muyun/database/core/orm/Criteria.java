@@ -152,6 +152,26 @@ public class Criteria {
         return and(field, CriteriaOperator.NOT_IN, values.toArray());
     }
 
+    public Criteria contains(String field, Object value) {
+        return and(field, CriteriaOperator.CONTAINS, value);
+    }
+
+    public Criteria containsAny(String field, List<?> values) {
+        return and(field, CriteriaOperator.CONTAINS_ANY, values.toArray());
+    }
+
+    public Criteria containsAll(String field, List<?> values) {
+        return and(field, CriteriaOperator.CONTAINS_ALL, values.toArray());
+    }
+
+    public Criteria isEmpty(String field) {
+        return and(field, CriteriaOperator.IS_EMPTY);
+    }
+
+    public Criteria isNotEmpty(String field) {
+        return and(field, CriteriaOperator.IS_NOT_EMPTY);
+    }
+
     public Criteria inSubQuery(String field, SqlSubQuery subQuery) {
         return and(field, CriteriaOperator.IN_SUBQUERY, subQuery);
     }
@@ -166,6 +186,26 @@ public class Criteria {
 
     public Criteria orNotIn(String field, List<?> values) {
         return or(field, CriteriaOperator.NOT_IN, values.toArray());
+    }
+
+    public Criteria orContains(String field, Object value) {
+        return or(field, CriteriaOperator.CONTAINS, value);
+    }
+
+    public Criteria orContainsAny(String field, List<?> values) {
+        return or(field, CriteriaOperator.CONTAINS_ANY, values.toArray());
+    }
+
+    public Criteria orContainsAll(String field, List<?> values) {
+        return or(field, CriteriaOperator.CONTAINS_ALL, values.toArray());
+    }
+
+    public Criteria orIsEmpty(String field) {
+        return or(field, CriteriaOperator.IS_EMPTY);
+    }
+
+    public Criteria orIsNotEmpty(String field) {
+        return or(field, CriteriaOperator.IS_NOT_EMPTY);
     }
 
     public Criteria orInSubQuery(String field, SqlSubQuery subQuery) {
