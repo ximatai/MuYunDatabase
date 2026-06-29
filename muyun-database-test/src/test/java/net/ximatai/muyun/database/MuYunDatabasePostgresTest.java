@@ -5,9 +5,14 @@ import net.ximatai.muyun.database.core.annotation.Id;
 import net.ximatai.muyun.database.core.annotation.Table;
 import net.ximatai.muyun.database.core.builder.ColumnType;
 import net.ximatai.muyun.database.core.builder.PredefinedColumn;
+import net.ximatai.muyun.database.core.builder.TableBuilder;
+import net.ximatai.muyun.database.core.builder.TableWrapper;
 import net.ximatai.muyun.database.core.orm.Criteria;
 import net.ximatai.muyun.database.core.orm.MigrationOptions;
 import net.ximatai.muyun.database.core.orm.MigrationResult;
+import net.ximatai.muyun.database.core.orm.PageRequest;
+import net.ximatai.muyun.database.core.orm.RuntimeTableGateway;
+import net.ximatai.muyun.database.core.orm.TableMeta;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.JdbcDatabaseContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -15,6 +20,8 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -80,6 +87,58 @@ public class MuYunDatabasePostgresTest extends MuYunDatabaseUsageExamplesTestBas
         OrmPgArrayCriteriaEntity loaded = orm.findById(OrmPgArrayCriteriaEntity.class, "pg_array_1");
         assertEquals(List.of("red", "blue"), loaded.tags);
         assertEquals(List.of(1, 2), loaded.scores);
+    }
+
+    @Test
+    void testRuntimeTableGatewayPostgresArrayCriteriaAgainstDatabase() {
+        String tableName = "runtime_pg_array_record";
+        TableWrapper table = TableWrapper.withName(tableName)
+                .setPrimaryKey(getPrimaryKey())
+                .addColumn(Column.of("v_marker").setType(ColumnType.VARCHAR).setLength(64))
+                .addColumn(Column.of("labels").setType(ColumnType.ARRAY).setElementType(ColumnType.VARCHAR))
+                .addColumn(Column.of("scores").setType(ColumnType.ARRAY).setElementType(ColumnType.INT));
+        new TableBuilder(db).build(table);
+        db.execute("delete from " + tableName);
+
+        String marker = "runtime_array_" + UUID.randomUUID().toString().substring(0, 12);
+        RuntimeTableGateway gateway = new RuntimeTableGateway(
+                db,
+                TableMeta.builder(db.getDefaultSchemaName(), tableName)
+                        .id("id", "id", ColumnType.VARCHAR, Object.class)
+                        .field("marker", "v_marker", ColumnType.VARCHAR, String.class)
+                        .array("labels", "labels", ColumnType.VARCHAR, List.class, String.class)
+                        .array("scores", "scores", ColumnType.INT, List.class, Integer.class)
+                        .build()
+        );
+
+        gateway.insert(Map.of(
+                "marker", marker,
+                "labels", List.of("red", "blue"),
+                "scores", List.of(1, 2)
+        ));
+        gateway.insert(Map.of(
+                "marker", marker,
+                "labels", List.of("green"),
+                "scores", List.of(3)
+        ));
+        gateway.insert(Map.of(
+                "marker", marker,
+                "labels", List.of(),
+                "scores", List.of()
+        ));
+
+        assertEquals(1L, gateway.count(Criteria.of().eq("marker", marker).contains("labels", "red")));
+        assertEquals(1L, gateway.count(Criteria.of().eq("marker", marker).containsAny("scores", List.of(2, 9))));
+        assertEquals(1L, gateway.count(Criteria.of().eq("marker", marker).containsAll("labels", List.of("red", "blue"))));
+        assertEquals(1L, gateway.count(Criteria.of().eq("marker", marker).isEmpty("labels")));
+
+        List<Map<String, Object>> decoded = gateway.query(
+                Criteria.of().eq("marker", marker).contains("scores", 1),
+                PageRequest.of(1, 10)
+        );
+        assertEquals(1, decoded.size());
+        assertEquals(List.of("red", "blue"), decoded.getFirst().get("labels"));
+        assertEquals(List.of(1, 2), decoded.getFirst().get("scores"));
     }
 
     private OrmPgArrayCriteriaEntity arrayRow(String id, String marker, List<String> tags, List<Integer> scores) {
