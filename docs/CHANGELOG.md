@@ -6,6 +6,26 @@
 
 ### 新增
 
+- 暂无。
+
+### 变更
+
+- 暂无。
+
+### 修复
+
+- 暂无。
+
+### 迁移说明
+
+- 暂无。
+
+## 3.26.14
+
+发布日期：2026-06-29
+
+### 新增
+
 - 新增运行态表模型元数据 `TableMeta` / `FieldMeta` / `RuntimeFieldMeta`，让 runtime-defined records 可以显式提供字段名、列名、`ColumnType`、`elementColumnType`、字段 Java 类型和集合元素 Java 类型。
 - `RuntimeTableGateway + TableMeta` 路径支持 `SET` / `JSON_SET` / PostgreSQL `ARRAY` 集合 Criteria：`contains`、`containsAny`、`containsAll`、`isEmpty`、`isNotEmpty`。
 - `RuntimeTableGateway + TableMeta` 路径支持字段级 codec 和集合元素 `DatabaseValueConverter`，运行态集合字段的写入值、查询参数和读回值会按字段元数据转换。
