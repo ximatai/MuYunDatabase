@@ -9,6 +9,12 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.TreeMap;
 
+/**
+ * Runtime table metadata for Map-based records.
+ * <p>
+ * It provides a bidirectional field/column mapping plus enough field type
+ * information for Criteria collection operators and field-level value codecs.
+ */
 public final class TableMeta implements RuntimeColumnMapper {
     private final String tableName;
     private final String schema;
@@ -183,10 +189,16 @@ public final class TableMeta implements RuntimeColumnMapper {
             return field(fieldName, columnName, ColumnType.SET, ColumnType.UNKNOWN, fieldType, elementJavaType);
         }
 
+        /**
+         * Adds a JSON string-array backed set field.
+         */
         public Builder jsonSet(String fieldName, String columnName, Class<?> fieldType, Class<?> elementJavaType) {
             return field(fieldName, columnName, ColumnType.JSON_SET, ColumnType.UNKNOWN, fieldType, elementJavaType);
         }
 
+        /**
+         * Adds a PostgreSQL native ARRAY field.
+         */
         public Builder array(String fieldName,
                              String columnName,
                              ColumnType elementColumnType,

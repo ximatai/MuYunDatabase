@@ -4,6 +4,9 @@ import net.ximatai.muyun.database.core.builder.ColumnType;
 
 import java.util.Optional;
 
+/**
+ * Runtime-readable field metadata used by Criteria compilation and value codecs.
+ */
 public interface FieldMeta {
 
     String getFieldName();

@@ -11,6 +11,11 @@ import java.util.Objects;
 
 /**
  * Single-table Map gateway for runtime-defined records.
+ * <p>
+ * Use the {@link TableMeta} constructors or factory methods when runtime
+ * fields need typed conversion, collection Criteria operators, or logical field
+ * names in query results. The legacy {@link CriteriaColumnResolver}
+ * constructors are kept for simple field-to-column Criteria resolution.
  */
 public class RuntimeTableGateway {
     private final IDatabaseOperations<Object> operations;
@@ -72,6 +77,11 @@ public class RuntimeTableGateway {
                                          TableMeta tableMeta,
                                          DatabaseValueConverter valueConverter) {
         return new RuntimeTableGateway(operations, tableMeta, valueConverter);
+    }
+
+    public static RuntimeTableGateway of(IDatabaseOperations<?> operations,
+                                         TableMeta tableMeta) {
+        return new RuntimeTableGateway(operations, tableMeta);
     }
 
     public Object insert(Map<String, Object> values) {

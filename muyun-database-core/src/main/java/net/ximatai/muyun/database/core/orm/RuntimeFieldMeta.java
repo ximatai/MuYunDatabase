@@ -5,6 +5,9 @@ import net.ximatai.muyun.database.core.builder.ColumnType;
 import java.util.Objects;
 import java.util.Optional;
 
+/**
+ * Field metadata for runtime-defined records.
+ */
 public final class RuntimeFieldMeta implements FieldMeta {
     private final String fieldName;
     private final String columnName;
