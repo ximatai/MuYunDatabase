@@ -29,8 +29,8 @@ gpg --armor --export-secret-keys <KEY_ID> | base64 | tr -d '\n'
 3. Push a matching tag:
 
 ```bash
-git tag v3.26.12
-git push origin v3.26.12
+git tag v3.26.13
+git push origin v3.26.13
 ```
 
 The release workflow validates that the tag equals `v<project.version>`, runs
@@ -39,5 +39,5 @@ The release workflow validates that the tag equals `v<project.version>`, runs
 For a local dry check of the tag guard:
 
 ```bash
-./gradlew verifyReleaseTagVersion -Prelease.tag=v3.26.12
+./gradlew verifyReleaseTagVersion -Prelease.tag=v3.26.13
 ```

@@ -6,14 +6,14 @@
 
 ```kotlin
 dependencies {
-    implementation("net.ximatai.muyun.database:muyun-database-quarkus:3.26.12")
+    implementation("net.ximatai.muyun.database:muyun-database-quarkus:3.26.13")
 }
 ```
 
 扩展 runtime 会声明对应的 deployment artifact：
 
 ```properties
-deployment-artifact=net.ximatai.muyun.database:muyun-database-quarkus-deployment::jar:3.26.12
+deployment-artifact=net.ximatai.muyun.database:muyun-database-quarkus-deployment::jar:3.26.13
 ```
 
 ## 配置项
