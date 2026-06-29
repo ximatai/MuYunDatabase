@@ -7,6 +7,7 @@ import net.ximatai.muyun.database.core.metadata.DBInfo;
 import org.junit.jupiter.api.Test;
 
 import java.sql.Array;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -164,6 +165,28 @@ class RuntimeTableGatewayTest {
         assertEquals(7L, total);
         assertTrue(operations.countSql.contains("jsonb_exists(\"json_statuses\"::jsonb, :p0)"));
         assertEquals("enabled", operations.countParams.get("p0"));
+    }
+
+    @Test
+    void shouldUseRuntimeTableMetaIdColumnForWrites() {
+        CapturingOperations operations = new CapturingOperations();
+        TableMeta tableMeta = TableMeta.builder("public", "runtime_record")
+                .id("bizId", "biz_id", ColumnType.VARCHAR, String.class)
+                .field("title", "record_title", ColumnType.VARCHAR, String.class)
+                .build();
+        RuntimeTableGateway gateway = new RuntimeTableGateway(operations, tableMeta);
+
+        assertEquals("b-1", gateway.insert(Map.of("bizId", "b-1", "title", "First")));
+        assertEquals(Map.of("biz_id", "b-1", "record_title", "First"), operations.insertValues);
+        assertEquals("biz_id", operations.insertPkName);
+
+        assertEquals(1, gateway.patchWhere(
+                Map.of("bizId", "b-2", "title", "Updated"),
+                Map.of("bizId", "b-1")
+        ));
+        assertEquals(Map.of("record_title", "Updated"), operations.patchValues);
+        assertEquals(Map.of("biz_id", "b-1"), operations.whereValues);
+        assertEquals("biz_id", operations.patchPkName);
     }
 
     @Test
@@ -348,6 +371,8 @@ class RuntimeTableGatewayTest {
         private Map<String, Object> insertValues;
         private Map<String, Object> patchValues;
         private Map<String, Object> whereValues;
+        private String insertPkName;
+        private String patchPkName;
         private String querySql;
         private Map<String, Object> queryParams;
         private String countSql;
@@ -377,10 +402,32 @@ class RuntimeTableGatewayTest {
         }
 
         @Override
+        public Object insertItem(String schema, String tableName, Map<String, Object> params, String pkName) {
+            this.insertValues = Map.copyOf(params);
+            this.insertPkName = pkName;
+            return params.get(pkName);
+        }
+
+        @Override
         public int patchUpdateItemWhere(String schema, String tableName, Map<String, Object> patchParams, Map<String, Object> whereParams) {
             this.patchCalls++;
             this.patchValues = Map.copyOf(patchParams);
             this.whereValues = Map.copyOf(whereParams);
+            return 1;
+        }
+
+        @Override
+        public int patchUpdateItemWhere(String schema,
+                                        String tableName,
+                                        Map<String, Object> patchParams,
+                                        Map<String, Object> whereParams,
+                                        String pkName) {
+            this.patchCalls++;
+            Map<String, Object> safePatch = new LinkedHashMap<>(patchParams);
+            safePatch.keySet().removeIf(key -> key.equalsIgnoreCase(pkName));
+            this.patchValues = Map.copyOf(safePatch);
+            this.whereValues = Map.copyOf(whereParams);
+            this.patchPkName = pkName;
             return 1;
         }
 

@@ -89,7 +89,7 @@ public class RuntimeTableGateway {
         if (columns.isEmpty()) {
             throw new OrmException(OrmException.Code.INVALID_ENTITY, "runtime table insert values must not be empty");
         }
-        return operations.insertItem(schema, tableName, columns);
+        return operations.insertItem(schema, tableName, columns, primaryKeyColumnName());
     }
 
     public List<Map<String, Object>> query(Criteria criteria, PageRequest pageRequest, Sort... sorts) {
@@ -158,7 +158,8 @@ public class RuntimeTableGateway {
                 schema,
                 tableName,
                 toColumnMap(patchValues, OrmException.Code.INVALID_ENTITY),
-                toColumnMap(whereValues, OrmException.Code.INVALID_CRITERIA)
+                toColumnMap(whereValues, OrmException.Code.INVALID_CRITERIA),
+                primaryKeyColumnName()
         );
     }
 
@@ -268,6 +269,13 @@ public class RuntimeTableGateway {
 
     private DBInfo.Type databaseType() {
         return operations.getDBInfo().getDatabaseType();
+    }
+
+    private String primaryKeyColumnName() {
+        if (tableMeta == null || tableMeta.getIdField() == null) {
+            return operations.getPKName();
+        }
+        return tableMeta.getIdField().getColumnName();
     }
 
     private static String requireIdentifier(String value, String name) {
