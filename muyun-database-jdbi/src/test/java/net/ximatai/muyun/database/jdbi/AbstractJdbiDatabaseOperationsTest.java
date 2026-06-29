@@ -11,6 +11,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class AbstractJdbiDatabaseOperationsTest {
 
@@ -33,5 +34,12 @@ class AbstractJdbiDatabaseOperationsTest {
                 (BigDecimal[]) operations.getDBValue(List.of("1.5", 2), "_numeric"));
         assertArrayEquals(new Timestamp[]{Timestamp.valueOf(LocalDateTime.of(2026, 1, 2, 3, 4, 5))},
                 (Timestamp[]) operations.getDBValue(new String[]{"2026-01-02 03:04:05"}, "_timestamp"));
+    }
+
+    @Test
+    void getDBValueShouldRejectCsvStringForPostgresArray() {
+        JdbiDatabaseOperations<String> operations = new JdbiDatabaseOperations<>(null, null, String.class, "id");
+
+        assertThrows(IllegalArgumentException.class, () -> operations.getDBValue("a,b", "_varchar"));
     }
 }

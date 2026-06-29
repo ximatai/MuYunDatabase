@@ -130,8 +130,8 @@ abstract class AbstractJdbiDatabaseOperations<K> implements IDatabaseOperations<
             }
 
             Object[] arrayValue;
-            if (value instanceof String val) {
-                arrayValue = val.split(",");
+            if (value instanceof String) {
+                throw new IllegalArgumentException("ARRAY value must be a List or Java array, not CSV string");
             } else if (value instanceof List<?> val) {
                 arrayValue = val.toArray();
             } else if (value.getClass().isArray()) {

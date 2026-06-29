@@ -6,6 +6,8 @@ import net.ximatai.muyun.database.core.annotation.Table;
 import net.ximatai.muyun.database.core.builder.ColumnType;
 import net.ximatai.muyun.database.core.builder.PredefinedColumn;
 import net.ximatai.muyun.database.core.orm.Criteria;
+import net.ximatai.muyun.database.core.orm.MigrationOptions;
+import net.ximatai.muyun.database.core.orm.MigrationResult;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.JdbcDatabaseContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -15,6 +17,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 @Testcontainers
 public class MuYunDatabasePostgresTest extends MuYunDatabaseUsageExamplesTestBase {
@@ -49,6 +52,9 @@ public class MuYunDatabasePostgresTest extends MuYunDatabaseUsageExamplesTestBas
     @Test
     void testPostgresArrayCriteriaAgainstDatabase() {
         orm.ensureTable(OrmPgArrayCriteriaEntity.class);
+        db.resetDBInfo();
+        MigrationResult idempotent = orm.ensureTable(OrmPgArrayCriteriaEntity.class, MigrationOptions.dryRunStrict());
+        assertFalse(idempotent.isChanged());
         db.execute("delete from orm_pg_array_criteria_entity");
         orm.insert(arrayRow("pg_array_1", "array_marker", List.of("red", "blue"), List.of(1, 2)));
         orm.insert(arrayRow("pg_array_2", "array_marker", List.of("green"), List.of(3)));

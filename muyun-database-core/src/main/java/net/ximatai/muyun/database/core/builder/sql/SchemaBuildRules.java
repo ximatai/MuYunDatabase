@@ -59,6 +59,27 @@ public final class SchemaBuildRules {
         return columnTypeTransform(dbType).transform(column.getType());
     }
 
+    public static boolean sameColumnType(String expectedType, String actualType) {
+        if (expectedType == null || actualType == null) {
+            return expectedType == null && actualType == null;
+        }
+        return normalizeColumnType(expectedType).equals(normalizeColumnType(actualType));
+    }
+
+    public static String normalizeColumnType(String type) {
+        String normalized = type.trim()
+                .toLowerCase()
+                .replaceAll("\\s+", " ");
+        if (normalized.startsWith("_")) {
+            return normalizePostgresArrayElementType(normalized.substring(1)) + "[]";
+        }
+        if (normalized.endsWith("[]")) {
+            String elementType = normalized.substring(0, normalized.length() - 2);
+            return normalizePostgresArrayElementType(elementType) + "[]";
+        }
+        return normalizeScalarType(normalized);
+    }
+
     public static String columnLength(Column column) {
         String length = column.getLength() == null ? "" : "(" + column.getLength() + ")";
 
@@ -128,6 +149,30 @@ public final class SchemaBuildRules {
             case DATE -> "date";
             case NUMERIC -> "numeric";
             default -> throw new IllegalArgumentException("Unsupported ARRAY element type: " + elementType);
+        };
+    }
+
+    private static String normalizePostgresArrayElementType(String type) {
+        return switch (type) {
+            case "character varying", "varchar" -> "varchar";
+            case "integer", "int", "int4" -> "int";
+            case "bigint", "int8" -> "bigint";
+            case "bool", "boolean" -> "boolean";
+            case "timestamp without time zone", "timestamp" -> "timestamp";
+            case "date" -> "date";
+            case "numeric", "decimal" -> "numeric";
+            case "text", "longtext" -> "text";
+            default -> type;
+        };
+    }
+
+    private static String normalizeScalarType(String type) {
+        return switch (type) {
+            case "character varying" -> "varchar";
+            case "integer" -> "int";
+            case "boolean" -> "bool";
+            case "timestamp without time zone" -> "timestamp";
+            default -> type;
         };
     }
 }

@@ -2,6 +2,7 @@ package net.ximatai.muyun.database.core.metadata;
 
 import net.ximatai.muyun.database.core.builder.Column;
 import net.ximatai.muyun.database.core.builder.ColumnType;
+import net.ximatai.muyun.database.core.builder.sql.SchemaBuildRules;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -191,12 +192,48 @@ public class DBColumn {
     public Column toColumn() {
         Column column = Column.of(this.getName());
         column.setComment(this.getDescription());
-        column.setType(ColumnType.valueOf(this.getType().toUpperCase()));
+        String normalizedType = SchemaBuildRules.normalizeColumnType(this.getType());
+        if (normalizedType.endsWith("[]")) {
+            column.setType(ColumnType.ARRAY);
+            column.setElementType(resolveArrayElementType(normalizedType.substring(0, normalizedType.length() - 2)));
+        } else {
+            column.setType(resolveColumnType(normalizedType));
+        }
         column.setDefaultValueAny(this.getDefaultValueWithString());
         column.setNullable(this.isNullable());
         column.setPrimaryKey(this.isPrimaryKey());
         column.setSequence(this.isSequence());
         column.setLength(this.getLength());
         return column;
+    }
+
+    private static ColumnType resolveColumnType(String normalizedType) {
+        return switch (normalizedType) {
+            case "varchar" -> ColumnType.VARCHAR;
+            case "text" -> ColumnType.TEXT;
+            case "longtext" -> ColumnType.LONGTEXT;
+            case "int" -> ColumnType.INT;
+            case "bigint" -> ColumnType.BIGINT;
+            case "bool" -> ColumnType.BOOLEAN;
+            case "timestamp" -> ColumnType.TIMESTAMP;
+            case "date" -> ColumnType.DATE;
+            case "numeric" -> ColumnType.NUMERIC;
+            case "json", "jsonb" -> ColumnType.JSON;
+            default -> ColumnType.valueOf(normalizedType.toUpperCase());
+        };
+    }
+
+    private static ColumnType resolveArrayElementType(String normalizedElementType) {
+        return switch (normalizedElementType) {
+            case "varchar" -> ColumnType.VARCHAR;
+            case "text" -> ColumnType.TEXT;
+            case "int" -> ColumnType.INT;
+            case "bigint" -> ColumnType.BIGINT;
+            case "boolean" -> ColumnType.BOOLEAN;
+            case "timestamp" -> ColumnType.TIMESTAMP;
+            case "date" -> ColumnType.DATE;
+            case "numeric" -> ColumnType.NUMERIC;
+            default -> throw new IllegalArgumentException("Unsupported ARRAY element type: " + normalizedElementType);
+        };
     }
 }

@@ -193,7 +193,7 @@ public class TableBuilder {
 
         DBColumn dbColumn = dbTable.getColumn(name);
 
-        if (!type.equalsIgnoreCase(dbColumn.getType()) || column.getLength() != null && !column.getLength().equals(dbColumn.getLength())) {
+        if (!SchemaBuildRules.sameColumnType(type, dbColumn.getType()) || column.getLength() != null && !column.getLength().equals(dbColumn.getLength())) {
             db.execute(dialect.alterColumnType(quotedSchemaDotTable, quotedName, type + length, baseColumnString));
         }
 

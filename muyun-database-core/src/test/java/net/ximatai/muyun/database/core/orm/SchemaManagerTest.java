@@ -293,6 +293,25 @@ class SchemaManagerTest {
     }
 
     @Test
+    void shouldTreatPostgresMetadataArrayAliasesAsSameColumnTypes() {
+        FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("POSTGRESQL"));
+        existingInfo(loader);
+        loader.columns.get("public.contract").put("id", primaryKeyColumn("id", "varchar", 32));
+        loader.columns.get("public.contract").put("tags", aliasedColumn("tags", "_varchar", null));
+        loader.columns.get("public.contract").put("scores", aliasedColumn("scores", "_int4", null));
+        FakeOperations operations = new FakeOperations(loader);
+        TableWrapper table = TableWrapper.withName("contract")
+                .setSchema("public")
+                .setPrimaryKey(Column.of("id").setType(ColumnType.VARCHAR).setLength(32).setPrimaryKey())
+                .addColumn(Column.of("tags").setType(ColumnType.ARRAY).setElementType(ColumnType.VARCHAR))
+                .addColumn(Column.of("scores").setType(ColumnType.ARRAY).setElementType(ColumnType.INT));
+
+        MigrationResult dryRun = new SchemaManager(operations).ensureTable(table, MigrationOptions.dryRunStrict());
+
+        assertFalse(dryRun.isChanged());
+    }
+
+    @Test
     void shouldRejectArrayColumnsWithoutElementType() {
         FakeOperations operations = new FakeOperations(new DBInfo("POSTGRESQL"));
         TableWrapper table = TableWrapper.withName("contract")
@@ -304,6 +323,16 @@ class SchemaManagerTest {
                 IllegalArgumentException.class,
                 () -> new SchemaManager(operations).ensureTable(table, MigrationOptions.dryRun())
         );
+    }
+
+    @Test
+    void dbColumnShouldConvertPostgresArrayMetadataToColumn() {
+        DBColumn dbColumn = aliasedColumn("tags", "_varchar", null);
+
+        Column column = dbColumn.toColumn();
+
+        assertEquals(ColumnType.ARRAY, column.getType());
+        assertEquals(ColumnType.VARCHAR, column.getElementType());
     }
 
     @Test
