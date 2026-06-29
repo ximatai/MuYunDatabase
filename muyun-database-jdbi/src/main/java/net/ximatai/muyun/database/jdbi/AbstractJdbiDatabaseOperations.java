@@ -11,6 +11,7 @@ import org.jdbi.v3.core.mapper.RowMapper;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.lang.reflect.Array;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -129,10 +130,16 @@ abstract class AbstractJdbiDatabaseOperations<K> implements IDatabaseOperations<
             }
 
             Object[] arrayValue;
-            if (value instanceof String val) {
-                arrayValue = val.split(",");
+            if (value instanceof String) {
+                throw new IllegalArgumentException("ARRAY value must be a List or Java array, not CSV string");
             } else if (value instanceof List<?> val) {
                 arrayValue = val.toArray();
+            } else if (value.getClass().isArray()) {
+                int length = Array.getLength(value);
+                arrayValue = new Object[length];
+                for (int i = 0; i < length; i++) {
+                    arrayValue[i] = Array.get(value, i);
+                }
             } else {
                 return value;
             }
@@ -145,9 +152,18 @@ abstract class AbstractJdbiDatabaseOperations<K> implements IDatabaseOperations<
                 case "int4" -> Arrays.stream(arrayValue)
                         .map(val -> Integer.parseInt(val.toString()))
                         .toArray(Integer[]::new);
+                case "int8" -> Arrays.stream(arrayValue)
+                        .map(this::convertToBigInteger)
+                        .toArray(BigInteger[]::new);
                 case "bool" -> Arrays.stream(arrayValue)
                         .map(val -> Boolean.parseBoolean(val.toString()))
                         .toArray(Boolean[]::new);
+                case "numeric" -> Arrays.stream(arrayValue)
+                        .map(this::convertToBigDecimal)
+                        .toArray(BigDecimal[]::new);
+                case "date", "timestamp" -> Arrays.stream(arrayValue)
+                        .map(AbstractJdbiDatabaseOperations::handleDateTimestamp)
+                        .toArray(Timestamp[]::new);
                 default -> value;
             };
         }

@@ -49,6 +49,37 @@ public final class SchemaBuildRules {
         return dbType == POSTGRESQL ? IColumnTypeTransform.POSTGRESQL : IColumnTypeTransform.DEFAULT;
     }
 
+    public static String columnType(Column column, DBInfo.Type dbType) {
+        if (column.getType() == ColumnType.ARRAY) {
+            if (dbType != POSTGRESQL) {
+                throw new IllegalArgumentException("ARRAY columns are only supported on PostgreSQL: " + column.getName());
+            }
+            return postgresArrayType(column);
+        }
+        return columnTypeTransform(dbType).transform(column.getType());
+    }
+
+    public static boolean sameColumnType(String expectedType, String actualType) {
+        if (expectedType == null || actualType == null) {
+            return expectedType == null && actualType == null;
+        }
+        return normalizeColumnType(expectedType).equals(normalizeColumnType(actualType));
+    }
+
+    public static String normalizeColumnType(String type) {
+        String normalized = type.trim()
+                .toLowerCase()
+                .replaceAll("\\s+", " ");
+        if (normalized.startsWith("_")) {
+            return normalizePostgresArrayElementType(normalized.substring(1)) + "[]";
+        }
+        if (normalized.endsWith("[]")) {
+            String elementType = normalized.substring(0, normalized.length() - 2);
+            return normalizePostgresArrayElementType(elementType) + "[]";
+        }
+        return normalizeScalarType(normalized);
+    }
+
     public static String columnLength(Column column) {
         String length = column.getLength() == null ? "" : "(" + column.getLength() + ")";
 
@@ -66,7 +97,9 @@ public final class SchemaBuildRules {
     }
 
     public static boolean ignoresColumnLength(Column column) {
-        return column.getType().equals(ColumnType.TEXT) || column.getType().equals(ColumnType.LONGTEXT);
+        return column.getType().equals(ColumnType.TEXT)
+                || column.getType().equals(ColumnType.LONGTEXT)
+                || column.getType().equals(ColumnType.ARRAY);
     }
 
     public static String columnDefinition(Column column, String mappedType, DBInfo.Type dbType) {
@@ -95,5 +128,51 @@ public final class SchemaBuildRules {
         }
         String suffix = index.isUnique() ? "_uindex" : "_index";
         return tableName + "_" + String.join("_", index.getColumns()) + suffix;
+    }
+
+    private static String postgresArrayType(Column column) {
+        ColumnType elementType = column.getElementType();
+        if (elementType == null || elementType == ColumnType.UNKNOWN) {
+            throw new IllegalArgumentException("ARRAY column elementType must be provided or inferred: " + column.getName());
+        }
+        return postgresArrayElementType(elementType) + "[]";
+    }
+
+    private static String postgresArrayElementType(ColumnType elementType) {
+        return switch (elementType) {
+            case VARCHAR -> "varchar";
+            case TEXT, LONGTEXT -> "text";
+            case INT -> "int";
+            case BIGINT -> "bigint";
+            case BOOLEAN -> "boolean";
+            case TIMESTAMP -> "timestamp";
+            case DATE -> "date";
+            case NUMERIC -> "numeric";
+            default -> throw new IllegalArgumentException("Unsupported ARRAY element type: " + elementType);
+        };
+    }
+
+    private static String normalizePostgresArrayElementType(String type) {
+        return switch (type) {
+            case "character varying", "varchar" -> "varchar";
+            case "integer", "int", "int4" -> "int";
+            case "bigint", "int8" -> "bigint";
+            case "bool", "boolean" -> "boolean";
+            case "timestamp without time zone", "timestamp" -> "timestamp";
+            case "date" -> "date";
+            case "numeric", "decimal" -> "numeric";
+            case "text", "longtext" -> "text";
+            default -> type;
+        };
+    }
+
+    private static String normalizeScalarType(String type) {
+        return switch (type) {
+            case "character varying" -> "varchar";
+            case "integer" -> "int";
+            case "boolean" -> "bool";
+            case "timestamp without time zone" -> "timestamp";
+            default -> type;
+        };
     }
 }

@@ -268,7 +268,7 @@ class SchemaMigrationPlanner {
     }
 
     private String resolveColumnType(Column column) {
-        String type = SchemaBuildRules.columnTypeTransform(getDatabaseType()).transform(column.getType());
+        String type = SchemaBuildRules.columnType(column, getDatabaseType());
         if (ColumnType.UNKNOWN.name().equals(type) || type == null) {
             throw new OrmException(OrmException.Code.INVALID_MAPPING, "column type not provided: " + column.getName());
         }
@@ -279,20 +279,7 @@ class SchemaMigrationPlanner {
         if (expectedType == null || actualType == null) {
             return Objects.equals(expectedType, actualType);
         }
-        return normalizeColumnType(expectedType).equals(normalizeColumnType(actualType));
-    }
-
-    private String normalizeColumnType(String type) {
-        String normalized = type.trim()
-                .toLowerCase(Locale.ROOT)
-                .replaceAll("\\s+", " ");
-        return switch (normalized) {
-            case "character varying" -> "varchar";
-            case "integer" -> "int";
-            case "boolean" -> "bool";
-            case "timestamp without time zone" -> "timestamp";
-            default -> normalized;
-        };
+        return SchemaBuildRules.sameColumnType(expectedType, actualType);
     }
 
     private void assertValidIdentifier(String identifier, String type) {

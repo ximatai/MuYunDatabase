@@ -74,12 +74,12 @@ int upsert(T entity);
 1. `Criteria.copyOf(criteria)` 返回当前条件快照；源条件后续修改不会影响副本。
 2. `criteria.and(other)` / `criteria.or(other)` 按组组合另一个 `Criteria` 的快照；`other` 后续修改不会影响组合结果。
 3. 旧的 `andGroup(CriteriaGroup)` / `orGroup(CriteriaGroup)` 保持既有行为，适合调用方显式管理 group 生命周期。
-4. `SET` / `JSON_SET` 字段支持集合查询：`contains(field, value)`、`containsAny(field, values)`、`containsAll(field, values)`、`isEmpty(field)`、`isNotEmpty(field)`，并提供对应 `or*` 方法。
+4. `SET` / `JSON_SET` / `ARRAY` 字段支持集合查询：`contains(field, value)`、`containsAny(field, values)`、`containsAll(field, values)`、`isEmpty(field)`、`isNotEmpty(field)`，并提供对应 `or*` 方法。
 5. 集合查询只支持静态实体 ORM 路径，因为编译器需要实体字段元数据判断 `ColumnType` 并执行字段级 codec；公开 `CriteriaColumnResolver` 路径和 `RuntimeTableGateway` 不承诺支持集合查询。
-6. 集合查询用于非 `SET` / `JSON_SET` 字段时直接抛出 `INVALID_CRITERIA`。
+6. 集合查询用于非 `SET` / `JSON_SET` / `ARRAY` 字段时直接抛出 `INVALID_CRITERIA`。
 7. `containsAny(field, List.of())` 固定编译为 false 条件；`containsAll(field, List.of())` 固定编译为 true 条件。
 8. `contains` / `containsAny` / `containsAll` 的元素参数会经过集合元素 codec；例如声明了可识别泛型元素类型且配置了自定义 `DatabaseValueConverter` 时，枚举 code 会参与查询参数绑定。
-9. `raw`、`SqlSubQuery` 及其参数没有字段上下文，不自动执行 `SET` / `JSON_SET` 字段 codec；需要调用方自行提供数据库侧表示。
+9. `raw`、`SqlSubQuery` 及其参数没有字段上下文，不自动执行 `SET` / `JSON_SET` / `ARRAY` 字段 codec；需要调用方自行提供数据库侧表示。
 
 ## 7. 事务语义（稳定）
 
@@ -104,5 +104,11 @@ int upsert(T entity);
 14. `ColumnType.JSON_SET` 的元素按字符串处理：写入时忽略 `null` 元素、按集合语义去重、保留首次出现顺序；空集合写入为 `[]`，字段值为 `null` 时写入为 `null`。
 15. `ColumnType.JSON_SET` 读取非法 JSON 数组或写入非法 JSON 数组字符串时直接拒绝，不做静默降级。
 16. `ColumnType.SET` / `ColumnType.JSON_SET` 字段声明了可识别泛型元素类型时，自定义 `DatabaseValueConverter` 可作用于集合元素；`JSON_SET` 底层仍保持 JSON 字符串数组语义。
+17. `ColumnType.ARRAY` 表示 PostgreSQL 原生数组列，必须通过 `@Column(type = ColumnType.ARRAY, elementType = ...)` 显式声明，或在 `type = ARRAY` 且字段为 `List<T>` / Java数组时由系统推断元素类型。
+18. `ColumnType.ARRAY` 第一阶段只支持 PostgreSQL；MySQL 不做 JSON 降级，建表/迁移、读写和 ARRAY 集合查询都会直接拒绝或由底层数据库拒绝。
+19. `ColumnType.ARRAY` 写入只接受 `Collection` 或 Java 数组；空集合写入为空数组，字段值为 `null` 时写入为 `null`，不接受 CSV 字符串解析。
+20. `ColumnType.ARRAY` 读取时按字段声明适配：`List<T>` 返回 `ArrayList<T>`，`Set<T>` 返回 `LinkedHashSet<T>`，`T[]` 返回 Java 数组；元素会经过字段级 `DatabaseValueConverter`。
+21. `ColumnType.ARRAY` 的集合查询复用 `contains` / `containsAny` / `containsAll` / `isEmpty` / `isNotEmpty` API，PostgreSQL 下分别使用原生数组操作符和 `cardinality`。
+22. `ColumnType.VARCHAR_ARRAY` / `ColumnType.INT_ARRAY` 属于遗留枚举，不作为新代码推荐入口；新数组列统一使用 `ColumnType.ARRAY + elementType`。
 
 下一步：若你在做历史项目改造，请按 [`REFACTOR_GUIDE.md`](REFACTOR_GUIDE.md) 的“推荐重构路径”执行。

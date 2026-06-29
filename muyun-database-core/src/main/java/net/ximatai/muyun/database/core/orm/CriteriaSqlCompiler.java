@@ -171,11 +171,32 @@ public final class CriteriaSqlCompiler {
         if (clause.getValues().isEmpty()) {
             return emptyExpression;
         }
-        List<String> parts = new ArrayList<>();
+        List<String> keys = new ArrayList<>();
         for (Object value : clause.getValues()) {
-            String key = bindCollectionElement(collection.fieldMeta, value, context);
-            parts.add(renderCollectionContains(collection, key, context.dbType));
+            keys.add(bindCollectionElement(collection.fieldMeta, value, context));
         }
+        if (collection.fieldMeta.getColumnType() == ColumnType.ARRAY) {
+            List<String> valueExpressions = keys.stream().map(key -> ":" + key).toList();
+            if (" OR ".equals(joiner)) {
+                return CriteriaDialectExpressions.collectionContainsAny(
+                        context.dbType,
+                        collection.fieldMeta.getColumnType(),
+                        collection.fieldMeta.getElementColumnType(),
+                        collection.columnSql,
+                        valueExpressions
+                );
+            }
+            return CriteriaDialectExpressions.collectionContainsAll(
+                    context.dbType,
+                    collection.fieldMeta.getColumnType(),
+                    collection.fieldMeta.getElementColumnType(),
+                    collection.columnSql,
+                    valueExpressions
+            );
+        }
+        List<String> parts = keys.stream()
+                .map(key -> renderCollectionContains(collection, key, context.dbType))
+                .toList();
         return "(" + String.join(joiner, parts) + ")";
     }
 
@@ -183,6 +204,7 @@ public final class CriteriaSqlCompiler {
         return CriteriaDialectExpressions.collectionContains(
                 dbType,
                 collection.fieldMeta.getColumnType(),
+                collection.fieldMeta.getElementColumnType(),
                 collection.columnSql,
                 ":" + key
         );
@@ -193,6 +215,7 @@ public final class CriteriaSqlCompiler {
         String expression = CriteriaDialectExpressions.collectionIsEmpty(
                 context.dbType,
                 collection.fieldMeta.getColumnType(),
+                collection.fieldMeta.getElementColumnType(),
                 collection.columnSql
         );
         return not ? "NOT " + expression : expression;
@@ -200,10 +223,18 @@ public final class CriteriaSqlCompiler {
 
     private CollectionField resolveCollectionField(CriteriaClause clause, ClauseContext context) {
         EntityFieldMeta fieldMeta = context.requireFieldMeta(clause.getField());
-        if (fieldMeta.getColumnType() != ColumnType.SET && fieldMeta.getColumnType() != ColumnType.JSON_SET) {
+        if (fieldMeta.getColumnType() != ColumnType.SET
+                && fieldMeta.getColumnType() != ColumnType.JSON_SET
+                && fieldMeta.getColumnType() != ColumnType.ARRAY) {
             throw new OrmException(
                     OrmException.Code.INVALID_CRITERIA,
-                    clause.getOperator() + " requires SET or JSON_SET field: " + clause.getField()
+                    clause.getOperator() + " requires SET, JSON_SET, or ARRAY field: " + clause.getField()
+            );
+        }
+        if (fieldMeta.getColumnType() == ColumnType.ARRAY && context.dbType != DBInfo.Type.POSTGRESQL) {
+            throw new OrmException(
+                    OrmException.Code.INVALID_CRITERIA,
+                    clause.getOperator() + " for ARRAY fields is only supported on PostgreSQL: " + clause.getField()
             );
         }
         String columnSql = resolveColumn(clause, context);
@@ -211,7 +242,7 @@ public final class CriteriaSqlCompiler {
     }
 
     private String bindCollectionElement(EntityFieldMeta fieldMeta, Object value, ClauseContext context) {
-        String encoded;
+        Object encoded;
         try {
             encoded = FieldValueCodec.toCollectionElementDatabaseValue(fieldMeta, value, valueConverter);
         } catch (IllegalArgumentException ex) {

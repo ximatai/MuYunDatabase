@@ -164,8 +164,7 @@ public class TableBuilder {
         boolean isNew = false;
         String name = column.getName();
         requireValidIdentifier(name, "column");
-        ColumnType dataType = column.getType();
-        String type = SchemaBuildRules.columnTypeTransform(getDatabaseType()).transform(dataType);
+        String type = SchemaBuildRules.columnType(column, getDatabaseType());
 
         if (ColumnType.UNKNOWN.name().equals(type)) {
             throw new MuYunDatabaseException("column: " + column + " type not provided");
@@ -194,7 +193,7 @@ public class TableBuilder {
 
         DBColumn dbColumn = dbTable.getColumn(name);
 
-        if (!type.equalsIgnoreCase(dbColumn.getType()) || column.getLength() != null && !column.getLength().equals(dbColumn.getLength())) {
+        if (!SchemaBuildRules.sameColumnType(type, dbColumn.getType()) || column.getLength() != null && !column.getLength().equals(dbColumn.getLength())) {
             db.execute(dialect.alterColumnType(quotedSchemaDotTable, quotedName, type + length, baseColumnString));
         }
 

@@ -2,10 +2,15 @@ package net.ximatai.muyun.database.core.annotation;
 
 import net.ximatai.muyun.database.core.builder.ColumnType;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.Optional;
 
 import static net.ximatai.muyun.database.core.builder.ColumnType.*;
 
@@ -49,8 +54,8 @@ public final class TypeMapper {
 
         mappings.put(Map.class, JSON);
         mappings.put(Set.class, SET);
-        mappings.put(String[].class, VARCHAR_ARRAY);
-        mappings.put(int[].class, INT_ARRAY);
+        mappings.put(String[].class, ARRAY);
+        mappings.put(int[].class, ARRAY);
         return Collections.unmodifiableMap(mappings);
     }
 
@@ -69,6 +74,28 @@ public final class TypeMapper {
             return JSON;
         }
         return VARCHAR;
+    }
+
+    public static Optional<Class<?>> inferElementJavaType(Field field) {
+        if (field == null) {
+            return Optional.empty();
+        }
+        Class<?> fieldType = field.getType();
+        if (fieldType.isArray()) {
+            return Optional.of(fieldType.getComponentType());
+        }
+        if (!Collection.class.isAssignableFrom(fieldType)) {
+            return Optional.empty();
+        }
+        Type genericType = field.getGenericType();
+        if (!(genericType instanceof ParameterizedType parameterizedType)) {
+            return Optional.empty();
+        }
+        Type[] arguments = parameterizedType.getActualTypeArguments();
+        if (arguments.length != 1 || !(arguments[0] instanceof Class<?> elementType)) {
+            return Optional.empty();
+        }
+        return Optional.of(elementType);
     }
 
 }

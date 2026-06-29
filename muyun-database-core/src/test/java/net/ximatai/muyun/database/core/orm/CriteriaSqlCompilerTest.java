@@ -229,6 +229,42 @@ class CriteriaSqlCompilerTest {
     }
 
     @Test
+    void shouldCompilePostgresArrayCollectionCriteria() throws NoSuchFieldException {
+        EntityMeta meta = collectionMeta("scores", ColumnType.ARRAY, ColumnType.INT);
+
+        CompiledCriteria compiled = compiler.compile(
+                Criteria.of()
+                        .contains("scores", 1)
+                        .containsAny("scores", List.of(2, 3))
+                        .containsAll("scores", List.of(4, 5))
+                        .isEmpty("scores"),
+                meta,
+                DBInfo.Type.POSTGRESQL
+        );
+
+        assertEquals(
+                "\"scores\" @> ARRAY[:p0]::int[] "
+                        + "AND \"scores\" && ARRAY[:p1, :p2]::int[] "
+                        + "AND \"scores\" @> ARRAY[:p3, :p4]::int[] "
+                        + "AND (\"scores\" IS NULL OR cardinality(\"scores\") = 0)",
+                compiled.getSql()
+        );
+        assertEquals(Map.of("p0", 1, "p1", 2, "p2", 3, "p3", 4, "p4", 5), compiled.getParams());
+    }
+
+    @Test
+    void shouldRejectArrayCriteriaForMysql() throws NoSuchFieldException {
+        EntityMeta meta = collectionMeta("scores", ColumnType.ARRAY, ColumnType.INT);
+
+        OrmException exception = assertThrows(
+                OrmException.class,
+                () -> compiler.compile(Criteria.of().contains("scores", 1), meta, DBInfo.Type.MYSQL)
+        );
+
+        assertEquals(OrmException.Code.INVALID_CRITERIA, exception.getCode());
+    }
+
+    @Test
     void shouldUseExplicitEmptyListSemanticsForCollectionCriteria() throws NoSuchFieldException {
         EntityMeta meta = collectionMeta("statuses", ColumnType.SET);
 
@@ -385,13 +421,27 @@ class CriteriaSqlCompilerTest {
                                       String columnName,
                                       ColumnType columnType,
                                       boolean id) throws NoSuchFieldException {
+        return fieldMeta(fieldName, columnName, columnType, ColumnType.UNKNOWN, id);
+    }
+
+    private EntityFieldMeta fieldMeta(String fieldName,
+                                      String columnName,
+                                      ColumnType columnType,
+                                      ColumnType elementColumnType,
+                                      boolean id) throws NoSuchFieldException {
         Field field = StaticEntity.class.getDeclaredField(fieldName);
-        return new EntityFieldMeta(field, columnName, columnType, id);
+        return new EntityFieldMeta(field, columnName, columnType, elementColumnType, id);
     }
 
     private EntityMeta collectionMeta(String fieldName, ColumnType columnType) throws NoSuchFieldException {
+        return collectionMeta(fieldName, columnType, ColumnType.UNKNOWN);
+    }
+
+    private EntityMeta collectionMeta(String fieldName,
+                                      ColumnType columnType,
+                                      ColumnType elementColumnType) throws NoSuchFieldException {
         EntityFieldMeta id = fieldMeta("id", "id", ColumnType.VARCHAR, true);
-        EntityFieldMeta collection = fieldMeta(fieldName, resolveColumnName(fieldName), columnType, false);
+        EntityFieldMeta collection = fieldMeta(fieldName, resolveColumnName(fieldName), columnType, elementColumnType, false);
         return new EntityMeta(
                 StaticEntity.class,
                 "test_entity",
@@ -415,6 +465,7 @@ class CriteriaSqlCompilerTest {
         private TestStatus status;
         private Set<TestStatus> statuses;
         private Set<TestStatus> jsonStatuses;
+        private List<Integer> scores;
     }
 
     private enum TestStatus {

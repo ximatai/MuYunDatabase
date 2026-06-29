@@ -11,6 +11,7 @@ public class Column {
     private String name;           // 列名
     private String comment;        // 列注释/描述
     private ColumnType type;       // 列数据类型
+    private ColumnType elementType = ColumnType.UNKNOWN; // ARRAY列的元素类型
     private String defaultValue;   // 默认值
 
     // 数值类型相关属性
@@ -72,6 +73,11 @@ public class Column {
      */
     public Column setType(ColumnType type) {
         this.type = type;
+        return this;
+    }
+
+    public Column setElementType(ColumnType elementType) {
+        this.elementType = elementType == null ? ColumnType.UNKNOWN : elementType;
         return this;
     }
 
@@ -313,6 +319,10 @@ public class Column {
      */
     public ColumnType getType() {
         return type;
+    }
+
+    public ColumnType getElementType() {
+        return elementType;
     }
 
     /**
