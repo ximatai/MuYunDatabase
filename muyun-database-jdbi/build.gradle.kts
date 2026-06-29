@@ -17,6 +17,7 @@ dependencies {
     api(libs.jdbi3.sqlobject)
     api(libs.jdbi3.jackson2)
     api(libs.jdbi3.postgres)
+    api(libs.jackson.databind)
 
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)

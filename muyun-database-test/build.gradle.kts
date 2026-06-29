@@ -25,6 +25,7 @@ dependencies {
     testImplementation(libs.postgresql)
     testImplementation(libs.mysql)
     testImplementation(libs.bundles.testcontainers.all)
+    testImplementation(libs.commons.compress)
 
     testImplementation(libs.logback.classic)
 }

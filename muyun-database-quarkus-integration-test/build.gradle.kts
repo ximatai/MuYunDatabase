@@ -21,6 +21,11 @@ dependencies {
     testRuntimeOnly(libs.junit.platform.launcher)
     testImplementation(libs.quarkus.junit5)
     testImplementation(libs.testcontainers.postgresql)
+    testImplementation(libs.plexus.utils)
+}
+
+configurations.configureEach {
+    resolutionStrategy.force(libs.plexus.utils.get().toString())
 }
 
 tasks.withType<Test>().configureEach {

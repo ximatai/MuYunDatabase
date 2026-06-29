@@ -31,4 +31,5 @@ dependencies {
     testImplementation(libs.postgresql)
     testImplementation(libs.testcontainers.junit.jupiter)
     testImplementation(libs.testcontainers.postgresql)
+    testImplementation(libs.commons.compress)
 }
