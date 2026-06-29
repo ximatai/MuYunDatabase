@@ -156,6 +156,173 @@ class CriteriaSqlCompilerTest {
     }
 
     @Test
+    void shouldCompilePostgresJsonSetContainsWithElementCodec() throws NoSuchFieldException {
+        EntityMeta meta = collectionMeta("jsonStatuses", ColumnType.JSON_SET);
+        CriteriaSqlCompiler customCompiler = new CriteriaSqlCompiler(new TestStatusCodeConverter());
+
+        CompiledCriteria compiled = customCompiler.compile(
+                Criteria.of().contains("jsonStatuses", TestStatus.ENABLED),
+                meta,
+                DBInfo.Type.POSTGRESQL
+        );
+
+        assertEquals("jsonb_exists(\"json_statuses\"::jsonb, :p0)", compiled.getSql());
+        assertEquals(Map.of("p0", "enabled"), compiled.getParams());
+    }
+
+    @Test
+    void shouldCompileMysqlJsonSetContainsAnyAndEmpty() throws NoSuchFieldException {
+        EntityMeta meta = collectionMeta("jsonStatuses", ColumnType.JSON_SET);
+
+        CompiledCriteria compiled = compiler.compile(
+                Criteria.of()
+                        .containsAny("jsonStatuses", List.of(TestStatus.ENABLED, TestStatus.DISABLED))
+                        .orIsEmpty("jsonStatuses"),
+                meta,
+                DBInfo.Type.MYSQL
+        );
+
+        assertEquals(
+                "(JSON_CONTAINS(CAST(`json_statuses` AS JSON), JSON_QUOTE(:p0)) OR "
+                        + "JSON_CONTAINS(CAST(`json_statuses` AS JSON), JSON_QUOTE(:p1))) "
+                        + "OR (`json_statuses` IS NULL OR JSON_LENGTH(CAST(`json_statuses` AS JSON)) = 0)",
+                compiled.getSql()
+        );
+        assertEquals(Map.of("p0", "ENABLED", "p1", "DISABLED"), compiled.getParams());
+    }
+
+    @Test
+    void shouldCompileCsvSetContainsAllForPostgres() throws NoSuchFieldException {
+        EntityMeta meta = collectionMeta("statuses", ColumnType.SET);
+        CriteriaSqlCompiler customCompiler = new CriteriaSqlCompiler(new TestStatusCodeConverter());
+
+        CompiledCriteria compiled = customCompiler.compile(
+                Criteria.of().containsAll("statuses", List.of(TestStatus.ENABLED, TestStatus.DISABLED)),
+                meta,
+                DBInfo.Type.POSTGRESQL
+        );
+
+        assertEquals(
+                "(POSITION(',' || :p0 || ',' IN ',' || COALESCE(\"statuses\", '') || ',') > 0 AND "
+                        + "POSITION(',' || :p1 || ',' IN ',' || COALESCE(\"statuses\", '') || ',') > 0)",
+                compiled.getSql()
+        );
+        assertEquals(Map.of("p0", "enabled", "p1", "disabled"), compiled.getParams());
+    }
+
+    @Test
+    void shouldCompileCsvSetContainsForMysql() throws NoSuchFieldException {
+        EntityMeta meta = collectionMeta("statuses", ColumnType.SET);
+
+        CompiledCriteria compiled = compiler.compile(
+                Criteria.of().contains("statuses", TestStatus.ENABLED).isNotEmpty("statuses"),
+                meta,
+                DBInfo.Type.MYSQL
+        );
+
+        assertEquals(
+                "FIND_IN_SET(:p0, COALESCE(`statuses`, '')) > 0 AND NOT "
+                        + "(`statuses` IS NULL OR `statuses` = '')",
+                compiled.getSql()
+        );
+        assertEquals(Map.of("p0", "ENABLED"), compiled.getParams());
+    }
+
+    @Test
+    void shouldUseExplicitEmptyListSemanticsForCollectionCriteria() throws NoSuchFieldException {
+        EntityMeta meta = collectionMeta("statuses", ColumnType.SET);
+
+        CompiledCriteria any = compiler.compile(
+                Criteria.of().containsAny("statuses", List.of()),
+                meta,
+                DBInfo.Type.MYSQL
+        );
+        CompiledCriteria all = compiler.compile(
+                Criteria.of().containsAll("statuses", List.of()),
+                meta,
+                DBInfo.Type.MYSQL
+        );
+
+        assertEquals("1 = 0", any.getSql());
+        assertEquals(Map.of(), any.getParams());
+        assertEquals("1 = 1", all.getSql());
+        assertEquals(Map.of(), all.getParams());
+    }
+
+    @Test
+    void shouldValidateCollectionFieldBeforeEmptyListSemantics() throws NoSuchFieldException {
+        EntityFieldMeta id = fieldMeta("id", "id", ColumnType.VARCHAR, true);
+        EntityFieldMeta status = fieldMeta("status", "status", ColumnType.VARCHAR, false);
+        EntityMeta meta = new EntityMeta(
+                StaticEntity.class,
+                "test_entity",
+                null,
+                null,
+                List.of(id, status),
+                id
+        );
+
+        OrmException exception = assertThrows(
+                OrmException.class,
+                () -> compiler.compile(Criteria.of().containsAll("status", List.of()), meta, DBInfo.Type.MYSQL)
+        );
+
+        assertEquals(OrmException.Code.INVALID_CRITERIA, exception.getCode());
+    }
+
+    @Test
+    void jsonSetContainsShouldPreserveElementWhitespaceAndEmptyString() throws NoSuchFieldException {
+        EntityMeta meta = collectionMeta("jsonStatuses", ColumnType.JSON_SET);
+
+        CompiledCriteria compiled = compiler.compile(
+                Criteria.of().containsAny("jsonStatuses", List.of(" spaced ", "")),
+                meta,
+                DBInfo.Type.POSTGRESQL
+        );
+
+        assertEquals(
+                "(jsonb_exists(\"json_statuses\"::jsonb, :p0) OR jsonb_exists(\"json_statuses\"::jsonb, :p1))",
+                compiled.getSql()
+        );
+        assertEquals(Map.of("p0", " spaced ", "p1", ""), compiled.getParams());
+    }
+
+    @Test
+    void shouldRejectCollectionCriteriaWithoutEntityMeta() {
+        OrmException exception = assertThrows(
+                OrmException.class,
+                () -> compiler.compile(
+                        Criteria.of().contains("status", "ENABLED"),
+                        this::resolveColumn,
+                        DBInfo.Type.POSTGRESQL
+                )
+        );
+
+        assertEquals(OrmException.Code.INVALID_CRITERIA, exception.getCode());
+    }
+
+    @Test
+    void shouldRejectCollectionCriteriaForNonCollectionColumn() throws NoSuchFieldException {
+        EntityFieldMeta id = fieldMeta("id", "id", ColumnType.VARCHAR, true);
+        EntityFieldMeta status = fieldMeta("status", "status", ColumnType.VARCHAR, false);
+        EntityMeta meta = new EntityMeta(
+                StaticEntity.class,
+                "test_entity",
+                null,
+                null,
+                List.of(id, status),
+                id
+        );
+
+        OrmException exception = assertThrows(
+                OrmException.class,
+                () -> compiler.compile(Criteria.of().contains("status", TestStatus.ENABLED), meta, DBInfo.Type.POSTGRESQL)
+        );
+
+        assertEquals(OrmException.Code.INVALID_CRITERIA, exception.getCode());
+    }
+
+    @Test
     void copyOfShouldSnapshotCriteria() {
         Criteria source = Criteria.of().eq("code", "A001");
         Criteria copy = Criteria.copyOf(source);
@@ -222,10 +389,32 @@ class CriteriaSqlCompilerTest {
         return new EntityFieldMeta(field, columnName, columnType, id);
     }
 
+    private EntityMeta collectionMeta(String fieldName, ColumnType columnType) throws NoSuchFieldException {
+        EntityFieldMeta id = fieldMeta("id", "id", ColumnType.VARCHAR, true);
+        EntityFieldMeta collection = fieldMeta(fieldName, resolveColumnName(fieldName), columnType, false);
+        return new EntityMeta(
+                StaticEntity.class,
+                "test_entity",
+                null,
+                null,
+                List.of(id, collection),
+                id
+        );
+    }
+
+    private String resolveColumnName(String fieldName) {
+        return switch (fieldName) {
+            case "jsonStatuses" -> "json_statuses";
+            default -> fieldName;
+        };
+    }
+
     private static class StaticEntity {
         private String id;
         private String code;
+        private TestStatus status;
         private Set<TestStatus> statuses;
+        private Set<TestStatus> jsonStatuses;
     }
 
     private enum TestStatus {

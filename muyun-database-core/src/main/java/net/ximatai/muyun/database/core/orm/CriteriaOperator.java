@@ -17,5 +17,10 @@ public enum CriteriaOperator {
     IS_NOT_NULL,
     RAW,
     EXISTS,
-    NOT_EXISTS
+    NOT_EXISTS,
+    CONTAINS,
+    CONTAINS_ANY,
+    CONTAINS_ALL,
+    IS_EMPTY,
+    IS_NOT_EMPTY
 }

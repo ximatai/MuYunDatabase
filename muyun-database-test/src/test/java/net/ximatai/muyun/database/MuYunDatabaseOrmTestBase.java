@@ -4,8 +4,10 @@ import net.ximatai.muyun.database.core.orm.*;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -500,6 +502,117 @@ public abstract class MuYunDatabaseOrmTestBase extends MuYunDatabaseDdlTestBase 
         assertEquals(1, repo.deleteById(id));
     }
 
+    @Test
+    void testSimpleOrmCollectionCriteriaAgainstDatabase() {
+        SimpleEntityManager collectionOrm = new DefaultSimpleEntityManager(
+                db,
+                UpsertStrategy.ATOMIC_PREFERRED,
+                new EntityMetaResolver(),
+                new CollectionStatusCodeConverter()
+        );
+        collectionOrm.ensureTable(OrmCollectionQueryEntity.class);
+        String marker = "coll_" + UUID.randomUUID().toString().substring(0, 8);
+
+        OrmCollectionQueryEntity row1 = collectionRow(
+                marker,
+                "one",
+                Set.of("red", "blue"),
+                Set.of("hello, world", "plain", " spaced ", ""),
+                Set.of(CollectionStatus.ENABLED, CollectionStatus.DISABLED)
+        );
+        OrmCollectionQueryEntity row2 = collectionRow(
+                marker,
+                "two",
+                Set.of("green"),
+                Set.of("plain"),
+                Set.of(CollectionStatus.DISABLED)
+        );
+        OrmCollectionQueryEntity row3 = collectionRow(marker, "empty", Set.of(), Set.of(), Set.of());
+        OrmCollectionQueryEntity row4 = collectionRow(marker, "nulls", null, null, null);
+        collectionOrm.insert(row1);
+        collectionOrm.insert(row2);
+        collectionOrm.insert(row3);
+        collectionOrm.insert(row4);
+
+        List<OrmCollectionQueryEntity> csvContains = collectionOrm.query(
+                OrmCollectionQueryEntity.class,
+                Criteria.of().eq("marker", marker).contains("csvTags", "red"),
+                PageRequest.of(1, 10),
+                Sort.asc("name")
+        );
+        assertEquals(List.of("one"), csvContains.stream().map(row -> row.name).toList());
+
+        List<OrmCollectionQueryEntity> jsonContainsComma = collectionOrm.query(
+                OrmCollectionQueryEntity.class,
+                Criteria.of().eq("marker", marker).contains("jsonTags", "hello, world"),
+                PageRequest.of(1, 10),
+                Sort.asc("name")
+        );
+        assertEquals(List.of("one"), jsonContainsComma.stream().map(row -> row.name).toList());
+
+        List<OrmCollectionQueryEntity> jsonContainsExactStrings = collectionOrm.query(
+                OrmCollectionQueryEntity.class,
+                Criteria.of().eq("marker", marker).containsAll("jsonTags", List.of(" spaced ", "")),
+                PageRequest.of(1, 10),
+                Sort.asc("name")
+        );
+        assertEquals(List.of("one"), jsonContainsExactStrings.stream().map(row -> row.name).toList());
+
+        List<OrmCollectionQueryEntity> statusContains = collectionOrm.query(
+                OrmCollectionQueryEntity.class,
+                Criteria.of().eq("marker", marker).contains("statuses", CollectionStatus.ENABLED),
+                PageRequest.of(1, 10),
+                Sort.asc("name")
+        );
+        assertEquals(List.of("one"), statusContains.stream().map(row -> row.name).toList());
+
+        List<OrmCollectionQueryEntity> anyStatus = collectionOrm.query(
+                OrmCollectionQueryEntity.class,
+                Criteria.of().eq("marker", marker).containsAny(
+                        "statuses",
+                        List.of(CollectionStatus.ENABLED, CollectionStatus.DISABLED)
+                ),
+                PageRequest.of(1, 10),
+                Sort.asc("name")
+        );
+        assertEquals(List.of("one", "two"), anyStatus.stream().map(row -> row.name).toList());
+
+        List<OrmCollectionQueryEntity> allStatus = collectionOrm.query(
+                OrmCollectionQueryEntity.class,
+                Criteria.of().eq("marker", marker).containsAll(
+                        "statuses",
+                        List.of(CollectionStatus.ENABLED, CollectionStatus.DISABLED)
+                ),
+                PageRequest.of(1, 10),
+                Sort.asc("name")
+        );
+        assertEquals(List.of("one"), allStatus.stream().map(row -> row.name).toList());
+
+        List<OrmCollectionQueryEntity> emptyCsv = collectionOrm.query(
+                OrmCollectionQueryEntity.class,
+                Criteria.of().eq("marker", marker).isEmpty("csvTags"),
+                PageRequest.of(1, 10),
+                Sort.asc("name")
+        );
+        assertEquals(List.of("empty", "nulls"), emptyCsv.stream().map(row -> row.name).toList());
+
+        List<OrmCollectionQueryEntity> emptyJson = collectionOrm.query(
+                OrmCollectionQueryEntity.class,
+                Criteria.of().eq("marker", marker).isEmpty("statuses"),
+                PageRequest.of(1, 10),
+                Sort.asc("name")
+        );
+        assertEquals(List.of("empty", "nulls"), emptyJson.stream().map(row -> row.name).toList());
+
+        List<OrmCollectionQueryEntity> notEmptyJson = collectionOrm.query(
+                OrmCollectionQueryEntity.class,
+                Criteria.of().eq("marker", marker).isNotEmpty("statuses"),
+                PageRequest.of(1, 10),
+                Sort.asc("name")
+        );
+        assertEquals(List.of("one", "two"), notEmptyJson.stream().map(row -> row.name).toList());
+    }
+
     private Object getField(Object target, String name) throws Exception {
         var field = findField(target.getClass(), name);
         assertNotNull(field);
@@ -524,5 +637,20 @@ public abstract class MuYunDatabaseOrmTestBase extends MuYunDatabaseDdlTestBase 
             }
         }
         return null;
+    }
+
+    private OrmCollectionQueryEntity collectionRow(String marker,
+                                                   String name,
+                                                   Set<String> csvTags,
+                                                   Set<String> jsonTags,
+                                                   Set<CollectionStatus> statuses) {
+        OrmCollectionQueryEntity row = new OrmCollectionQueryEntity();
+        row.id = UUID.randomUUID().toString();
+        row.marker = marker;
+        row.name = name;
+        row.csvTags = csvTags == null ? null : new LinkedHashSet<>(csvTags);
+        row.jsonTags = jsonTags == null ? null : new LinkedHashSet<>(jsonTags);
+        row.statuses = statuses == null ? null : new LinkedHashSet<>(statuses);
+        return row;
     }
 }

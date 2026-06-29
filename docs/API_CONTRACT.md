@@ -74,6 +74,12 @@ int upsert(T entity);
 1. `Criteria.copyOf(criteria)` 返回当前条件快照；源条件后续修改不会影响副本。
 2. `criteria.and(other)` / `criteria.or(other)` 按组组合另一个 `Criteria` 的快照；`other` 后续修改不会影响组合结果。
 3. 旧的 `andGroup(CriteriaGroup)` / `orGroup(CriteriaGroup)` 保持既有行为，适合调用方显式管理 group 生命周期。
+4. `SET` / `JSON_SET` 字段支持集合查询：`contains(field, value)`、`containsAny(field, values)`、`containsAll(field, values)`、`isEmpty(field)`、`isNotEmpty(field)`，并提供对应 `or*` 方法。
+5. 集合查询只支持静态实体 ORM 路径，因为编译器需要实体字段元数据判断 `ColumnType` 并执行字段级 codec；公开 `CriteriaColumnResolver` 路径和 `RuntimeTableGateway` 不承诺支持集合查询。
+6. 集合查询用于非 `SET` / `JSON_SET` 字段时直接抛出 `INVALID_CRITERIA`。
+7. `containsAny(field, List.of())` 固定编译为 false 条件；`containsAll(field, List.of())` 固定编译为 true 条件。
+8. `contains` / `containsAny` / `containsAll` 的元素参数会经过集合元素 codec；例如声明了可识别泛型元素类型且配置了自定义 `DatabaseValueConverter` 时，枚举 code 会参与查询参数绑定。
+9. `raw`、`SqlSubQuery` 及其参数没有字段上下文，不自动执行 `SET` / `JSON_SET` 字段 codec；需要调用方自行提供数据库侧表示。
 
 ## 7. 事务语义（稳定）
 
@@ -92,10 +98,11 @@ int upsert(T entity);
 8. `RuntimeTableGateway` 遇到未知字段或不安全列名时直接拒绝；`insert` 无有效字段时直接拒绝。
 9. `Set<String>` 字段默认推断为 `ColumnType.SET`，使用 CSV 语义存入 `text` 列。
 10. `ColumnType.SET` 写入时不允许元素包含英文逗号 `,`（否则拒绝写入），以避免 CSV 不可逆解析。
-11. `ColumnType.JSON_SET` 使用 JSON 字符串数组语义存入 `text` 列，适用于元素可能包含逗号的字符串集合。
-12. `ColumnType.JSON_SET` 必须通过 `@Column(type = ColumnType.JSON_SET)` 显式声明；默认 `Set<String>` 推断结果仍为 `ColumnType.SET`。
-13. `ColumnType.JSON_SET` 的元素按字符串处理：写入时忽略 `null` 元素、按集合语义去重、保留首次出现顺序；空集合写入为 `[]`，字段值为 `null` 时写入为 `null`。
-14. `ColumnType.JSON_SET` 读取非法 JSON 数组或写入非法 JSON 数组字符串时直接拒绝，不做静默降级。
-15. `ColumnType.SET` / `ColumnType.JSON_SET` 字段声明了可识别泛型元素类型时，自定义 `DatabaseValueConverter` 可作用于集合元素；`JSON_SET` 底层仍保持 JSON 字符串数组语义。
+11. `ColumnType.SET` 支持集合 Criteria 查询，但属于 CSV 兼容路径；复杂、高频集合查询建议优先使用 `ColumnType.JSON_SET`。
+12. `ColumnType.JSON_SET` 使用 JSON 字符串数组语义存入 `text` 列，适用于元素可能包含逗号的字符串集合，也是长期推荐的跨数据库集合查询主路径。
+13. `ColumnType.JSON_SET` 必须通过 `@Column(type = ColumnType.JSON_SET)` 显式声明；默认 `Set<String>` 推断结果仍为 `ColumnType.SET`。
+14. `ColumnType.JSON_SET` 的元素按字符串处理：写入时忽略 `null` 元素、按集合语义去重、保留首次出现顺序；空集合写入为 `[]`，字段值为 `null` 时写入为 `null`。
+15. `ColumnType.JSON_SET` 读取非法 JSON 数组或写入非法 JSON 数组字符串时直接拒绝，不做静默降级。
+16. `ColumnType.SET` / `ColumnType.JSON_SET` 字段声明了可识别泛型元素类型时，自定义 `DatabaseValueConverter` 可作用于集合元素；`JSON_SET` 底层仍保持 JSON 字符串数组语义。
 
 下一步：若你在做历史项目改造，请按 [`REFACTOR_GUIDE.md`](REFACTOR_GUIDE.md) 的“推荐重构路径”执行。

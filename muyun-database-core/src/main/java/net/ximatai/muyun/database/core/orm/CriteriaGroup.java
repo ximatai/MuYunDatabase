@@ -106,6 +106,26 @@ public class CriteriaGroup implements CriteriaNode {
         return and(field, CriteriaOperator.NOT_IN, values.toArray());
     }
 
+    public CriteriaGroup contains(String field, Object value) {
+        return and(field, CriteriaOperator.CONTAINS, value);
+    }
+
+    public CriteriaGroup containsAny(String field, List<?> values) {
+        return and(field, CriteriaOperator.CONTAINS_ANY, values.toArray());
+    }
+
+    public CriteriaGroup containsAll(String field, List<?> values) {
+        return and(field, CriteriaOperator.CONTAINS_ALL, values.toArray());
+    }
+
+    public CriteriaGroup isEmpty(String field) {
+        return and(field, CriteriaOperator.IS_EMPTY);
+    }
+
+    public CriteriaGroup isNotEmpty(String field) {
+        return and(field, CriteriaOperator.IS_NOT_EMPTY);
+    }
+
     public CriteriaGroup inSubQuery(String field, SqlSubQuery subQuery) {
         return and(field, CriteriaOperator.IN_SUBQUERY, subQuery);
     }
@@ -176,6 +196,26 @@ public class CriteriaGroup implements CriteriaNode {
 
     public CriteriaGroup orNotIn(String field, List<?> values) {
         return or(field, CriteriaOperator.NOT_IN, values.toArray());
+    }
+
+    public CriteriaGroup orContains(String field, Object value) {
+        return or(field, CriteriaOperator.CONTAINS, value);
+    }
+
+    public CriteriaGroup orContainsAny(String field, List<?> values) {
+        return or(field, CriteriaOperator.CONTAINS_ANY, values.toArray());
+    }
+
+    public CriteriaGroup orContainsAll(String field, List<?> values) {
+        return or(field, CriteriaOperator.CONTAINS_ALL, values.toArray());
+    }
+
+    public CriteriaGroup orIsEmpty(String field) {
+        return or(field, CriteriaOperator.IS_EMPTY);
+    }
+
+    public CriteriaGroup orIsNotEmpty(String field) {
+        return or(field, CriteriaOperator.IS_NOT_EMPTY);
     }
 
     public CriteriaGroup orInSubQuery(String field, SqlSubQuery subQuery) {
