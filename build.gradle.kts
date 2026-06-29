@@ -7,6 +7,10 @@ plugins {
 
 import java.util.Base64
 
+checkstyle {
+    toolVersion = "13.7.0"
+}
+
 val releasePublishModules = listOf(
     "muyun-database-core",
     "muyun-database-core-json-jackson",
