@@ -25,7 +25,7 @@ final class FieldValueCodec {
     private FieldValueCodec() {
     }
 
-    static Object toDatabaseValue(EntityFieldMeta fieldMeta,
+    static Object toDatabaseValue(FieldMeta fieldMeta,
                                   Object value,
                                   DatabaseValueConverter valueConverter) {
         if (fieldMeta.getColumnType() == ColumnType.SET) {
@@ -41,7 +41,7 @@ final class FieldValueCodec {
     }
 
     static Object fromDatabaseValue(Object value,
-                                    EntityFieldMeta fieldMeta,
+                                    FieldMeta fieldMeta,
                                     DatabaseValueConverter valueConverter) {
         if (fieldMeta.getColumnType() == ColumnType.SET) {
             return fromCsvSetValue(value, fieldMeta, valueConverter);
@@ -57,7 +57,7 @@ final class FieldValueCodec {
         return valueConverter.fromDatabaseValue(value, targetType);
     }
 
-    static Object toCollectionElementDatabaseValue(EntityFieldMeta fieldMeta,
+    static Object toCollectionElementDatabaseValue(FieldMeta fieldMeta,
                                                    Object value,
                                                    DatabaseValueConverter valueConverter) {
         Object converted = convertCollectionItem(value, valueConverter);
@@ -87,7 +87,7 @@ final class FieldValueCodec {
     }
 
     private static Object fromCsvSetValue(Object value,
-                                          EntityFieldMeta fieldMeta,
+                                          FieldMeta fieldMeta,
                                           DatabaseValueConverter valueConverter) {
         LinkedHashSet<String> normalized = normalizeToSet(value, false, DatabaseValueConverter.DEFAULT);
         return adaptCollection(convertElements(normalized, fieldMeta, valueConverter), fieldMeta.getFieldType());
@@ -149,7 +149,7 @@ final class FieldValueCodec {
     }
 
     private static Object fromArrayValue(Object value,
-                                         EntityFieldMeta fieldMeta,
+                                         FieldMeta fieldMeta,
                                          DatabaseValueConverter valueConverter) {
         if (value == null) {
             return null;
@@ -235,7 +235,7 @@ final class FieldValueCodec {
     }
 
     private static Object fromJsonSetValue(Object value,
-                                           EntityFieldMeta fieldMeta,
+                                           FieldMeta fieldMeta,
                                            DatabaseValueConverter valueConverter) {
         if (value == null) {
             return null;
@@ -260,7 +260,7 @@ final class FieldValueCodec {
     }
 
     private static LinkedHashSet<?> convertElements(LinkedHashSet<String> elements,
-                                                    EntityFieldMeta fieldMeta,
+                                                    FieldMeta fieldMeta,
                                                     DatabaseValueConverter valueConverter) {
         Optional<Class<?>> elementType = fieldMeta.getCollectionElementType();
         if (elementType.isEmpty()) {

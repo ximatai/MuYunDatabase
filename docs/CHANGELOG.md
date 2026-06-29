@@ -26,7 +26,8 @@
 
 ### 新增
 
-- 支持集合字段 Criteria 查询。静态实体 ORM 路径下，`SET` / `JSON_SET` / `ARRAY` 字段可使用 `contains`、`containsAny`、`containsAll`、`isEmpty`、`isNotEmpty`，并提供对应 `or*` 方法。
+- 支持集合字段 Criteria 查询。静态实体 ORM 路径以及 `RuntimeTableGateway + TableMeta` 路径下，`SET` / `JSON_SET` / `ARRAY` 字段可使用 `contains`、`containsAny`、`containsAll`、`isEmpty`、`isNotEmpty`，并提供对应 `or*` 方法。
+- 新增运行态表模型元数据 `TableMeta` / `FieldMeta` / `RuntimeFieldMeta`，让 runtime-defined records 可以显式提供字段名、列名、`ColumnType`、`elementColumnType`、字段 Java 类型和集合元素 Java 类型。
 - 新增 `ColumnType.ARRAY`，用于 PostgreSQL 原生数组列。实体字段可声明为 `List<T>` / `Set<T>` / Java 数组，并通过 `@Column(type = ColumnType.ARRAY, elementType = ...)` 指定元素类型；当字段泛型可识别时，可自动推断元素类型。
 - 集合字段读写统一走字段级 codec，`SET` / `JSON_SET` / `ARRAY` 的集合元素可复用自定义 `DatabaseValueConverter`，例如枚举 code 映射可以同时作用于字段值和查询参数。
 - 新增 tag 触发的 Maven Central 发布 workflow。推送 `v<project.version>` tag 后，CI 会校验版本、运行测试并执行发布任务。
@@ -36,6 +37,7 @@
 - `String[]` / `int[]` 的默认类型映射由旧数组枚举收口到 `ColumnType.ARRAY`。
 - `ColumnType.VARCHAR_ARRAY` 和 `ColumnType.INT_ARRAY` 标记为遗留入口；新代码建议统一使用 `ColumnType.ARRAY + elementType`。
 - PostgreSQL 数组列建表、迁移比对、写入绑定和 Criteria 查询改为使用原生数组语义，不再把 CSV 字符串当作 ARRAY 输入。
+- 静态实体和运行态表会在元数据解析阶段更早校验重复列、无效字段元数据和不支持的 `ARRAY` 元素类型，配置错误会提前以 `INVALID_MAPPING` 暴露。
 
 ### 修复
 
@@ -46,7 +48,7 @@
 
 - `ColumnType.ARRAY` 第一阶段只支持 PostgreSQL。MySQL 不做 JSON 降级；在 MySQL 上建表、迁移或读写 ARRAY 字段会失败或由底层数据库拒绝。
 - ARRAY 写入只接受 `Collection` 或 Java 数组，不再接受 CSV 字符串。历史上把 `"a,b,c"` 当数组写入的代码需要改成 `List.of("a", "b", "c")` 或数组。
-- 集合 Criteria 查询只承诺支持静态实体 ORM 路径。`RuntimeTableGateway`、公开 `CriteriaColumnResolver`、`raw` 条件和 `SqlSubQuery` 没有字段元数据上下文，不会自动执行集合字段 codec。
+- 集合 Criteria 查询需要字段元数据上下文。静态实体 ORM 和 `RuntimeTableGateway + TableMeta` 会自动执行集合字段 codec；旧的单向 `CriteriaColumnResolver`、`raw` 条件和 `SqlSubQuery` 不会自动执行集合字段 codec。
 - `containsAny(field, List.of())` 固定为 false 条件；`containsAll(field, List.of())` 固定为 true 条件。调用方如果把空集合视为“不加条件”，需要在业务代码中提前跳过该条件。
 
 ## 3.26.11

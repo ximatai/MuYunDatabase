@@ -65,14 +65,22 @@ public final class CriteriaSqlCompiler {
         return new CompiledCriteria(sql, context.params);
     }
 
+    public CompiledCriteria compile(Criteria criteria, TableMeta tableMeta, DBInfo.Type dbType) {
+        Objects.requireNonNull(criteria, "criteria must not be null");
+        Objects.requireNonNull(tableMeta, "tableMeta must not be null");
+        Objects.requireNonNull(dbType, "dbType must not be null");
+
+        ClauseContext context = new ClauseContext(tableMeta, dbType, tableMeta, valueConverter);
+        String sql = compileGroup(criteria.getRoot(), context);
+        return new CompiledCriteria(sql, context.params);
+    }
+
     CompiledCriteria compile(Criteria criteria, EntityMeta meta, DBInfo.Type dbType) {
         Objects.requireNonNull(criteria, "criteria must not be null");
         Objects.requireNonNull(meta, "meta must not be null");
         Objects.requireNonNull(dbType, "dbType must not be null");
 
-        ClauseContext context = new ClauseContext(meta::resolveColumnName, dbType, meta, valueConverter);
-        String sql = compileGroup(criteria.getRoot(), context);
-        return new CompiledCriteria(sql, context.params);
+        return compile(criteria, meta.asTableMeta(), dbType);
     }
 
     private String compileGroup(CriteriaGroup group, ClauseContext context) {
@@ -222,7 +230,7 @@ public final class CriteriaSqlCompiler {
     }
 
     private CollectionField resolveCollectionField(CriteriaClause clause, ClauseContext context) {
-        EntityFieldMeta fieldMeta = context.requireFieldMeta(clause.getField());
+        FieldMeta fieldMeta = context.requireFieldMeta(clause.getField());
         if (fieldMeta.getColumnType() != ColumnType.SET
                 && fieldMeta.getColumnType() != ColumnType.JSON_SET
                 && fieldMeta.getColumnType() != ColumnType.ARRAY) {
@@ -241,7 +249,7 @@ public final class CriteriaSqlCompiler {
         return new CollectionField(fieldMeta, columnSql);
     }
 
-    private String bindCollectionElement(EntityFieldMeta fieldMeta, Object value, ClauseContext context) {
+    private String bindCollectionElement(FieldMeta fieldMeta, Object value, ClauseContext context) {
         Object encoded;
         try {
             encoded = FieldValueCodec.toCollectionElementDatabaseValue(fieldMeta, value, valueConverter);
@@ -327,24 +335,24 @@ public final class CriteriaSqlCompiler {
         return clause.getValues().get(0);
     }
 
-    private record CollectionField(EntityFieldMeta fieldMeta, String columnSql) {
+    private record CollectionField(FieldMeta fieldMeta, String columnSql) {
     }
 
     private static class ClauseContext {
         private final CriteriaColumnResolver columnResolver;
         private final DBInfo.Type dbType;
-        private final EntityMeta meta;
+        private final TableMeta tableMeta;
         private final DatabaseValueConverter valueConverter;
         private final Map<String, Object> params = new HashMap<>();
         private int paramIndex;
 
         private ClauseContext(CriteriaColumnResolver columnResolver,
                               DBInfo.Type dbType,
-                              EntityMeta meta,
+                              TableMeta tableMeta,
                               DatabaseValueConverter valueConverter) {
             this.columnResolver = columnResolver;
             this.dbType = dbType;
-            this.meta = meta;
+            this.tableMeta = tableMeta;
             this.valueConverter = valueConverter;
         }
 
@@ -353,30 +361,36 @@ public final class CriteriaSqlCompiler {
         }
 
         private Object toDatabaseValue(CriteriaClause clause, Object value) {
-            EntityFieldMeta fieldMeta = resolveFieldMeta(clause.getField());
-            if (fieldMeta == null) {
-                return valueConverter.toDatabaseValue(value);
+            FieldMeta fieldMeta = resolveFieldMeta(clause.getField());
+            try {
+                if (fieldMeta == null) {
+                    return valueConverter.toDatabaseValue(value);
+                }
+                return FieldValueCodec.toDatabaseValue(fieldMeta, value, valueConverter);
+            } catch (OrmException ex) {
+                throw ex;
+            } catch (RuntimeException ex) {
+                throw new OrmException(OrmException.Code.INVALID_CRITERIA, ex.getMessage(), ex);
             }
-            return FieldValueCodec.toDatabaseValue(fieldMeta, value, valueConverter);
         }
 
-        private EntityFieldMeta resolveFieldMeta(String fieldOrColumn) {
-            if (meta == null) {
+        private FieldMeta resolveFieldMeta(String fieldOrColumn) {
+            if (tableMeta == null) {
                 return null;
             }
-            EntityFieldMeta byField = meta.findByFieldName(fieldOrColumn);
+            FieldMeta byField = tableMeta.findByFieldName(fieldOrColumn);
             if (byField != null) {
                 return byField;
             }
-            return meta.findByColumnName(fieldOrColumn);
+            return tableMeta.findByColumnName(fieldOrColumn);
         }
 
-        private EntityFieldMeta requireFieldMeta(String fieldOrColumn) {
-            EntityFieldMeta fieldMeta = resolveFieldMeta(fieldOrColumn);
+        private FieldMeta requireFieldMeta(String fieldOrColumn) {
+            FieldMeta fieldMeta = resolveFieldMeta(fieldOrColumn);
             if (fieldMeta == null) {
                 throw new OrmException(
                         OrmException.Code.INVALID_CRITERIA,
-                        "Collection criteria requires entity metadata for field: " + fieldOrColumn
+                        "Collection criteria requires field metadata for field: " + fieldOrColumn
                 );
             }
             return fieldMeta;
