@@ -11,6 +11,7 @@ public class EntityMeta {
     private final TableWrapper tableWrapper;
     private final List<EntityFieldMeta> fields;
     private final EntityFieldMeta idField;
+    private final TableMeta tableMeta;
 
     private final Map<String, EntityFieldMeta> fieldNameMap = new HashMap<>();
     private final Map<String, EntityFieldMeta> columnNameMap = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
@@ -34,6 +35,7 @@ public class EntityMeta {
             fieldNameMap.put(field.getFieldName(), field);
             columnNameMap.put(field.getColumnName(), field);
         });
+        this.tableMeta = new TableMeta(tableName, schema, fields, idField);
     }
 
     public Class<?> getEntityClass() {
@@ -84,5 +86,9 @@ public class EntityMeta {
         }
 
         return null;
+    }
+
+    public TableMeta asTableMeta() {
+        return tableMeta;
     }
 }
