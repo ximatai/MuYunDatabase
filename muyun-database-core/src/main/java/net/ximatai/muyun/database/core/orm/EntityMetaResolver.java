@@ -57,8 +57,9 @@ public class EntityMetaResolver {
 
             String columnName = resolveColumnName(field, column, id);
             ColumnType columnType = resolveColumnType(field, column);
+            ColumnType elementColumnType = resolveElementColumnType(field, column, columnType);
 
-            EntityFieldMeta fieldMeta = new EntityFieldMeta(field, columnName, columnType, isId);
+            EntityFieldMeta fieldMeta = new EntityFieldMeta(field, columnName, columnType, elementColumnType, isId);
             fields.add(fieldMeta);
 
             if (isId) {
@@ -88,5 +89,17 @@ public class EntityMetaResolver {
             return column.type();
         }
         return TypeMapper.inferSqlType(field.getType());
+    }
+
+    private ColumnType resolveElementColumnType(Field field, Column column, ColumnType columnType) {
+        if (columnType != ColumnType.ARRAY) {
+            return ColumnType.UNKNOWN;
+        }
+        if (column != null && column.elementType() != ColumnType.UNKNOWN) {
+            return column.elementType();
+        }
+        return TypeMapper.inferElementJavaType(field)
+                .map(TypeMapper::inferSqlType)
+                .orElse(ColumnType.UNKNOWN);
     }
 }

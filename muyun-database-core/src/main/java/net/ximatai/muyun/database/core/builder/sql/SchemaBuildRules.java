@@ -49,6 +49,16 @@ public final class SchemaBuildRules {
         return dbType == POSTGRESQL ? IColumnTypeTransform.POSTGRESQL : IColumnTypeTransform.DEFAULT;
     }
 
+    public static String columnType(Column column, DBInfo.Type dbType) {
+        if (column.getType() == ColumnType.ARRAY) {
+            if (dbType != POSTGRESQL) {
+                throw new IllegalArgumentException("ARRAY columns are only supported on PostgreSQL: " + column.getName());
+            }
+            return postgresArrayType(column);
+        }
+        return columnTypeTransform(dbType).transform(column.getType());
+    }
+
     public static String columnLength(Column column) {
         String length = column.getLength() == null ? "" : "(" + column.getLength() + ")";
 
@@ -66,7 +76,9 @@ public final class SchemaBuildRules {
     }
 
     public static boolean ignoresColumnLength(Column column) {
-        return column.getType().equals(ColumnType.TEXT) || column.getType().equals(ColumnType.LONGTEXT);
+        return column.getType().equals(ColumnType.TEXT)
+                || column.getType().equals(ColumnType.LONGTEXT)
+                || column.getType().equals(ColumnType.ARRAY);
     }
 
     public static String columnDefinition(Column column, String mappedType, DBInfo.Type dbType) {
@@ -95,5 +107,27 @@ public final class SchemaBuildRules {
         }
         String suffix = index.isUnique() ? "_uindex" : "_index";
         return tableName + "_" + String.join("_", index.getColumns()) + suffix;
+    }
+
+    private static String postgresArrayType(Column column) {
+        ColumnType elementType = column.getElementType();
+        if (elementType == null || elementType == ColumnType.UNKNOWN) {
+            throw new IllegalArgumentException("ARRAY column elementType must be provided or inferred: " + column.getName());
+        }
+        return postgresArrayElementType(elementType) + "[]";
+    }
+
+    private static String postgresArrayElementType(ColumnType elementType) {
+        return switch (elementType) {
+            case VARCHAR -> "varchar";
+            case TEXT, LONGTEXT -> "text";
+            case INT -> "int";
+            case BIGINT -> "bigint";
+            case BOOLEAN -> "boolean";
+            case TIMESTAMP -> "timestamp";
+            case DATE -> "date";
+            case NUMERIC -> "numeric";
+            default -> throw new IllegalArgumentException("Unsupported ARRAY element type: " + elementType);
+        };
     }
 }

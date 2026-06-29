@@ -4,8 +4,10 @@ import net.ximatai.muyun.database.core.builder.ColumnType;
 import net.ximatai.muyun.database.core.internal.JsonArrayParser;
 import net.ximatai.muyun.database.core.internal.JsonArrayParserLoader;
 
+import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Modifier;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashSet;
@@ -14,6 +16,7 @@ import java.util.List;
 import java.util.NavigableSet;
 import java.util.Optional;
 import java.util.Queue;
+import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
 
@@ -31,6 +34,9 @@ final class FieldValueCodec {
         if (fieldMeta.getColumnType() == ColumnType.JSON_SET) {
             return toJsonSetValue(value, valueConverter);
         }
+        if (fieldMeta.getColumnType() == ColumnType.ARRAY) {
+            return toArrayValue(value, valueConverter);
+        }
         return valueConverter.toDatabaseValue(value);
     }
 
@@ -43,17 +49,23 @@ final class FieldValueCodec {
         if (fieldMeta.getColumnType() == ColumnType.JSON_SET) {
             return fromJsonSetValue(value, fieldMeta, valueConverter);
         }
+        if (fieldMeta.getColumnType() == ColumnType.ARRAY) {
+            return fromArrayValue(value, fieldMeta, valueConverter);
+        }
 
         Class<?> targetType = fieldMeta.getFieldType();
         return valueConverter.fromDatabaseValue(value, targetType);
     }
 
-    static String toCollectionElementDatabaseValue(EntityFieldMeta fieldMeta,
+    static Object toCollectionElementDatabaseValue(EntityFieldMeta fieldMeta,
                                                    Object value,
                                                    DatabaseValueConverter valueConverter) {
         Object converted = convertCollectionItem(value, valueConverter);
         if (converted == null) {
             return null;
+        }
+        if (fieldMeta.getColumnType() == ColumnType.ARRAY) {
+            return converted;
         }
         String text = String.valueOf(converted);
         if (fieldMeta.getColumnType() == ColumnType.SET) {
@@ -112,6 +124,72 @@ final class FieldValueCodec {
             return null;
         }
         return valueConverter.toDatabaseValue(item);
+    }
+
+    private static List<Object> toArrayValue(Object value, DatabaseValueConverter valueConverter) {
+        if (value == null) {
+            return null;
+        }
+        List<Object> converted = new ArrayList<>();
+        if (value instanceof Collection<?> collection) {
+            for (Object item : collection) {
+                converted.add(convertCollectionItem(item, valueConverter));
+            }
+            return converted;
+        }
+        Class<?> valueType = value.getClass();
+        if (valueType.isArray()) {
+            int length = Array.getLength(value);
+            for (int i = 0; i < length; i++) {
+                converted.add(convertCollectionItem(Array.get(value, i), valueConverter));
+            }
+            return converted;
+        }
+        throw new IllegalArgumentException("ARRAY value must be a Collection or Java array: " + valueType.getName());
+    }
+
+    private static Object fromArrayValue(Object value,
+                                         EntityFieldMeta fieldMeta,
+                                         DatabaseValueConverter valueConverter) {
+        if (value == null) {
+            return null;
+        }
+        List<Object> rawElements = extractArrayElements(value);
+        Optional<Class<?>> elementType = fieldMeta.getCollectionElementType();
+        List<Object> converted = new ArrayList<>(rawElements.size());
+        for (Object element : rawElements) {
+            if (element == null || elementType.isEmpty()) {
+                converted.add(element);
+            } else {
+                converted.add(valueConverter.fromDatabaseValue(element, elementType.get()));
+            }
+        }
+        return adaptArrayCollection(converted, fieldMeta.getFieldType());
+    }
+
+    private static List<Object> extractArrayElements(Object value) {
+        Object arrayValue = value;
+        if (value instanceof java.sql.Array sqlArray) {
+            try {
+                arrayValue = sqlArray.getArray();
+            } catch (SQLException e) {
+                throw new IllegalArgumentException("Failed to read SQL ARRAY value", e);
+            }
+        }
+        if (arrayValue instanceof Collection<?> collection) {
+            return new ArrayList<>(collection);
+        }
+        Class<?> valueType = arrayValue.getClass();
+        if (!valueType.isArray()) {
+            throw new IllegalArgumentException("ARRAY database value must be java.sql.Array, Collection, or Java array: "
+                    + valueType.getName());
+        }
+        int length = Array.getLength(arrayValue);
+        List<Object> elements = new ArrayList<>(length);
+        for (int i = 0; i < length; i++) {
+            elements.add(Array.get(arrayValue, i));
+        }
+        return elements;
     }
 
     private static void addNormalized(LinkedHashSet<String> normalized, Object raw, boolean strictCsvValue) {
@@ -227,6 +305,46 @@ final class FieldValueCodec {
             return customCollection;
         }
         return elements;
+    }
+
+    private static Object adaptArrayCollection(List<?> elements, Class<?> targetType) {
+        if (targetType.isArray()) {
+            Class<?> componentType = targetType.getComponentType();
+            Object array = Array.newInstance(componentType, elements.size());
+            for (int i = 0; i < elements.size(); i++) {
+                Array.set(array, i, elements.get(i));
+            }
+            return array;
+        }
+        if (Collection.class.isAssignableFrom(targetType) && targetType.isInterface()) {
+            if (Set.class.isAssignableFrom(targetType)) {
+                return new LinkedHashSet<>(elements);
+            }
+            if (Queue.class.isAssignableFrom(targetType)) {
+                return new LinkedList<>(elements);
+            }
+            return new ArrayList<>(elements);
+        }
+        if (targetType.isAssignableFrom(ArrayList.class)) {
+            return new ArrayList<>(elements);
+        }
+        if (targetType.isAssignableFrom(LinkedList.class)) {
+            return new LinkedList<>(elements);
+        }
+        if (targetType.isAssignableFrom(LinkedHashSet.class)) {
+            return new LinkedHashSet<>(elements);
+        }
+        if (targetType.isAssignableFrom(TreeSet.class)
+                || SortedSet.class.isAssignableFrom(targetType)
+                || NavigableSet.class.isAssignableFrom(targetType)) {
+            return new TreeSet<>(elements);
+        }
+        Collection<Object> customCollection = instantiateCollection(targetType);
+        if (customCollection != null) {
+            customCollection.addAll(elements);
+            return customCollection;
+        }
+        return new ArrayList<>(elements);
     }
 
     @SuppressWarnings("unchecked")

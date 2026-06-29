@@ -97,10 +97,18 @@ public enum ColumnType {
     JSON_SET,
 
     /**
+     * 数组类型
+     * 需要通过列元数据指定元素类型，例如 @Column(type = ARRAY, elementType = VARCHAR)
+     * 对应数据库：PostgreSQL 原生数组，如 VARCHAR[]、INT[]
+     */
+    ARRAY,
+
+    /**
      * 字符串数组类型
      * 适用于：标签、分类、多选值等字符串集合
      * 对应数据库：VARCHAR[], TEXT[] (PostgreSQL)
      */
+    @Deprecated
     VARCHAR_ARRAY,
 
     /**
@@ -108,6 +116,7 @@ public enum ColumnType {
      * 适用于：ID集合、序号列表、数值型多选
      * 对应数据库：INT[], BIGINT[] (PostgreSQL)
      */
+    @Deprecated
     INT_ARRAY;
 
     /**
@@ -117,7 +126,7 @@ public enum ColumnType {
      * 命名约定规则：
      * - 以特定前缀标识类型：v_(字符串), i_(整数), t_(时间戳)等
      * - 常见业务字段特殊处理：id, pid等默认为字符串
-     * - 支持数组类型：files_, ids_, dicts_等前缀识别为数组
+     * - 数组类型必须显式指定ARRAY和元素类型，不通过列名推断
      * <p>
      * 使用场景：
      * 1. 数据库迁移时自动推断字段类型
@@ -134,7 +143,6 @@ public enum ColumnType {
      * "create_time"   → TIMESTAMP    (时间字段)
      * "v_name"        → VARCHAR      (v_前缀字符串)
      * "i_age"         → INT          (i_前缀整数)
-     * "files"         → VARCHAR_ARRAY(文件数组)
      * "unknown_field" → UNKNOWN      (无法推断)
      */
     public static ColumnType autoTypeWithColumnName(String name) {
@@ -181,15 +189,6 @@ public enum ColumnType {
         // JSON类型前缀
         else if (lowerName.startsWith("j_")) {     // JSON格式数据
             return ColumnType.JSON;
-        }
-
-        // 数组类型前缀（多值字段）
-        else if (lowerName.startsWith("files_")) {  // 文件数组
-            return ColumnType.VARCHAR_ARRAY;
-        } else if (lowerName.startsWith("ids_")) {  // ID数组
-            return ColumnType.VARCHAR_ARRAY;
-        } else if (lowerName.startsWith("dicts_")) { // 字典数组
-            return ColumnType.VARCHAR_ARRAY;
         }
 
         // 无法识别的列名返回UNKNOWN，需要显式指定类型

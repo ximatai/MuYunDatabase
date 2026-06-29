@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -236,6 +237,45 @@ class EntityMapperTest {
         assertNotNull(loaded.getIds());
         assertEquals(ArrayList.class, loaded.getIds().getClass());
         assertEquals(List.of(1, 2), loaded.getIds());
+    }
+
+    @Test
+    void arrayShouldUseConverterForElementsAndPreserveDuplicates() {
+        EntityMeta meta = new EntityMetaResolver().resolve(ArrayStatusListEntity.class);
+        ArrayStatusListEntity entity = new ArrayStatusListEntity();
+        entity.id = "array-1";
+        entity.statuses = List.of(TestStatus.ENABLED, TestStatus.DISABLED, TestStatus.ENABLED);
+
+        Map<String, Object> map = EntityMapper.toMap(meta, entity, false, true, new TestStatusCodeConverter());
+
+        assertEquals(List.of("enabled", "disabled", "enabled"), map.get("statuses"));
+
+        ArrayStatusListEntity loaded = EntityMapper.fromMap(meta, Map.of(
+                "id", "array-1",
+                "statuses", new String[]{"enabled", "disabled", "enabled"}
+        ), ArrayStatusListEntity.class, new TestStatusCodeConverter());
+
+        assertEquals(ArrayList.class, loaded.statuses.getClass());
+        assertEquals(List.of(TestStatus.ENABLED, TestStatus.DISABLED, TestStatus.ENABLED), loaded.statuses);
+    }
+
+    @Test
+    void arrayShouldAdaptJavaArrayFields() {
+        EntityMeta meta = new EntityMetaResolver().resolve(ArrayStringArrayEntity.class);
+        ArrayStringArrayEntity entity = new ArrayStringArrayEntity();
+        entity.id = "array-2";
+        entity.tags = new String[]{"red", "blue"};
+
+        Map<String, Object> map = EntityMapper.toMap(meta, entity, false, true);
+
+        assertEquals(List.of("red", "blue"), map.get("tags"));
+
+        ArrayStringArrayEntity loaded = EntityMapper.fromMap(meta, Map.of(
+                "id", "array-2",
+                "tags", new String[]{"green", "yellow"}
+        ), ArrayStringArrayEntity.class);
+
+        assertArrayEquals(new String[]{"green", "yellow"}, loaded.tags);
     }
 
     @Test
@@ -639,6 +679,26 @@ class EntityMapperTest {
         public void setIds(List<Integer> ids) {
             this.ids = ids;
         }
+    }
+
+    @Table(name = "array_status_list_entity")
+    public static class ArrayStatusListEntity {
+        @Id
+        @Column(length = 32)
+        private String id;
+
+        @Column(name = "statuses", type = ColumnType.ARRAY, elementType = ColumnType.VARCHAR)
+        private List<TestStatus> statuses;
+    }
+
+    @Table(name = "array_string_array_entity")
+    public static class ArrayStringArrayEntity {
+        @Id
+        @Column(length = 32)
+        private String id;
+
+        @Column(name = "tags", type = ColumnType.ARRAY)
+        private String[] tags;
     }
 
     private enum TestStatus {

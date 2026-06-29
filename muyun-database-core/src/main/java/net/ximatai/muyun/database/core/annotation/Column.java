@@ -46,6 +46,14 @@ public @interface Column {
     ColumnType type() default ColumnType.UNKNOWN;
 
     /**
+     * 数组列的元素类型
+     * 仅当 type = ColumnType.ARRAY 时使用。默认为UNKNOWN时，系统会尝试从字段元素类型推断。
+     *
+     * @return 数组元素列类型枚举，默认为UNKNOWN
+     */
+    ColumnType elementType() default ColumnType.UNKNOWN;
+
+    /**
      * 列长度限制
      * 主要用于字符串类型（VARCHAR、CHAR等）的长度定义
      * 值为0表示使用数据库默认长度或根据类型自动推断

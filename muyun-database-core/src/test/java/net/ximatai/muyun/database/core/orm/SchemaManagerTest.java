@@ -267,6 +267,46 @@ class SchemaManagerTest {
     }
 
     @Test
+    void shouldMapArrayColumnsForPostgresOnly() {
+        FakeOperations postgresOperations = new FakeOperations(new DBInfo("POSTGRESQL"));
+        TableWrapper postgresTable = TableWrapper.withName("contract")
+                .setSchema("public")
+                .setPrimaryKey(Column.of("id").setType(ColumnType.VARCHAR).setLength(32).setPrimaryKey())
+                .addColumn(Column.of("tags").setType(ColumnType.ARRAY).setElementType(ColumnType.VARCHAR))
+                .addColumn(Column.of("scores").setType(ColumnType.ARRAY).setElementType(ColumnType.INT));
+
+        MigrationResult postgresDryRun = new SchemaManager(postgresOperations).ensureTable(postgresTable, MigrationOptions.dryRun());
+
+        assertTrue(postgresDryRun.getStatements().stream().anyMatch(sql -> sql.contains("\"tags\" varchar[]")));
+        assertTrue(postgresDryRun.getStatements().stream().anyMatch(sql -> sql.contains("\"scores\" int[]")));
+
+        FakeOperations mysqlOperations = new FakeOperations(new DBInfo("MYSQL"));
+        TableWrapper mysqlTable = TableWrapper.withName("contract")
+                .setSchema("public")
+                .setPrimaryKey(Column.of("id").setType(ColumnType.VARCHAR).setLength(32).setPrimaryKey())
+                .addColumn(Column.of("tags").setType(ColumnType.ARRAY).setElementType(ColumnType.VARCHAR));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new SchemaManager(mysqlOperations).ensureTable(mysqlTable, MigrationOptions.dryRun())
+        );
+    }
+
+    @Test
+    void shouldRejectArrayColumnsWithoutElementType() {
+        FakeOperations operations = new FakeOperations(new DBInfo("POSTGRESQL"));
+        TableWrapper table = TableWrapper.withName("contract")
+                .setSchema("public")
+                .setPrimaryKey(Column.of("id").setType(ColumnType.VARCHAR).setLength(32).setPrimaryKey())
+                .addColumn(Column.of("tags").setType(ColumnType.ARRAY));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new SchemaManager(operations).ensureTable(table, MigrationOptions.dryRun())
+        );
+    }
+
+    @Test
     void shouldPlanTextToLongTextMigrationForMysql() {
         FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("MYSQL"));
         existingInfo(loader);

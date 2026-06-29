@@ -91,6 +91,9 @@ public class AnnotationProcessor {
                     } else {
                         column.setType(columnAnnotation.type());
                     }
+                    if (column.getType() == ColumnType.ARRAY) {
+                        column.setElementType(resolveArrayElementType(field, columnAnnotation.elementType()));
+                    }
                     column.setNullable(columnAnnotation.nullable());
 
                     if (columnAnnotation.length() > 0) {
@@ -194,5 +197,14 @@ public class AnnotationProcessor {
         Index index = new Index(Arrays.asList(compositeIndex.columns()), compositeIndex.unique());
         index.setName(compositeIndex.name());
         tableWrapper.addIndex(index);
+    }
+
+    private static ColumnType resolveArrayElementType(java.lang.reflect.Field field, ColumnType declaredElementType) {
+        if (declaredElementType != ColumnType.UNKNOWN) {
+            return declaredElementType;
+        }
+        return TypeMapper.inferElementJavaType(field)
+                .map(TypeMapper::inferSqlType)
+                .orElse(ColumnType.UNKNOWN);
     }
 }

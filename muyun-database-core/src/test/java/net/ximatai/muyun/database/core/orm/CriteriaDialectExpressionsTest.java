@@ -13,11 +13,11 @@ class CriteriaDialectExpressionsTest {
     void shouldBuildCsvSetContainsExpressions() {
         assertEquals(
                 "FIND_IN_SET(:p0, COALESCE(`tags`, '')) > 0",
-                CriteriaDialectExpressions.collectionContains(DBInfo.Type.MYSQL, ColumnType.SET, "`tags`", ":p0")
+                CriteriaDialectExpressions.collectionContains(DBInfo.Type.MYSQL, ColumnType.SET, ColumnType.UNKNOWN, "`tags`", ":p0")
         );
         assertEquals(
                 "POSITION(',' || :p0 || ',' IN ',' || COALESCE(\"tags\", '') || ',') > 0",
-                CriteriaDialectExpressions.collectionContains(DBInfo.Type.POSTGRESQL, ColumnType.SET, "\"tags\"", ":p0")
+                CriteriaDialectExpressions.collectionContains(DBInfo.Type.POSTGRESQL, ColumnType.SET, ColumnType.UNKNOWN, "\"tags\"", ":p0")
         );
     }
 
@@ -25,11 +25,30 @@ class CriteriaDialectExpressionsTest {
     void shouldBuildJsonSetContainsExpressions() {
         assertEquals(
                 "JSON_CONTAINS(CAST(`tags` AS JSON), JSON_QUOTE(:p0))",
-                CriteriaDialectExpressions.collectionContains(DBInfo.Type.MYSQL, ColumnType.JSON_SET, "`tags`", ":p0")
+                CriteriaDialectExpressions.collectionContains(DBInfo.Type.MYSQL, ColumnType.JSON_SET, ColumnType.UNKNOWN, "`tags`", ":p0")
         );
         assertEquals(
                 "jsonb_exists(\"tags\"::jsonb, :p0)",
-                CriteriaDialectExpressions.collectionContains(DBInfo.Type.POSTGRESQL, ColumnType.JSON_SET, "\"tags\"", ":p0")
+                CriteriaDialectExpressions.collectionContains(DBInfo.Type.POSTGRESQL, ColumnType.JSON_SET, ColumnType.UNKNOWN, "\"tags\"", ":p0")
+        );
+    }
+
+    @Test
+    void shouldBuildPostgresArrayExpressions() {
+        assertEquals(
+                "\"tags\" @> ARRAY[:p0]::varchar[]",
+                CriteriaDialectExpressions.collectionContains(
+                        DBInfo.Type.POSTGRESQL, ColumnType.ARRAY, ColumnType.VARCHAR, "\"tags\"", ":p0")
+        );
+        assertEquals(
+                "\"scores\" && ARRAY[:p0, :p1]::int[]",
+                CriteriaDialectExpressions.collectionContainsAny(
+                        DBInfo.Type.POSTGRESQL, ColumnType.ARRAY, ColumnType.INT, "\"scores\"", java.util.List.of(":p0", ":p1"))
+        );
+        assertEquals(
+                "\"tags\" @> ARRAY[:p0, :p1]::varchar[]",
+                CriteriaDialectExpressions.collectionContainsAll(
+                        DBInfo.Type.POSTGRESQL, ColumnType.ARRAY, ColumnType.VARCHAR, "\"tags\"", java.util.List.of(":p0", ":p1"))
         );
     }
 
@@ -37,19 +56,23 @@ class CriteriaDialectExpressionsTest {
     void shouldBuildCollectionEmptyExpressions() {
         assertEquals(
                 "(`tags` IS NULL OR `tags` = '')",
-                CriteriaDialectExpressions.collectionIsEmpty(DBInfo.Type.MYSQL, ColumnType.SET, "`tags`")
+                CriteriaDialectExpressions.collectionIsEmpty(DBInfo.Type.MYSQL, ColumnType.SET, ColumnType.UNKNOWN, "`tags`")
         );
         assertEquals(
                 "(\"tags\" IS NULL OR \"tags\" = '')",
-                CriteriaDialectExpressions.collectionIsEmpty(DBInfo.Type.POSTGRESQL, ColumnType.SET, "\"tags\"")
+                CriteriaDialectExpressions.collectionIsEmpty(DBInfo.Type.POSTGRESQL, ColumnType.SET, ColumnType.UNKNOWN, "\"tags\"")
         );
         assertEquals(
                 "(`tags` IS NULL OR JSON_LENGTH(CAST(`tags` AS JSON)) = 0)",
-                CriteriaDialectExpressions.collectionIsEmpty(DBInfo.Type.MYSQL, ColumnType.JSON_SET, "`tags`")
+                CriteriaDialectExpressions.collectionIsEmpty(DBInfo.Type.MYSQL, ColumnType.JSON_SET, ColumnType.UNKNOWN, "`tags`")
         );
         assertEquals(
                 "(\"tags\" IS NULL OR jsonb_array_length(\"tags\"::jsonb) = 0)",
-                CriteriaDialectExpressions.collectionIsEmpty(DBInfo.Type.POSTGRESQL, ColumnType.JSON_SET, "\"tags\"")
+                CriteriaDialectExpressions.collectionIsEmpty(DBInfo.Type.POSTGRESQL, ColumnType.JSON_SET, ColumnType.UNKNOWN, "\"tags\"")
+        );
+        assertEquals(
+                "(\"tags\" IS NULL OR cardinality(\"tags\") = 0)",
+                CriteriaDialectExpressions.collectionIsEmpty(DBInfo.Type.POSTGRESQL, ColumnType.ARRAY, ColumnType.VARCHAR, "\"tags\"")
         );
     }
 
@@ -57,15 +80,19 @@ class CriteriaDialectExpressionsTest {
     void shouldRejectNonCollectionTypesAndBlankExpressions() {
         assertThrows(
                 IllegalArgumentException.class,
-                () -> CriteriaDialectExpressions.collectionContains(DBInfo.Type.MYSQL, ColumnType.VARCHAR, "`name`", ":p0")
+                () -> CriteriaDialectExpressions.collectionContains(DBInfo.Type.MYSQL, ColumnType.VARCHAR, ColumnType.UNKNOWN, "`name`", ":p0")
         );
         assertThrows(
                 IllegalArgumentException.class,
-                () -> CriteriaDialectExpressions.collectionContains(DBInfo.Type.MYSQL, ColumnType.SET, "", ":p0")
+                () -> CriteriaDialectExpressions.collectionContains(DBInfo.Type.MYSQL, ColumnType.SET, ColumnType.UNKNOWN, "", ":p0")
         );
         assertThrows(
                 IllegalArgumentException.class,
-                () -> CriteriaDialectExpressions.collectionContains(DBInfo.Type.MYSQL, ColumnType.SET, "`tags`", "")
+                () -> CriteriaDialectExpressions.collectionContains(DBInfo.Type.MYSQL, ColumnType.SET, ColumnType.UNKNOWN, "`tags`", "")
+        );
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> CriteriaDialectExpressions.collectionContains(DBInfo.Type.MYSQL, ColumnType.ARRAY, ColumnType.VARCHAR, "`tags`", ":p0")
         );
     }
 }

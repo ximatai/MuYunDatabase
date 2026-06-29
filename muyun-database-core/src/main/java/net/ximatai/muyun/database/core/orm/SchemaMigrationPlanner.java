@@ -268,7 +268,7 @@ class SchemaMigrationPlanner {
     }
 
     private String resolveColumnType(Column column) {
-        String type = SchemaBuildRules.columnTypeTransform(getDatabaseType()).transform(column.getType());
+        String type = SchemaBuildRules.columnType(column, getDatabaseType());
         if (ColumnType.UNKNOWN.name().equals(type) || type == null) {
             throw new OrmException(OrmException.Code.INVALID_MAPPING, "column type not provided: " + column.getName());
         }

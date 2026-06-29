@@ -1,11 +1,9 @@
 package net.ximatai.muyun.database.core.orm;
 
 import net.ximatai.muyun.database.core.builder.ColumnType;
+import net.ximatai.muyun.database.core.annotation.TypeMapper;
 
 import java.lang.reflect.Field;
-import java.lang.reflect.ParameterizedType;
-import java.lang.reflect.Type;
-import java.util.Collection;
 import java.util.Optional;
 
 public class EntityFieldMeta {
@@ -13,16 +11,26 @@ public class EntityFieldMeta {
     private final String fieldName;
     private final String columnName;
     private final ColumnType columnType;
+    private final ColumnType elementColumnType;
     private final boolean id;
     private final Optional<Class<?>> collectionElementType;
 
     public EntityFieldMeta(Field field, String columnName, ColumnType columnType, boolean id) {
+        this(field, columnName, columnType, ColumnType.UNKNOWN, id);
+    }
+
+    public EntityFieldMeta(Field field,
+                           String columnName,
+                           ColumnType columnType,
+                           ColumnType elementColumnType,
+                           boolean id) {
         this.field = field;
         this.fieldName = field.getName();
         this.columnName = columnName;
         this.columnType = columnType;
+        this.elementColumnType = elementColumnType == null ? ColumnType.UNKNOWN : elementColumnType;
         this.id = id;
-        this.collectionElementType = resolveCollectionElementType(field);
+        this.collectionElementType = TypeMapper.inferElementJavaType(field);
         this.field.setAccessible(true);
     }
 
@@ -38,6 +46,10 @@ public class EntityFieldMeta {
         return columnType;
     }
 
+    public ColumnType getElementColumnType() {
+        return elementColumnType;
+    }
+
     public boolean isId() {
         return id;
     }
@@ -48,23 +60,6 @@ public class EntityFieldMeta {
 
     public Optional<Class<?>> getCollectionElementType() {
         return collectionElementType;
-    }
-
-    private static Optional<Class<?>> resolveCollectionElementType(Field field) {
-        if (!Collection.class.isAssignableFrom(field.getType())) {
-            return Optional.empty();
-        }
-
-        Type genericType = field.getGenericType();
-        if (!(genericType instanceof ParameterizedType parameterizedType)) {
-            return Optional.empty();
-        }
-
-        Type[] arguments = parameterizedType.getActualTypeArguments();
-        if (arguments.length != 1 || !(arguments[0] instanceof Class<?> elementType)) {
-            return Optional.empty();
-        }
-        return Optional.of(elementType);
     }
 
     public Object read(Object target) {
