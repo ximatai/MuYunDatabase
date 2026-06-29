@@ -1,3 +1,9 @@
+buildscript {
+    configurations.classpath {
+        resolutionStrategy.force("org.codehaus.plexus:plexus-utils:4.0.3")
+    }
+}
+
 plugins {
     java
     alias(libs.plugins.quarkus)
