@@ -5,6 +5,7 @@
 - 适合对象：首次接入、需要最小可运行示例的同学
 - 建议前置：先浏览 [`../README.md`](../README.md) 了解模块边界
 - 若关注稳定语义与约束：继续阅读 [`API_CONTRACT.md`](API_CONTRACT.md)
+- 若需要迁移运行态字段配置：继续阅读 [`RUNTIME_METADATA_MIGRATION.md`](RUNTIME_METADATA_MIGRATION.md)
 
 ## 0. 前置条件
 

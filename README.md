@@ -28,6 +28,7 @@ MuYun-Database 是一个基于 `Jdbi` 的轻量数据库工具库，面向单表
 - Quarkus 接入：[`docs/QUARKUS.md`](docs/QUARKUS.md)
 - 稳定契约与约束：[`docs/API_CONTRACT.md`](docs/API_CONTRACT.md)
 - 存量项目迁移：[`docs/REFACTOR_GUIDE.md`](docs/REFACTOR_GUIDE.md)
+- 运行态字段元数据迁移：[`docs/RUNTIME_METADATA_MIGRATION.md`](docs/RUNTIME_METADATA_MIGRATION.md)
 - 项目路线图：[`docs/ROADMAP.md`](docs/ROADMAP.md)
 - 版本变更：[`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 - 发布流程：[`docs/RELEASE_PROCESS.md`](docs/RELEASE_PROCESS.md)

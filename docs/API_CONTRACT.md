@@ -5,6 +5,7 @@
 - 适合对象：需要确认“能做/不能做”边界的研发与评审
 - 建议前置：先跑通 [`QUICKSTART.md`](QUICKSTART.md) 再看本契约
 - 若目标是迁移落地：继续阅读 [`REFACTOR_GUIDE.md`](REFACTOR_GUIDE.md)
+- 若目标是运行态字段元数据迁移：继续阅读 [`RUNTIME_METADATA_MIGRATION.md`](RUNTIME_METADATA_MIGRATION.md)
 
 ## 1. 统一 DAO 契约
 
@@ -113,4 +114,4 @@ int upsert(T entity);
 23. `ColumnType.ARRAY` 的集合查询复用 `contains` / `containsAny` / `containsAll` / `isEmpty` / `isNotEmpty` API，PostgreSQL 下分别使用原生数组操作符和 `cardinality`。
 24. `ColumnType.VARCHAR_ARRAY` / `ColumnType.INT_ARRAY` 属于遗留枚举，不作为新代码推荐入口；新数组列统一使用 `ColumnType.ARRAY + elementType`。
 
-下一步：若你在做历史项目改造，请按 [`REFACTOR_GUIDE.md`](REFACTOR_GUIDE.md) 的“推荐重构路径”执行。
+下一步：若你在做历史项目改造，请按 [`REFACTOR_GUIDE.md`](REFACTOR_GUIDE.md) 的“推荐重构路径”执行；若你在做运行态字段元数据迁移，请按 [`RUNTIME_METADATA_MIGRATION.md`](RUNTIME_METADATA_MIGRATION.md) 执行。
