@@ -21,7 +21,7 @@
 
 ```groovy
 dependencies {
-    implementation("net.ximatai.muyun.database:muyun-database-jdbi:3.26.14")
+    implementation("net.ximatai.muyun.database:muyun-database-jdbi:3.26.15")
 }
 ```
 
@@ -29,7 +29,7 @@ dependencies {
 <dependency>
   <groupId>net.ximatai.muyun.database</groupId>
   <artifactId>muyun-database-jdbi</artifactId>
-  <version>3.26.14</version>
+  <version>3.26.15</version>
 </dependency>
 ```
 
@@ -257,7 +257,7 @@ orm.ensureTable(UserEntity.class, MigrationOptions.dryRunStrict());
 
 ```groovy
 dependencies {
-    implementation("net.ximatai.muyun.database:muyun-database-spring-boot-starter:3.26.14")
+    implementation("net.ximatai.muyun.database:muyun-database-spring-boot-starter:3.26.15")
 }
 ```
 

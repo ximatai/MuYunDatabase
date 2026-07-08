@@ -20,6 +20,29 @@
 
 - 暂无。
 
+## 3.26.15
+
+发布日期：2026-07-08
+
+### 新增
+
+- 暂无。
+
+### 变更
+
+- 表结构迁移 dry-run 和直接建表路径统一使用带数据库方言上下文的列类型、默认值比较规则，减少 MySQL/PostgreSQL 元数据别名导致的重复迁移。
+- `IMetaDataLoader` 契约明确要求在数据库支持注释时填充表和列描述，供迁移规划判断注释 DDL 幂等性。
+
+### 修复
+
+- 修复 MySQL 表注释、列注释通过 JDBC metadata 读不到时导致 comment DDL 反复生成的问题。
+- 修复 PostgreSQL 字符串默认值读回为 `'value'::character varying` 时被误判为默认值变更的问题。
+- 修复 `TableBuilder` 在连续执行列 DDL 后使用过期列元数据继续判断，可能引发重复或错误 DDL 的问题。
+
+### 迁移说明
+
+- 无需业务迁移。自定义 `IMetaDataLoader` 实现建议在 `getDBInfo()` 中补齐 `DBTable.description`，并在 `getColumnMap()` 中补齐 `DBColumn.description`。
+
 ## 3.26.14
 
 发布日期：2026-06-29
