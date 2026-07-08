@@ -9,6 +9,12 @@ import java.util.Map;
 
 public interface IMetaDataLoader {
 
+    /**
+     * Loads database metadata used for schema diffing and runtime table access.
+     * Implementations should populate table descriptions and column descriptions
+     * when the database exposes comments, because migration planning uses them
+     * to avoid repeated comment DDL.
+     */
     DBInfo getDBInfo();
 
     void resetInfo();

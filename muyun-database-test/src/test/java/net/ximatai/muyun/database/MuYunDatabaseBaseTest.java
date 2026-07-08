@@ -209,6 +209,28 @@ public abstract class MuYunDatabaseBaseTest {
         assertTrue(table.getColumn("id").isPrimaryKey());
     }
 
+    protected void testTableAndColumnCommentsLoadedFromMetadata() {
+        String tableName = "test_comment_metadata";
+        TableWrapper table = TableWrapper.withName(tableName)
+                .setPrimaryKey(getPrimaryKey())
+                .setComment("Comment metadata table")
+                .addColumn(Column.of("v_name")
+                        .setLength(32)
+                        .setComment("Display name")
+                        .setDefaultValue("guest"));
+
+        new TableBuilder(db).build(table);
+        db.resetDBInfo();
+
+        DBTable dbTable = loader.getDBInfo().getDefaultSchema().getTable(tableName);
+        assertNotNull(dbTable);
+        assertEquals("Comment metadata table", dbTable.getDescription());
+        assertEquals("Display name", dbTable.getColumn("v_name").getDescription());
+
+        MigrationResult dryRun = new SchemaManager(db).ensureTable(table, MigrationOptions.dryRunStrict());
+        assertFalse(dryRun.isChanged());
+    }
+
     protected void testSimpleInsert() {
 
         Instant now = Instant.parse("2026-05-28T03:00:00Z");

@@ -244,6 +244,50 @@ class SchemaManagerTest {
     }
 
     @Test
+    void shouldPlanExistingTableCommentOnlyWhenChanged() {
+        FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("POSTGRESQL"));
+        DBInfo info = existingInfo(loader);
+        info.getSchema("public").getTable("contract").setDescription("Contract");
+        loader.columns.get("public.contract").put("id", primaryKeyColumn("id", "varchar", 32));
+        FakeOperations operations = new FakeOperations(loader);
+        TableWrapper unchanged = TableWrapper.withName("contract")
+                .setComment("Contract")
+                .setPrimaryKey(Column.of("id").setType(ColumnType.VARCHAR).setLength(32).setPrimaryKey());
+
+        MigrationResult unchangedDryRun = new SchemaManager(operations).ensureTable(unchanged, MigrationOptions.dryRun());
+
+        assertFalse(unchangedDryRun.isChanged());
+
+        TableWrapper changed = TableWrapper.withName("contract")
+                .setComment("Contract data")
+                .setPrimaryKey(Column.of("id").setType(ColumnType.VARCHAR).setLength(32).setPrimaryKey());
+
+        MigrationResult changedDryRun = new SchemaManager(operations).ensureTable(changed, MigrationOptions.dryRun());
+
+        assertTrue(changedDryRun.isChanged());
+        assertTrue(changedDryRun.getChanges().stream().anyMatch(change ->
+                change.getType() == MigrationChange.Type.SET_TABLE_COMMENT));
+    }
+
+    @Test
+    void shouldNotApplyMysqlBooleanTypeAliasesToPostgres() {
+        FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("POSTGRESQL"));
+        existingInfo(loader);
+        loader.columns.get("public.contract").put("flag", aliasedColumn("flag", "bit", 1));
+        FakeOperations operations = new FakeOperations(loader);
+        TableWrapper table = TableWrapper.withName("contract")
+                .setPrimaryKey(Column.of("id").setType(ColumnType.VARCHAR).setLength(32).setPrimaryKey())
+                .addColumn(Column.of("flag").setType(ColumnType.BOOLEAN));
+
+        MigrationResult dryRun = new SchemaManager(operations).ensureTable(table, MigrationOptions.dryRun());
+
+        assertTrue(dryRun.hasNonAdditiveChanges());
+        assertTrue(dryRun.getChanges().stream().anyMatch(change ->
+                change.getType() == MigrationChange.Type.ALTER_COLUMN_TYPE
+                        && "flag".equals(change.getTarget())));
+    }
+
+    @Test
     void shouldMapLongTextForMysqlAndPostgres() {
         FakeOperations mysqlOperations = new FakeOperations(new DBInfo("MYSQL"));
         TableWrapper mysqlTable = TableWrapper.withName("contract")

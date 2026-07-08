@@ -3,6 +3,7 @@ package net.ximatai.muyun.database.jdbi;
 import net.ximatai.muyun.database.core.IMetaDataLoader;
 import net.ximatai.muyun.database.core.exception.MuYunDatabaseException;
 import net.ximatai.muyun.database.core.metadata.*;
+import org.jdbi.v3.core.Handle;
 import org.jdbi.v3.core.Jdbi;
 
 import java.sql.Connection;
@@ -76,10 +77,12 @@ public class JdbiMetaDataLoader implements IMetaDataLoader {
                 for (DBSchema schema : info.getSchemas()) {
                     String catalog = null;
                     String schemaPattern = null;
+                    Map<String, String> tableComments = Map.of();
 
                     // 根据不同数据库类型设置参数
                     if (info.getDatabaseType().equals(DBInfo.Type.MYSQL)) {
                         catalog = schema.getName();
+                        tableComments = loadMySqlTableComments(handle, schema.getName());
                     } else {
                         schemaPattern = schema.getName();
                     }
@@ -89,7 +92,10 @@ public class JdbiMetaDataLoader implements IMetaDataLoader {
                         while (tablesRs.next()) {
                             String tableName = tablesRs.getString("TABLE_NAME");
                             String schemaName = schema.getName();
-                            DBTable table = new DBTable(this).setName(tableName).setSchema(schemaName);
+                            DBTable table = new DBTable(this)
+                                    .setName(tableName)
+                                    .setSchema(schemaName)
+                                    .setDescription(tableComments.getOrDefault(tableName, tablesRs.getString("REMARKS")));
                             info.getSchema(schemaName).addTable(table);
                         }
                     }
@@ -113,6 +119,19 @@ public class JdbiMetaDataLoader implements IMetaDataLoader {
 
     public void resetInfo(){
         info = null;
+    }
+
+    private Map<String, String> loadMySqlTableComments(Handle handle, String schema) {
+        return handle.createQuery("""
+                        select TABLE_NAME, TABLE_COMMENT
+                        from information_schema.TABLES
+                        where TABLE_SCHEMA = :schema
+                        """)
+                .bind("schema", schema)
+                .reduceRows(new HashMap<>(), (map, rowView) -> {
+                    map.put(rowView.getColumn("TABLE_NAME", String.class), rowView.getColumn("TABLE_COMMENT", String.class));
+                    return map;
+                });
     }
 
     @Override
@@ -185,6 +204,9 @@ public class JdbiMetaDataLoader implements IMetaDataLoader {
                 } else {
                     schemaPattern = schema;
                 }
+                Map<String, String> columnComments = info.getDatabaseType().equals(DBInfo.Type.MYSQL)
+                        ? loadMySqlColumnComments(handle, schema, table)
+                        : Map.of();
 
                 // 获取列基本信息
                 try (ResultSet rs = metaData.getColumns(catalog, schemaPattern, table, null)) {
@@ -210,7 +232,7 @@ public class JdbiMetaDataLoader implements IMetaDataLoader {
                             column.setDefaultValue("AUTO_INCREMENT");
                         }
 
-                        column.setDescription(rs.getString("REMARKS"));
+                        column.setDescription(columnComments.getOrDefault(column.getName(), rs.getString("REMARKS")));
                         columnMap.put(column.getName(), column);
                     }
                 }
@@ -232,5 +254,19 @@ public class JdbiMetaDataLoader implements IMetaDataLoader {
         });
 
         return columnMap;
+    }
+
+    private Map<String, String> loadMySqlColumnComments(Handle handle, String schema, String table) {
+        return handle.createQuery("""
+                        select COLUMN_NAME, COLUMN_COMMENT
+                        from information_schema.COLUMNS
+                        where TABLE_SCHEMA = :schema and TABLE_NAME = :table
+                        """)
+                .bind("schema", schema)
+                .bind("table", table)
+                .reduceRows(new HashMap<>(), (map, rowView) -> {
+                    map.put(rowView.getColumn("COLUMN_NAME", String.class), rowView.getColumn("COLUMN_COMMENT", String.class));
+                    return map;
+                });
     }
 }

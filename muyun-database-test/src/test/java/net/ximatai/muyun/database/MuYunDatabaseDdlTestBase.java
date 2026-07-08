@@ -24,6 +24,12 @@ public abstract class MuYunDatabaseDdlTestBase extends MuYunDatabaseCoreOpsTestB
 
     @Test
     @Override
+    protected void testTableAndColumnCommentsLoadedFromMetadata() {
+        super.testTableAndColumnCommentsLoadedFromMetadata();
+    }
+
+    @Test
+    @Override
     protected void testModifyColumnTypeToText() {
         super.testModifyColumnTypeToText();
     }

@@ -80,7 +80,7 @@ class SchemaMigrationPlanner {
         DBTable table = info.getSchema(schema).getTable(tableName);
         String schemaDotTable = SchemaBuildRules.qualifiedName(schema, tableName, getDatabaseType());
 
-        if (wrapper.getComment() != null) {
+        if (wrapper.getComment() != null && !Objects.equals(table.getDescription(), wrapper.getComment())) {
             builder.addAdditive(MigrationChange.Type.SET_TABLE_COMMENT, schemaDotTable, dialect.setTableComment(schemaDotTable, wrapper.getComment()));
         }
 
@@ -176,7 +176,7 @@ class SchemaMigrationPlanner {
 
         DBColumn dbColumn = table.getColumn(column.getName());
 
-        if (!sameColumnType(type, dbColumn.getType()) || columnLengthChanged(column, dbColumn)) {
+        if (!sameColumnType(type, dbColumn) || columnLengthChanged(column, dbColumn)) {
             builder.addNonAdditive(MigrationChange.Type.ALTER_COLUMN_TYPE, column.getName(), dialect.alterColumnType(schemaDotTable, quotedColumnName, type + SchemaBuildRules.columnLength(column), baseColumnString));
         }
 
@@ -188,7 +188,7 @@ class SchemaMigrationPlanner {
             builder.addNonAdditive(MigrationChange.Type.ALTER_COLUMN_NULLABLE, column.getName(), dialect.alterColumnNullable(schemaDotTable, quotedColumnName, column.isNullable(), baseColumnString));
         }
 
-        if (!dbColumn.isSequence() && !Objects.equals(dbColumn.getDefaultValueWithString(), column.getDefaultValue())) {
+        if (!dbColumn.isSequence() && !SchemaBuildRules.sameColumnDefault(type, dbColumn.getType(), getDatabaseType(), dbColumn.getLength(), column.getDefaultValue(), dbColumn.getDefaultValueWithString())) {
             builder.addNonAdditive(MigrationChange.Type.ALTER_COLUMN_DEFAULT, column.getName(), dialect.alterColumnDefault(schemaDotTable, quotedColumnName, column.getDefaultValue(), baseColumnString));
         }
 
@@ -275,11 +275,8 @@ class SchemaMigrationPlanner {
         return type;
     }
 
-    private boolean sameColumnType(String expectedType, String actualType) {
-        if (expectedType == null || actualType == null) {
-            return Objects.equals(expectedType, actualType);
-        }
-        return SchemaBuildRules.sameColumnType(expectedType, actualType);
+    private boolean sameColumnType(String expectedType, DBColumn dbColumn) {
+        return SchemaBuildRules.sameColumnType(expectedType, dbColumn.getType(), getDatabaseType(), dbColumn.getLength());
     }
 
     private void assertValidIdentifier(String identifier, String type) {

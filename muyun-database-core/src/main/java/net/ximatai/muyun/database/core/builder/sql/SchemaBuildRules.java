@@ -66,6 +66,40 @@ public final class SchemaBuildRules {
         return normalizeColumnType(expectedType).equals(normalizeColumnType(actualType));
     }
 
+    public static boolean sameColumnType(String expectedType, String actualType, DBInfo.Type dbType, Integer actualLength) {
+        if (sameColumnType(expectedType, actualType)) {
+            return true;
+        }
+        return dbType == DBInfo.Type.MYSQL
+                && isBooleanType(expectedType)
+                && isMySqlBooleanCompatibleType(actualType, actualLength);
+    }
+
+    public static boolean sameColumnDefault(String expectedType, String actualType, String expectedDefault, String actualDefault) {
+        return sameColumnDefault(expectedType, actualType, null, null, expectedDefault, actualDefault);
+    }
+
+    public static boolean sameColumnDefault(String expectedType, String actualType, DBInfo.Type dbType, Integer actualLength, String expectedDefault, String actualDefault) {
+        if (expectedDefault == null || actualDefault == null) {
+            return expectedDefault == null && actualDefault == null;
+        }
+        if (dbType == DBInfo.Type.MYSQL
+                && isBooleanType(expectedType)
+                && isMySqlBooleanCompatibleType(actualType, actualLength)) {
+            Boolean expectedBoolean = parseBooleanDefault(expectedDefault);
+            Boolean actualBoolean = parseBooleanDefault(actualDefault);
+            if (expectedBoolean != null && actualBoolean != null) {
+                return expectedBoolean.equals(actualBoolean);
+            }
+        }
+        String normalizedExpectedDefault = normalizeColumnDefault(expectedDefault, dbType);
+        String normalizedActualDefault = normalizeColumnDefault(actualDefault, dbType);
+        if (isQuotedLiteral(normalizedExpectedDefault) || isQuotedLiteral(normalizedActualDefault)) {
+            return normalizedExpectedDefault.equals(normalizedActualDefault);
+        }
+        return normalizedExpectedDefault.equalsIgnoreCase(normalizedActualDefault);
+    }
+
     public static String normalizeColumnType(String type) {
         String normalized = type.trim()
                 .toLowerCase()
@@ -172,7 +206,70 @@ public final class SchemaBuildRules {
             case "integer" -> "int";
             case "boolean" -> "bool";
             case "timestamp without time zone" -> "timestamp";
+            case "decimal" -> "numeric";
             default -> type;
         };
+    }
+
+    private static boolean isBooleanType(String type) {
+        if (type == null) {
+            return false;
+        }
+        return "bool".equals(normalizeColumnType(type));
+    }
+
+    private static boolean isMySqlBooleanCompatibleType(String type, Integer length) {
+        if (type == null) {
+            return false;
+        }
+        String normalized = type.trim().toLowerCase();
+        return switch (normalized) {
+            // MySQL reports BOOLEAN as TINYINT and JDBC COLUMN_SIZE is often 3
+            // for all signed tinyint values, so length cannot reliably distinguish
+            // boolean aliases from manually-created tinyint columns.
+            case "bool", "boolean", "tinyint" -> true;
+            case "bit" -> length == null || length == 1;
+            default -> false;
+        };
+    }
+
+    private static Boolean parseBooleanDefault(String value) {
+        String normalized = value.trim();
+        if (normalized.startsWith("'") && normalized.endsWith("'") && normalized.length() >= 2) {
+            normalized = normalized.substring(1, normalized.length() - 1);
+        }
+        return switch (normalized.toLowerCase()) {
+            case "true", "1", "b'1'" -> true;
+            case "false", "0", "b'0'" -> false;
+            default -> null;
+        };
+    }
+
+    private static boolean isQuotedLiteral(String value) {
+        String normalized = value.trim();
+        return normalized.length() >= 2 && normalized.startsWith("'") && normalized.endsWith("'");
+    }
+
+    private static String normalizeColumnDefault(String value, DBInfo.Type dbType) {
+        String normalized = value.trim();
+        if (dbType == DBInfo.Type.POSTGRESQL) {
+            normalized = stripPostgresLiteralTypeCast(normalized);
+        }
+        return normalized;
+    }
+
+    private static String stripPostgresLiteralTypeCast(String value) {
+        String normalized = value;
+        if (normalized.startsWith("(") && normalized.endsWith(")")) {
+            normalized = normalized.substring(1, normalized.length() - 1).trim();
+        }
+        if (!normalized.startsWith("'")) {
+            return normalized;
+        }
+        int castStart = normalized.lastIndexOf("'::");
+        if (castStart < 0) {
+            return normalized;
+        }
+        return normalized.substring(0, castStart + 1);
     }
 }
