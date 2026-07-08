@@ -2,7 +2,7 @@
 
 [![Maven Central](https://img.shields.io/maven-central/v/net.ximatai.muyun.database/muyun-database-core.svg)](https://search.maven.org/search?q=g:net.ximatai.muyun.database)
 [![Java CI with Gradle](https://github.com/ximatai/MuYunDatabase/actions/workflows/gradle.yml/badge.svg)](https://github.com/ximatai/MuYunDatabase/actions/workflows/gradle.yml)
-[![Release](https://img.shields.io/github/v/release/ximatai/MuYunDatabase)](https://github.com/ximatai/MuYunDatabase/releases)
+[![Git tag](https://img.shields.io/github/v/tag/ximatai/MuYunDatabase)](https://github.com/ximatai/MuYunDatabase/tags)
 [![Java 21+](https://img.shields.io/badge/Java-21%2B-blue)](#版本与模块)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](http://www.apache.org/licenses/LICENSE-2.0.txt)
 
