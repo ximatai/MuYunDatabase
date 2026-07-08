@@ -10,6 +10,8 @@ import java.util.Objects;
 public class DBTable extends TableBase {
     private final IMetaDataLoader iMetaDataLoader;
 
+    private String description;
+
     private Map<String, DBColumn> columnMap;
 
     private List<DBIndex> indexList;
@@ -25,6 +27,15 @@ public class DBTable extends TableBase {
 
     public DBTable setSchema(String schema) {
         this.schema = schema;
+        return this;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public DBTable setDescription(String description) {
+        this.description = description;
         return this;
     }
 

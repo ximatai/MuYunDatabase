@@ -81,13 +81,13 @@ public class TableBuilder {
 
         buildInheritColumns(dbTable, inherits);
 
-        if (wrapper.getComment() != null) {
+        if (wrapper.getComment() != null && !Objects.equals(dbTable.getDescription(), wrapper.getComment())) {
             db.execute(dialect.setTableComment(schemaDotTable, wrapper.getComment()));
+            dbTable.setDescription(wrapper.getComment());
         }
 
         if (wrapper.getPrimaryKey() != null) {
             checkAndBuildColumn(dbTable, wrapper.getPrimaryKey());
-            dbTable.resetColumns();
         }
 
         wrapper.getColumns().forEach(column -> {
@@ -161,7 +161,7 @@ public class TableBuilder {
     }
 
     private boolean checkAndBuildColumn(DBTable dbTable, Column column) {
-        boolean isNew = false;
+        boolean changed = false;
         String name = column.getName();
         requireValidIdentifier(name, "column");
         String type = SchemaBuildRules.columnType(column, getDatabaseType());
@@ -187,39 +187,59 @@ public class TableBuilder {
         if (!dbTable.contains(name)) {
             db.execute(dialect.addColumn(quotedSchemaDotTable, baseColumnString));
             dbTable.resetColumns();
-            isNew = true;
+            changed = true;
             logger.info("column " + dbTable.getSchemaDotTable() + "." + name + " built");
         }
 
         DBColumn dbColumn = dbTable.getColumn(name);
 
-        if (!SchemaBuildRules.sameColumnType(type, dbColumn.getType()) || column.getLength() != null && !column.getLength().equals(dbColumn.getLength())) {
+        if (!sameColumnType(type, dbColumn) || column.getLength() != null && !column.getLength().equals(dbColumn.getLength())) {
             db.execute(dialect.alterColumnType(quotedSchemaDotTable, quotedName, type + length, baseColumnString));
+            dbTable.resetColumns();
+            changed = true;
+            dbColumn = dbTable.getColumn(name);
         }
 
         if (primaryKey && !dbColumn.isPrimaryKey()) {
             db.execute("alter table " + quotedSchemaDotTable + " add primary key (" + quotedName + ")");
+            dbTable.resetColumns();
+            changed = true;
+            dbColumn = dbTable.getColumn(name);
         }
 
         if (dbColumn.isNullable() != nullable) {
             db.execute(dialect.alterColumnNullable(quotedSchemaDotTable, quotedName, nullable, baseColumnString));
-
+            dbTable.resetColumns();
+            changed = true;
+            dbColumn = dbTable.getColumn(name);
         }
 
-        if ((!dbColumn.isSequence() && !Objects.equals(dbColumn.getDefaultValueWithString(), defaultValue))) {
+        if (!dbColumn.isSequence() && !SchemaBuildRules.sameColumnDefault(type, dbColumn.getType(), getDatabaseType(), dbColumn.getLength(), defaultValue, dbColumn.getDefaultValueWithString())) {
             db.execute(dialect.alterColumnDefault(quotedSchemaDotTable, quotedName, defaultValue, baseColumnString));
+            dbTable.resetColumns();
+            changed = true;
+            dbColumn = dbTable.getColumn(name);
         }
 
         if (dbColumn.isSequence() != sequence) {
             dialect.alterColumnSequence(quotedSchemaDotTable, dbTable.getSchema(), dbTable.getName(), name, sequence)
                     .forEach(db::execute);
+            dbTable.resetColumns();
+            changed = true;
+            dbColumn = dbTable.getColumn(name);
         }
 
         if (comment != null && !Objects.equals(dbColumn.getDescription(), comment)) {
             db.execute(dialect.setColumnComment(quotedSchemaDotTable, quotedName, comment, baseColumnString));
+            dbTable.resetColumns();
+            changed = true;
         }
 
-        return isNew;
+        return changed;
+    }
+
+    private boolean sameColumnType(String expectedType, DBColumn dbColumn) {
+        return SchemaBuildRules.sameColumnType(expectedType, dbColumn.getType(), getDatabaseType(), dbColumn.getLength());
     }
 
     private boolean dropColumnIfExists(DBTable dbTable, String columnName) {
