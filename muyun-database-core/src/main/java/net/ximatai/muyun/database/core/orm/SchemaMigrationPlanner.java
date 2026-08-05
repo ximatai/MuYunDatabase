@@ -176,28 +176,30 @@ class SchemaMigrationPlanner {
 
         DBColumn dbColumn = table.getColumn(column.getName());
 
-        if (!sameColumnType(type, dbColumn) || columnLengthChanged(column, dbColumn)) {
+        ColumnDiffEvaluator.ColumnDiff columnDiff = ColumnDiffEvaluator.evaluate(column, dbColumn, type, getDatabaseType());
+
+        if (columnDiff.typeChanged()) {
             builder.addNonAdditive(MigrationChange.Type.ALTER_COLUMN_TYPE, column.getName(), dialect.alterColumnType(schemaDotTable, quotedColumnName, type + SchemaBuildRules.columnLength(column), baseColumnString));
         }
 
-        if (column.isPrimaryKey() && !dbColumn.isPrimaryKey()) {
+        if (columnDiff.primaryKeyChanged()) {
             builder.addNonAdditive(MigrationChange.Type.ADD_PRIMARY_KEY, column.getName(), "alter table " + schemaDotTable + " add primary key (" + quotedColumnName + ")");
         }
 
-        if (dbColumn.isNullable() != column.isNullable()) {
+        if (columnDiff.nullableChanged()) {
             builder.addNonAdditive(MigrationChange.Type.ALTER_COLUMN_NULLABLE, column.getName(), dialect.alterColumnNullable(schemaDotTable, quotedColumnName, column.isNullable(), baseColumnString));
         }
 
-        if (!dbColumn.isSequence() && !SchemaBuildRules.sameColumnDefault(type, dbColumn.getType(), getDatabaseType(), dbColumn.getLength(), column.getDefaultValue(), dbColumn.getDefaultValueWithString())) {
+        if (columnDiff.defaultChanged()) {
             builder.addNonAdditive(MigrationChange.Type.ALTER_COLUMN_DEFAULT, column.getName(), dialect.alterColumnDefault(schemaDotTable, quotedColumnName, column.getDefaultValue(), baseColumnString));
         }
 
-        if (dbColumn.isSequence() != column.isSequence()) {
+        if (columnDiff.sequenceChanged()) {
             dialect.alterColumnSequence(schemaDotTable, table.getSchema(), table.getName(), column.getName(), column.isSequence())
                     .forEach(sql -> builder.addNonAdditive(MigrationChange.Type.ALTER_COLUMN_SEQUENCE, column.getName(), sql));
         }
 
-        if (column.getComment() != null && !Objects.equals(dbColumn.getDescription(), column.getComment())) {
+        if (columnDiff.commentChanged()) {
             builder.addAdditive(MigrationChange.Type.SET_COLUMN_COMMENT, column.getName(), dialect.setColumnComment(schemaDotTable, quotedColumnName, column.getComment(), baseColumnString));
         }
     }
@@ -254,13 +256,6 @@ class SchemaMigrationPlanner {
         return !column.isNullable() && column.getDefaultValue() == null;
     }
 
-    private boolean columnLengthChanged(Column column, DBColumn dbColumn) {
-        if (SchemaBuildRules.ignoresColumnLength(column)) {
-            return false;
-        }
-        return column.getLength() != null && !column.getLength().equals(dbColumn.getLength());
-    }
-
     private String buildColumnString(Column column, String type) {
         String name = column.getName();
         assertValidIdentifier(name, "column");
@@ -273,10 +268,6 @@ class SchemaMigrationPlanner {
             throw new OrmException(OrmException.Code.INVALID_MAPPING, "column type not provided: " + column.getName());
         }
         return type;
-    }
-
-    private boolean sameColumnType(String expectedType, DBColumn dbColumn) {
-        return SchemaBuildRules.sameColumnType(expectedType, dbColumn.getType(), getDatabaseType(), dbColumn.getLength());
     }
 
     private void assertValidIdentifier(String identifier, String type) {

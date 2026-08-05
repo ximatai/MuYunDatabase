@@ -99,6 +99,25 @@ class TableBuilderMetadataCacheTest {
         assertTrue(db.executedSql().isEmpty(), "TEXT column length differences must not trigger DDL");
     }
 
+    @Test
+    void altersMysqlDatetimeColumnWhenTimestampIsRequested() {
+        FakeMetaDataLoader loader = new FakeMetaDataLoader("app", "demo")
+                .withColumn(column("id", "VARCHAR", false, true))
+                .withColumn(column("occurred_at", "DATETIME", true, false));
+        FakeDatabaseOperations db = new FakeDatabaseOperations(loader);
+
+        TableWrapper wrapper = TableWrapper.withName("demo")
+                .setSchema("app")
+                .setPrimaryKey(Column.of("id").setType(ColumnType.VARCHAR).setPrimaryKey())
+                .addColumn(Column.of("occurred_at").setType(ColumnType.TIMESTAMP));
+
+        new TableBuilder(db).build(wrapper);
+
+        assertEquals(1, db.executedSql().stream()
+                .filter(sql -> sql.contains("modify column `occurred_at` TIMESTAMP"))
+                .count());
+    }
+
     private static boolean isAddColumnSql(String normalizedSql) {
         return normalizedSql.contains("alter table") && normalizedSql.contains(" add ");
     }
