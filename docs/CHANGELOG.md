@@ -14,12 +14,12 @@
 
 ### 修复
 
-- 修复列类型比对未归一数据库内部别名，导致重复 ensure 同一表定义时产生虚假 ALTER 计划、被严格迁移模式拒绝的问题：PostgreSQL 归一 `int4`/`int8`/`bool` 及 `_int4`/`_bool` 等数组内部别名，并补齐 `DEC`→`NUMERIC`、`DATETIME`→`TIMESTAMP` 等 JDBC 别名的归一。
+- 修复列类型比对未归一数据库内部别名，导致重复 ensure 同一表定义时产生虚假 ALTER 计划、被严格迁移模式拒绝的问题：PostgreSQL 归一 `int4`/`int8`/`bool` 等内部别名（数组形式 `_int4`/`_bool` 等的既有归一同步补充测试固化），并补齐 `DEC`→`NUMERIC`、`DATETIME`→`TIMESTAMP` 等 JDBC 别名的归一。
 - 统一 `TableBuilder` 与 `SchemaMigrationPlanner` 的列长度比对规则：`TEXT`/`LONGTEXT`/`ARRAY` 列不再参与长度比对，避免两条 schema 对齐路径对同一表定义判定不一致。
 
 ### 迁移说明
 
-- 暂无。
+- MySQL 用户注意：`DATETIME` 与 `TIMESTAMP` 现被视为等价（与 `ColumnType.TIMESTAMP` 声明的映射一致）。此前对既有 `DATETIME` 列（期望类型 `TIMESTAMP`）的表，重复 ensure 会发出将其收敛为 `TIMESTAMP` 的 ALTER；本版本起不再产生该收敛变更，两者差异（时区转换、取值范围、存储宽度）需由使用者自行评估。
 
 ## 3.26.15
 

@@ -57,6 +57,48 @@ class TableBuilderMetadataCacheTest {
                 .count());
     }
 
+    @Test
+    void emitsNoDdlWhenPostgresReportsInternalTypeAliases() {
+        FakeMetaDataLoader loader = new FakeMetaDataLoader("POSTGRESQL", "app", "demo")
+                .withColumn(column("id", "int4", false, true))
+                .withColumn(column("i_count", "int4", true, false))
+                .withColumn(column("n_big", "int8", true, false))
+                .withColumn(column("b_flag", "bool", true, false))
+                .withColumn(column("t_time", "timestamp", true, false));
+        FakeDatabaseOperations db = new FakeDatabaseOperations(loader);
+
+        TableWrapper wrapper = TableWrapper.withName("demo")
+                .setSchema("app")
+                .setPrimaryKey(Column.of("id").setType(ColumnType.INT).setPrimaryKey())
+                .addColumn(Column.of("i_count").setType(ColumnType.INT))
+                .addColumn(Column.of("n_big").setType(ColumnType.BIGINT))
+                .addColumn(Column.of("b_flag").setType(ColumnType.BOOLEAN))
+                .addColumn(Column.of("t_time").setType(ColumnType.TIMESTAMP));
+
+        new TableBuilder(db).build(wrapper);
+
+        assertTrue(db.executedSql().isEmpty(), "PostgreSQL internal type aliases must not trigger DDL");
+    }
+
+    @Test
+    void ignoresColumnLengthForTextColumnsWhenExecuting() {
+        DBColumn textColumn = column("v_note", "TEXT", true, false);
+        textColumn.setLength(32);
+        FakeMetaDataLoader loader = new FakeMetaDataLoader("app", "demo")
+                .withColumn(column("id", "VARCHAR", false, true))
+                .withColumn(textColumn);
+        FakeDatabaseOperations db = new FakeDatabaseOperations(loader);
+
+        TableWrapper wrapper = TableWrapper.withName("demo")
+                .setSchema("app")
+                .setPrimaryKey(Column.of("id").setType(ColumnType.VARCHAR).setPrimaryKey())
+                .addColumn(Column.of("v_note").setType(ColumnType.TEXT).setLength(999));
+
+        new TableBuilder(db).build(wrapper);
+
+        assertTrue(db.executedSql().isEmpty(), "TEXT column length differences must not trigger DDL");
+    }
+
     private static boolean isAddColumnSql(String normalizedSql) {
         return normalizedSql.contains("alter table") && normalizedSql.contains(" add ");
     }
@@ -77,7 +119,11 @@ class TableBuilderMetadataCacheTest {
         private final AtomicInteger columnMapLoadCount = new AtomicInteger();
 
         private FakeMetaDataLoader(String schema, String table) {
-            info = new DBInfo("MYSQL").setName(schema);
+            this("MYSQL", schema, table);
+        }
+
+        private FakeMetaDataLoader(String dbType, String schema, String table) {
+            info = new DBInfo(dbType).setName(schema);
             DBSchema dbSchema = new DBSchema(schema);
             dbSchema.addTable(new DBTable(this).setSchema(schema).setName(table));
             info.addSchema(dbSchema);
