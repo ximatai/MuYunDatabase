@@ -206,7 +206,7 @@ public final class SchemaBuildRules {
             case "integer", "int", "int4" -> "int";
             case "bigint", "int8" -> "bigint";
             case "boolean", "bool" -> "bool";
-            case "timestamp without time zone", "timestamp", "datetime" -> "timestamp";
+            case "timestamp without time zone", "timestamp" -> "timestamp";
             case "decimal", "dec", "numeric" -> "numeric";
             default -> type;
         };

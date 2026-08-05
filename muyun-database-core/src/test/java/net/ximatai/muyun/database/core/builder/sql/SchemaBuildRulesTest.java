@@ -47,10 +47,10 @@ class SchemaBuildRulesTest {
     }
 
     @Test
-    void shouldTreatJdbcReportedTypeAliasesAsEquivalent() {
+    void shouldTreatJdbcReportedAndPostgresTypeAliasesAsEquivalent() {
         assertTrue(SchemaBuildRules.sameColumnType("NUMERIC", "DEC"));
-        assertTrue(SchemaBuildRules.sameColumnType("TIMESTAMP", "DATETIME"));
         assertTrue(SchemaBuildRules.sameColumnType("TIMESTAMP", "timestamp without time zone"));
+        assertFalse(SchemaBuildRules.sameColumnType("TIMESTAMP", "DATETIME"));
     }
 
     @Test
