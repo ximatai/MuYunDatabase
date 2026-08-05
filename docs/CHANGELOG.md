@@ -14,7 +14,8 @@
 
 ### 修复
 
-- 暂无。
+- 修复列类型比对未归一数据库内部别名，导致重复 ensure 同一表定义时产生虚假 ALTER 计划、被严格迁移模式拒绝的问题：PostgreSQL 归一 `int4`/`int8`/`bool` 及 `_int4`/`_bool` 等数组内部别名，并补齐 `DEC`→`NUMERIC`、`DATETIME`→`TIMESTAMP` 等 JDBC 别名的归一。
+- 统一 `TableBuilder` 与 `SchemaMigrationPlanner` 的列长度比对规则：`TEXT`/`LONGTEXT`/`ARRAY` 列不再参与长度比对，避免两条 schema 对齐路径对同一表定义判定不一致。
 
 ### 迁移说明
 

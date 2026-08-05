@@ -27,6 +27,33 @@ class SchemaBuildRulesTest {
     }
 
     @Test
+    void shouldTreatPostgresInternalTypeAliasesAsEquivalent() {
+        assertTrue(SchemaBuildRules.sameColumnType("INT", "int4"));
+        assertTrue(SchemaBuildRules.sameColumnType("int", "int4"));
+        assertTrue(SchemaBuildRules.sameColumnType("BIGINT", "int8"));
+        assertTrue(SchemaBuildRules.sameColumnType("BOOLEAN", "bool"));
+        assertTrue(SchemaBuildRules.sameColumnType("INT[]", "_int4"));
+        assertTrue(SchemaBuildRules.sameColumnType("BIGINT[]", "_int8"));
+        assertFalse(SchemaBuildRules.sameColumnType("INT", "int8"));
+    }
+
+    @Test
+    void shouldTreatPostgresInternalArrayAliasesAsEquivalent() {
+        assertTrue(SchemaBuildRules.sameColumnType("BOOLEAN[]", "_bool"));
+        assertTrue(SchemaBuildRules.sameColumnType("TIMESTAMP[]", "_timestamp"));
+        assertTrue(SchemaBuildRules.sameColumnType("VARCHAR[]", "_varchar"));
+        assertTrue(SchemaBuildRules.sameColumnType("TEXT[]", "_text"));
+        assertTrue(SchemaBuildRules.sameColumnType("NUMERIC[]", "_numeric"));
+    }
+
+    @Test
+    void shouldTreatJdbcReportedTypeAliasesAsEquivalent() {
+        assertTrue(SchemaBuildRules.sameColumnType("NUMERIC", "DEC"));
+        assertTrue(SchemaBuildRules.sameColumnType("TIMESTAMP", "DATETIME"));
+        assertTrue(SchemaBuildRules.sameColumnType("TIMESTAMP", "timestamp without time zone"));
+    }
+
+    @Test
     void shouldNotApplyMysqlBooleanCompatibilityOutsideMysql() {
         assertFalse(SchemaBuildRules.sameColumnType("BOOLEAN", "BIT", POSTGRESQL, 1));
         assertFalse(SchemaBuildRules.sameColumnType("BOOLEAN", "TINYINT", POSTGRESQL, 1));

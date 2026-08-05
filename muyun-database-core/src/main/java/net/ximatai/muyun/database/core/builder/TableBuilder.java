@@ -193,7 +193,7 @@ public class TableBuilder {
 
         DBColumn dbColumn = dbTable.getColumn(name);
 
-        if (!sameColumnType(type, dbColumn) || column.getLength() != null && !column.getLength().equals(dbColumn.getLength())) {
+        if (!sameColumnType(type, dbColumn) || columnLengthChanged(column, dbColumn)) {
             db.execute(dialect.alterColumnType(quotedSchemaDotTable, quotedName, type + length, baseColumnString));
             dbTable.resetColumns();
             changed = true;
@@ -240,6 +240,13 @@ public class TableBuilder {
 
     private boolean sameColumnType(String expectedType, DBColumn dbColumn) {
         return SchemaBuildRules.sameColumnType(expectedType, dbColumn.getType(), getDatabaseType(), dbColumn.getLength());
+    }
+
+    private boolean columnLengthChanged(Column column, DBColumn dbColumn) {
+        if (SchemaBuildRules.ignoresColumnLength(column)) {
+            return false;
+        }
+        return column.getLength() != null && !column.getLength().equals(dbColumn.getLength());
     }
 
     private boolean dropColumnIfExists(DBTable dbTable, String columnName) {

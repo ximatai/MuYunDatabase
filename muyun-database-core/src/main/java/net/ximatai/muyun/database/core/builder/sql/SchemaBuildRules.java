@@ -202,11 +202,12 @@ public final class SchemaBuildRules {
 
     private static String normalizeScalarType(String type) {
         return switch (type) {
-            case "character varying" -> "varchar";
-            case "integer" -> "int";
-            case "boolean" -> "bool";
-            case "timestamp without time zone" -> "timestamp";
-            case "decimal" -> "numeric";
+            case "character varying", "varchar" -> "varchar";
+            case "integer", "int", "int4" -> "int";
+            case "bigint", "int8" -> "bigint";
+            case "boolean", "bool" -> "bool";
+            case "timestamp without time zone", "timestamp", "datetime" -> "timestamp";
+            case "decimal", "dec", "numeric" -> "numeric";
             default -> type;
         };
     }
