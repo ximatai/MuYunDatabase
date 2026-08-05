@@ -398,6 +398,27 @@ class SchemaManagerTest {
     }
 
     @Test
+    void shouldPlanTimestampToDatetimeMigrationForMysql() {
+        FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("MYSQL"));
+        existingInfo(loader);
+        loader.columns.get("public.contract").put("occurred_at", aliasedColumn("occurred_at", "datetime", null));
+        FakeOperations operations = new FakeOperations(loader);
+        TableWrapper table = TableWrapper.withName("contract")
+                .setSchema("public")
+                .setPrimaryKey(Column.of("id").setType(ColumnType.VARCHAR).setLength(32).setPrimaryKey())
+                .addColumn(Column.of("occurred_at").setType(ColumnType.TIMESTAMP));
+
+        MigrationResult dryRun = new SchemaManager(operations).ensureTable(table, MigrationOptions.dryRun());
+
+        assertTrue(dryRun.hasNonAdditiveChanges());
+        assertTrue(dryRun.getChanges().stream().anyMatch(change ->
+                change.getType() == MigrationChange.Type.ALTER_COLUMN_TYPE
+                        && "occurred_at".equals(change.getTarget())));
+        assertTrue(dryRun.getStatements().stream().anyMatch(sql ->
+                sql.contains("modify column `occurred_at` TIMESTAMP")));
+    }
+
+    @Test
     void shouldIgnoreLengthWhenComparingLongTextColumns() {
         FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("MYSQL"));
         existingInfo(loader);

@@ -177,7 +177,6 @@ public class TableBuilder {
 
         boolean sequence = column.isSequence();
         boolean nullable = column.isNullable();
-        boolean primaryKey = column.isPrimaryKey();
         String defaultValue = column.getDefaultValue();
 
         String baseColumnString = SchemaBuildRules.columnDefinition(column, type, getDatabaseType());
@@ -193,35 +192,40 @@ public class TableBuilder {
 
         DBColumn dbColumn = dbTable.getColumn(name);
 
-        if (!sameColumnType(type, dbColumn) || column.getLength() != null && !column.getLength().equals(dbColumn.getLength())) {
+        ColumnDiffEvaluator.ColumnDiff columnDiff = ColumnDiffEvaluator.evaluate(column, dbColumn, type, getDatabaseType());
+        if (columnDiff.typeChanged()) {
             db.execute(dialect.alterColumnType(quotedSchemaDotTable, quotedName, type + length, baseColumnString));
             dbTable.resetColumns();
             changed = true;
             dbColumn = dbTable.getColumn(name);
         }
 
-        if (primaryKey && !dbColumn.isPrimaryKey()) {
+        columnDiff = ColumnDiffEvaluator.evaluate(column, dbColumn, type, getDatabaseType());
+        if (columnDiff.primaryKeyChanged()) {
             db.execute("alter table " + quotedSchemaDotTable + " add primary key (" + quotedName + ")");
             dbTable.resetColumns();
             changed = true;
             dbColumn = dbTable.getColumn(name);
         }
 
-        if (dbColumn.isNullable() != nullable) {
+        columnDiff = ColumnDiffEvaluator.evaluate(column, dbColumn, type, getDatabaseType());
+        if (columnDiff.nullableChanged()) {
             db.execute(dialect.alterColumnNullable(quotedSchemaDotTable, quotedName, nullable, baseColumnString));
             dbTable.resetColumns();
             changed = true;
             dbColumn = dbTable.getColumn(name);
         }
 
-        if (!dbColumn.isSequence() && !SchemaBuildRules.sameColumnDefault(type, dbColumn.getType(), getDatabaseType(), dbColumn.getLength(), defaultValue, dbColumn.getDefaultValueWithString())) {
+        columnDiff = ColumnDiffEvaluator.evaluate(column, dbColumn, type, getDatabaseType());
+        if (columnDiff.defaultChanged()) {
             db.execute(dialect.alterColumnDefault(quotedSchemaDotTable, quotedName, defaultValue, baseColumnString));
             dbTable.resetColumns();
             changed = true;
             dbColumn = dbTable.getColumn(name);
         }
 
-        if (dbColumn.isSequence() != sequence) {
+        columnDiff = ColumnDiffEvaluator.evaluate(column, dbColumn, type, getDatabaseType());
+        if (columnDiff.sequenceChanged()) {
             dialect.alterColumnSequence(quotedSchemaDotTable, dbTable.getSchema(), dbTable.getName(), name, sequence)
                     .forEach(db::execute);
             dbTable.resetColumns();
@@ -229,17 +233,14 @@ public class TableBuilder {
             dbColumn = dbTable.getColumn(name);
         }
 
-        if (comment != null && !Objects.equals(dbColumn.getDescription(), comment)) {
+        columnDiff = ColumnDiffEvaluator.evaluate(column, dbColumn, type, getDatabaseType());
+        if (columnDiff.commentChanged()) {
             db.execute(dialect.setColumnComment(quotedSchemaDotTable, quotedName, comment, baseColumnString));
             dbTable.resetColumns();
             changed = true;
         }
 
         return changed;
-    }
-
-    private boolean sameColumnType(String expectedType, DBColumn dbColumn) {
-        return SchemaBuildRules.sameColumnType(expectedType, dbColumn.getType(), getDatabaseType(), dbColumn.getLength());
     }
 
     private boolean dropColumnIfExists(DBTable dbTable, String columnName) {
