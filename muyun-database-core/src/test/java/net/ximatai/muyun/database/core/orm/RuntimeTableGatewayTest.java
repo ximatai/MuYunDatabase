@@ -114,7 +114,7 @@ class RuntimeTableGatewayTest {
     @Test
     void shouldApplyRuntimeFieldCodecToAggregateGroupValues() {
         CapturingOperations operations = new CapturingOperations();
-        operations.queryResult = List.of(Map.of("g0", "enabled", "a0", 2L));
+        operations.queryResult = List.of(Map.of("g0", "enabled", "a0", "enabled", "a1", 2L));
         TableMeta tableMeta = TableMeta.builder("public", "runtime_record")
                 .id("id", "id", ColumnType.VARCHAR, String.class)
                 .field("status", "status", ColumnType.VARCHAR, RuntimeStatus.class)
@@ -122,10 +122,35 @@ class RuntimeTableGatewayTest {
         RuntimeTableGateway gateway = new RuntimeTableGateway(operations, tableMeta, new RuntimeStatusCodeConverter());
 
         List<Map<String, Object>> rows = gateway.aggregate(Criteria.of(), AggregateQuery.groupBy(List.of("status"), List.of(
+                AggregateSelection.of("firstStatus", AggregateOperation.MIN, "status"),
                 AggregateSelection.count("count")
         )));
 
-        assertEquals(List.of(Map.of("status", RuntimeStatus.ENABLED, "count", 2L)), rows);
+        assertEquals(List.of(Map.of("status", RuntimeStatus.ENABLED, "firstStatus", RuntimeStatus.ENABLED, "count", 2L)), rows);
+    }
+
+    @Test
+    void shouldRejectAggregateOperationsUnsupportedByRuntimeFieldMetadata() {
+        CapturingOperations operations = new CapturingOperations();
+        TableMeta tableMeta = TableMeta.builder("public", "runtime_record")
+                .id("id", "id", ColumnType.VARCHAR, String.class)
+                .field("status", "status", ColumnType.VARCHAR, String.class)
+                .jsonSet("tags", "tags", Set.class, String.class)
+                .build();
+        RuntimeTableGateway gateway = new RuntimeTableGateway(operations, tableMeta);
+
+        OrmException sumException = assertThrows(OrmException.class,
+                () -> gateway.aggregate(Criteria.of(), AggregateQuery.of(List.of(
+                        AggregateSelection.of("total", AggregateOperation.SUM, "status")
+                ))));
+        assertEquals(OrmException.Code.INVALID_CRITERIA, sumException.getCode());
+
+        OrmException minException = assertThrows(OrmException.class,
+                () -> gateway.aggregate(Criteria.of(), AggregateQuery.of(List.of(
+                        AggregateSelection.of("firstTag", AggregateOperation.MIN, "tags")
+                ))));
+        assertEquals(OrmException.Code.INVALID_CRITERIA, minException.getCode());
+        assertEquals(null, operations.querySql);
     }
 
     @Test

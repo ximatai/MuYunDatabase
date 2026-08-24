@@ -1,6 +1,7 @@
 package net.ximatai.muyun.database.core.orm;
 
 import net.ximatai.muyun.database.core.IDatabaseOperations;
+import net.ximatai.muyun.database.core.builder.ColumnType;
 import net.ximatai.muyun.database.core.metadata.DBInfo;
 
 import java.util.HashMap;
@@ -165,6 +166,7 @@ public class RuntimeTableGateway {
         }
         for (int i = 0; i < aggregateQuery.selections().size(); i++) {
             AggregateSelection selection = aggregateQuery.selections().get(i);
+            validateAggregateSelection(selection);
             String expression = selection.operation() == AggregateOperation.COUNT ? "COUNT(*)"
                     : selection.operation().name() + "(" + SqlIdentifiers.quote(resolveColumn(selection.field()), databaseType()) + ")";
             selectParts.add(expression + " AS a" + i);
@@ -182,13 +184,18 @@ public class RuntimeTableGateway {
         Map<String, Object> result = new LinkedHashMap<>();
         for (int i = 0; i < query.groupByFields().size(); i++) {
             String field = query.groupByFields().get(i);
-            result.put(field, aggregateGroupValue(columnValue(row, "g" + i), field));
+            result.put(field, aggregateFieldValue(columnValue(row, "g" + i), field));
         }
-        for (int i = 0; i < query.selections().size(); i++) result.put(query.selections().get(i).key(), columnValue(row, "a" + i));
+        for (int i = 0; i < query.selections().size(); i++) {
+            AggregateSelection selection = query.selections().get(i);
+            Object value = columnValue(row, "a" + i);
+            result.put(selection.key(), selection.operation() == AggregateOperation.MIN || selection.operation() == AggregateOperation.MAX
+                    ? aggregateFieldValue(value, selection.field()) : value);
+        }
         return result;
     }
 
-    private Object aggregateGroupValue(Object value, String fieldOrColumn) {
+    private Object aggregateFieldValue(Object value, String fieldOrColumn) {
         FieldMeta fieldMeta = resolveFieldMeta(fieldOrColumn);
         if (fieldMeta == null) {
             return value;
@@ -200,6 +207,39 @@ public class RuntimeTableGateway {
         } catch (RuntimeException ex) {
             throw new OrmException(OrmException.Code.INVALID_ENTITY, ex.getMessage(), ex);
         }
+    }
+
+    private void validateAggregateSelection(AggregateSelection selection) {
+        if (selection.operation() == AggregateOperation.COUNT || tableMeta == null) {
+            return;
+        }
+        FieldMeta fieldMeta = resolveFieldMeta(selection.field());
+        if (fieldMeta == null) {
+            return;
+        }
+        ColumnType columnType = fieldMeta.getColumnType();
+        boolean supported = switch (selection.operation()) {
+            case SUM, AVG -> isNumericAggregateType(columnType);
+            case MIN, MAX -> isComparableAggregateType(columnType);
+            case COUNT -> true;
+        };
+        if (!supported) {
+            throw new OrmException(OrmException.Code.INVALID_CRITERIA,
+                    selection.operation() + " does not support " + columnType + " field: " + selection.field());
+        }
+    }
+
+    private static boolean isNumericAggregateType(ColumnType columnType) {
+        return columnType == ColumnType.INT || columnType == ColumnType.BIGINT || columnType == ColumnType.NUMERIC;
+    }
+
+    private static boolean isComparableAggregateType(ColumnType columnType) {
+        return isNumericAggregateType(columnType)
+                || columnType == ColumnType.VARCHAR
+                || columnType == ColumnType.TEXT
+                || columnType == ColumnType.LONGTEXT
+                || columnType == ColumnType.TIMESTAMP
+                || columnType == ColumnType.DATE;
     }
 
     private static Object columnValue(Map<String, Object> row, String alias) {
