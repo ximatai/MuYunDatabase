@@ -113,7 +113,7 @@ int upsert(T entity);
 22. `ColumnType.ARRAY` 读取时按字段声明适配：`List<T>` 返回 `ArrayList<T>`，`Set<T>` 返回 `LinkedHashSet<T>`，`T[]` 返回 Java 数组；元素会经过字段级 `DatabaseValueConverter`。
 23. `ColumnType.ARRAY` 的集合查询复用 `contains` / `containsAny` / `containsAll` / `isEmpty` / `isNotEmpty` API，PostgreSQL 下分别使用原生数组操作符和 `cardinality`。
 24. `ColumnType.VARCHAR_ARRAY` / `ColumnType.INT_ARRAY` 属于遗留枚举，不作为新代码推荐入口；新数组列统一使用 `ColumnType.ARRAY + elementType`。
-25. `aggregate(Criteria, AggregateQuery)` 只提供单表、元数据校验后的 `COUNT/SUM/AVG/MIN/MAX` 与 `GROUP BY`；使用 `TableMeta` 时，`SUM/AVG` 仅支持数值字段，`MIN/MAX` 仅支持可比较标量字段，且 `MIN/MAX` 与 `GROUP BY` 字段值会按字段 codec 转换。`AggregateQuery.builder()` 提供 fluent 构造方式；新调用方可使用 `aggregateResult` 获得带投影定义的 `AggregateResult/AggregateRow`，原有 `aggregate` Map 返回值保持兼容。旧的单向 resolver 路径只校验字段安全性，不承诺聚合类型校验。字段必须是已知逻辑字段或物理列，不接受调用方 SQL 表达式。
+25. `aggregate(Criteria, AggregateQuery)` 只提供单表、元数据校验后的 `COUNT/SUM/AVG/MIN/MAX` 与 `GROUP BY`；使用 `TableMeta` 时，`SUM/AVG` 仅支持数值字段，`MIN/MAX` 仅支持可比较标量字段，`GROUP BY` 仅支持标量字段，且 `MIN/MAX` 与 `GROUP BY` 字段值会按字段 codec 转换。聚合结果的 `COUNT` 固定返回 `Long`，`SUM/AVG` 固定返回 `BigDecimal`，空集或全 `NULL` 的 `SUM/AVG/MIN/MAX` 返回 `null`。`AggregateQuery.builder()` 提供 fluent 构造方式；新调用方可使用 `aggregateResult` 获得带投影定义的 `AggregateResult/AggregateRow`，原有 `aggregate` Map 返回值保持兼容。旧的单向 resolver 路径只校验字段安全性，不承诺聚合类型校验。字段必须是已知逻辑字段或物理列，不接受调用方 SQL 表达式。
 26. `aggregate` 不承载联表、租户、软删、权限、审计或业务维度；这些约束必须由上层先编译为传入的 `Criteria`，复杂 SQL 仍应使用显式 SQL Object。
 
 下一步：若你在做历史项目改造，请按 [`REFACTOR_GUIDE.md`](REFACTOR_GUIDE.md) 的“推荐重构路径”执行；若你在做运行态字段元数据迁移，请按 [`RUNTIME_METADATA_MIGRATION.md`](RUNTIME_METADATA_MIGRATION.md) 执行。

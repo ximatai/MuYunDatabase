@@ -174,6 +174,32 @@ class RuntimeTableGatewayTest {
     }
 
     @Test
+    void shouldApplyStableAggregateResultTypesAndRejectUngroupableFields() {
+        CapturingOperations operations = new CapturingOperations();
+        operations.queryResult = List.of(Map.of("a0", "3", "a1", 12, "a2", "2.50"));
+        TableMeta tableMeta = TableMeta.builder("public", "runtime_record")
+                .id("id", "id", ColumnType.VARCHAR, String.class)
+                .field("amount", "amount", ColumnType.NUMERIC, java.math.BigDecimal.class)
+                .jsonSet("tags", "tags", Set.class, String.class)
+                .build();
+        RuntimeTableGateway gateway = new RuntimeTableGateway(operations, tableMeta);
+
+        List<Map<String, Object>> rows = gateway.aggregate(Criteria.of(), AggregateQuery.of(List.of(
+                AggregateSelection.count("count"),
+                AggregateSelection.of("sum", AggregateOperation.SUM, "amount"),
+                AggregateSelection.of("avg", AggregateOperation.AVG, "amount")
+        )));
+
+        assertEquals(List.of(Map.of("count", 3L, "sum", new java.math.BigDecimal("12"),
+                "avg", new java.math.BigDecimal("2.50"))), rows);
+        OrmException groupByException = assertThrows(OrmException.class,
+                () -> gateway.aggregate(Criteria.of(), AggregateQuery.groupBy(List.of("tags"), List.of(
+                        AggregateSelection.count("count")
+                ))));
+        assertEquals(OrmException.Code.INVALID_CRITERIA, groupByException.getCode());
+    }
+
+    @Test
     void shouldMapQueryRowsToFieldsWhenRuntimeColumnMapperIsProvided() {
         CapturingOperations operations = new CapturingOperations();
         operations.queryResult = List.of(Map.of("id", "r-1", "record_title", "First", "version", 2));

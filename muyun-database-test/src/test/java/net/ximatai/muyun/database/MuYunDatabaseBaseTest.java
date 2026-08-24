@@ -626,6 +626,50 @@ public abstract class MuYunDatabaseBaseTest {
         assertNull(db.getItem("basic", (String) id));
     }
 
+    protected void testRuntimeTableGatewayAggregateAgainstDatabase() {
+        String tableName = "runtime_aggregate_record";
+        TableWrapper table = TableWrapper.withName(tableName)
+                .setPrimaryKey(getPrimaryKey())
+                .addColumn(Column.of("v_marker").setType(ColumnType.VARCHAR).setLength(64))
+                .addColumn(Column.of("v_category").setType(ColumnType.VARCHAR).setLength(64))
+                .addColumn(Column.of("n_amount").setType(ColumnType.NUMERIC).setPrecision(10).setScale(2));
+        new TableBuilder(db).build(table);
+        db.execute("delete from " + tableName);
+
+        String marker = "aggregate_" + UUID.randomUUID().toString().substring(0, 12);
+        RuntimeTableGateway gateway = new RuntimeTableGateway(
+                db,
+                TableMeta.builder(db.getDefaultSchemaName(), tableName)
+                        .id("id", "id", getDatabaseType() == DatabaseType.MYSQL ? ColumnType.BIGINT : ColumnType.VARCHAR, Object.class)
+                        .field("marker", "v_marker", ColumnType.VARCHAR, String.class)
+                        .field("category", "v_category", ColumnType.VARCHAR, String.class)
+                        .field("amount", "n_amount", ColumnType.NUMERIC, BigDecimal.class)
+                        .build()
+        );
+        gateway.insert(Map.of("marker", marker, "category", "math", "amount", new BigDecimal("10.10")));
+        gateway.insert(Map.of("marker", marker, "category", "math", "amount", new BigDecimal("23.00")));
+        gateway.insert(Map.of("marker", marker, "category", "science", "amount", new BigDecimal("5.50")));
+
+        AggregateResult result = gateway.aggregateResult(Criteria.of().eq("marker", marker), AggregateQuery.builder()
+                .groupBy("category")
+                .count("count")
+                .sum("amount", "sum")
+                .avg("amount", "avg")
+                .min("amount", "min")
+                .max("amount", "max")
+                .build());
+
+        assertEquals(2, result.rows().size());
+        AggregateRow math = result.rows().stream()
+                .filter(row -> "math".equals(row.value("category")))
+                .findFirst().orElseThrow();
+        assertEquals(2L, math.value("count"));
+        assertEquals(0, new BigDecimal("33.10").compareTo((BigDecimal) math.value("sum")));
+        assertEquals(0, new BigDecimal("16.55").compareTo((BigDecimal) math.value("avg")));
+        assertEquals(0, new BigDecimal("10.10").compareTo((BigDecimal) math.value("min")));
+        assertEquals(0, new BigDecimal("23.00").compareTo((BigDecimal) math.value("max")));
+    }
+
     protected void testRuntimeTableGatewayCollectionCriteriaAgainstDatabase() {
         String tableName = "runtime_collection_record";
         TableWrapper table = TableWrapper.withName(tableName)
