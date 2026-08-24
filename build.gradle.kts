@@ -67,7 +67,7 @@ fun Project.requireReleaseCredentials() {
 allprojects {
     group = "net.ximatai.muyun.database"
 //    version = "1.0.0-SNAPSHOT"
-    version = "3.26.17"
+    version = "3.26.18"
 
     repositories {
         maven { url = uri("https://mirrors.cloud.tencent.com/repository/maven") }
@@ -120,11 +120,14 @@ tasks.register("publishReleaseToLocalRepository") {
 }
 
 subprojects {
-    apply {
-        plugin("java")
-        plugin("maven-publish")
-        plugin("signing")
-        plugin("io.github.jeadyx.sonatype-uploader")
+    apply(plugin = "java")
+
+    if (name in releasePublishModules) {
+        apply {
+            plugin("maven-publish")
+            plugin("signing")
+            plugin("io.github.jeadyx.sonatype-uploader")
+        }
     }
 
     java {
@@ -135,57 +138,59 @@ subprojects {
         withSourcesJar()
     }
 
-    publishing {
-        publications {
-            create<MavenPublication>("mavenJava") {
-                from(components["java"])
-                pom {
-                    name = "MuYun Database"
-                    description =
-                        "A lightweight database wrapper based on Jdbi, enabling incremental table and column creation while providing recommended CRUD functions."
-                    url = "https://github.com/ximatai/MuYunDatabase"
-                    licenses {
-                        license {
-                            name = "The Apache License, Version 2.0"
-                            url = "http://www.apache.org/licenses/LICENSE-2.0.txt"
-                        }
-                    }
-                    developers {
-                        developer {
-                            id = "aruis"
-                            name = "Rui Liu"
-                            email = "lovearuis@gmail.com"
-                            organization = "戏码台"
-                        }
-                    }
-                    scm {
-                        connection = "scm:git:git://github.com/ximatai/MuYunDatabase.git"
-                        developerConnection = "scm:git:ssh://github.com/ximatai/MuYunDatabase.git"
+    if (name in releasePublishModules) {
+        publishing {
+            publications {
+                create<MavenPublication>("mavenJava") {
+                    from(components["java"])
+                    pom {
+                        name = "MuYun Database"
+                        description =
+                            "A lightweight database wrapper based on Jdbi, enabling incremental table and column creation while providing recommended CRUD functions."
                         url = "https://github.com/ximatai/MuYunDatabase"
+                        licenses {
+                            license {
+                                name = "The Apache License, Version 2.0"
+                                url = "http://www.apache.org/licenses/LICENSE-2.0.txt"
+                            }
+                        }
+                        developers {
+                            developer {
+                                id = "aruis"
+                                name = "Rui Liu"
+                                email = "lovearuis@gmail.com"
+                                organization = "戏码台"
+                            }
+                        }
+                        scm {
+                            connection = "scm:git:git://github.com/ximatai/MuYunDatabase.git"
+                            developerConnection = "scm:git:ssh://github.com/ximatai/MuYunDatabase.git"
+                            url = "https://github.com/ximatai/MuYunDatabase"
+                        }
                     }
                 }
             }
-        }
-        repositories {
-            maven {
-                url = uri(layout.buildDirectory.dir("repo"))
+            repositories {
+                maven {
+                    url = uri(layout.buildDirectory.dir("repo"))
+                }
             }
         }
-    }
 
-    sonatypeUploader {
-        repositoryPath = layout.buildDirectory.dir("repo").get().asFile.path
-        tokenName = releaseValue("sonatype.token", "SONATYPE_TOKEN").orEmpty()
-        tokenPasswd = releaseValue("sonatype.password", "SONATYPE_PASSWORD").orEmpty()
-    }
+        sonatypeUploader {
+            repositoryPath = layout.buildDirectory.dir("repo").get().asFile.path
+            tokenName = releaseValue("sonatype.token", "SONATYPE_TOKEN").orEmpty()
+            tokenPasswd = releaseValue("sonatype.password", "SONATYPE_PASSWORD").orEmpty()
+        }
 
-    signing {
-        sign(publishing.publications["mavenJava"])
-        useInMemoryPgpKeys(
-            releaseValue("signing.keyId", "SIGNING_KEY_ID").orEmpty(),
-            releaseSigningSecretKey().orEmpty(),
-            releaseValue("signing.password", "SIGNING_PASSWORD").orEmpty()
-        )
+        signing {
+            sign(publishing.publications["mavenJava"])
+            useInMemoryPgpKeys(
+                releaseValue("signing.keyId", "SIGNING_KEY_ID").orEmpty(),
+                releaseSigningSecretKey().orEmpty(),
+                releaseValue("signing.password", "SIGNING_PASSWORD").orEmpty()
+            )
+        }
     }
 
     tasks.withType<Javadoc>().configureEach {
@@ -213,10 +218,12 @@ subprojects {
         }
     }
 
-    tasks.matching { it.name == "publishToSonatype" }.configureEach {
-        dependsOn("publishAllPublicationsToMavenRepository")
-    }
-    tasks.matching { it.name == "1.createDeploymentDir" || it.name == "2.uploadDeploymentDir" }.configureEach {
-        dependsOn("publishAllPublicationsToMavenRepository")
+    if (name in releasePublishModules) {
+        tasks.matching { it.name == "publishToSonatype" }.configureEach {
+            dependsOn("publishAllPublicationsToMavenRepository")
+        }
+        tasks.matching { it.name == "1.createDeploymentDir" || it.name == "2.uploadDeploymentDir" }.configureEach {
+            dependsOn("publishAllPublicationsToMavenRepository")
+        }
     }
 }

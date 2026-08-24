@@ -16,6 +16,7 @@
 
 ### 修复
 
+- 收敛 Maven publication、签名和 Sonatype 上传配置到正式发布模块白名单；Quarkus 集成测试模块和通用数据库测试模块不再生成或发布 Maven 元数据，避免 `enforcedPlatform(quarkus-bom)` 泄漏到消费者。
 - 修复列类型比对未归一数据库内部别名，导致重复 ensure 同一表定义时产生虚假 ALTER 计划、被严格迁移模式拒绝的问题：PostgreSQL 归一 `int4`/`int8`/`bool` 等内部别名（数组形式 `_int4`/`_bool` 等的既有归一同步补充测试固化），并补齐 `DEC`→`NUMERIC` 的 JDBC 别名归一。
 - 抽取共享列差异判定规则，供 `TableBuilder` 与 `SchemaMigrationPlanner` 共用：统一类型、长度、主键、可空性、默认值、序列和注释的判断；其中 `TEXT`/`LONGTEXT`/`ARRAY` 列不再参与长度比对。
 
