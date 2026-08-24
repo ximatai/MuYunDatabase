@@ -7,7 +7,10 @@ import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
 
-/** A metadata-safe, single-table aggregate projection over a {@link Criteria} result set. */
+/**
+ * A metadata-safe, single-table aggregate projection over a {@link Criteria} result set.
+ * It is intentionally projection-only; HAVING, aggregate ordering, and pagination belong to a future query AST.
+ */
 public record AggregateQuery(List<String> groupByFields, List<AggregateSelection> selections) {
     public AggregateQuery {
         groupByFields = groupByFields == null ? List.of() : new ArrayList<>(groupByFields);

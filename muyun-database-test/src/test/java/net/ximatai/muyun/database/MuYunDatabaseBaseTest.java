@@ -44,6 +44,7 @@ import java.sql.Timestamp;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -632,7 +633,11 @@ public abstract class MuYunDatabaseBaseTest {
                 .setPrimaryKey(getPrimaryKey())
                 .addColumn(Column.of("v_marker").setType(ColumnType.VARCHAR).setLength(64))
                 .addColumn(Column.of("v_category").setType(ColumnType.VARCHAR).setLength(64))
-                .addColumn(Column.of("n_amount").setType(ColumnType.NUMERIC).setPrecision(10).setScale(2));
+                .addColumn(Column.of("n_amount").setType(ColumnType.NUMERIC).setPrecision(10).setScale(2))
+                .addColumn(Column.of("b_active").setType(ColumnType.BOOLEAN))
+                .addColumn(Column.of("v_status").setType(ColumnType.VARCHAR).setLength(32))
+                .addColumn(Column.of("d_day").setType(ColumnType.DATE))
+                .addColumn(Column.of("t_happened_at").setType(ColumnType.TIMESTAMP));
         new TableBuilder(db).build(table);
         db.execute("delete from " + tableName);
 
@@ -644,11 +649,22 @@ public abstract class MuYunDatabaseBaseTest {
                         .field("marker", "v_marker", ColumnType.VARCHAR, String.class)
                         .field("category", "v_category", ColumnType.VARCHAR, String.class)
                         .field("amount", "n_amount", ColumnType.NUMERIC, BigDecimal.class)
-                        .build()
+                        .field("active", "b_active", ColumnType.BOOLEAN, Boolean.class)
+                        .field("status", "v_status", ColumnType.VARCHAR, CollectionStatus.class)
+                        .field("day", "d_day", ColumnType.DATE, LocalDate.class)
+                        .field("happenedAt", "t_happened_at", ColumnType.TIMESTAMP, LocalDateTime.class)
+                        .build(),
+                new CollectionStatusCodeConverter()
         );
-        gateway.insert(Map.of("marker", marker, "category", "math", "amount", new BigDecimal("10.10")));
-        gateway.insert(Map.of("marker", marker, "category", "math", "amount", new BigDecimal("23.00")));
-        gateway.insert(Map.of("marker", marker, "category", "science", "amount", new BigDecimal("5.50")));
+        gateway.insert(Map.of("marker", marker, "category", "math", "amount", new BigDecimal("10.10"),
+                "active", true, "status", CollectionStatus.ENABLED, "day", LocalDate.of(2026, 1, 1),
+                "happenedAt", Timestamp.valueOf("2026-01-01 10:00:00")));
+        gateway.insert(Map.of("marker", marker, "category", "math", "amount", new BigDecimal("23.00"),
+                "active", true, "status", CollectionStatus.ENABLED, "day", LocalDate.of(2026, 1, 2),
+                "happenedAt", Timestamp.valueOf("2026-01-02 10:00:00")));
+        gateway.insert(Map.of("marker", marker, "category", "science", "amount", new BigDecimal("5.50"),
+                "active", false, "status", CollectionStatus.DISABLED, "day", LocalDate.of(2026, 1, 3),
+                "happenedAt", Timestamp.valueOf("2026-01-03 10:00:00")));
 
         AggregateResult result = gateway.aggregateResult(Criteria.of().eq("marker", marker), AggregateQuery.builder()
                 .groupBy("category")
@@ -668,6 +684,31 @@ public abstract class MuYunDatabaseBaseTest {
         assertEquals(0, new BigDecimal("16.55").compareTo((BigDecimal) math.value("avg")));
         assertEquals(0, new BigDecimal("10.10").compareTo((BigDecimal) math.value("min")));
         assertEquals(0, new BigDecimal("23.00").compareTo((BigDecimal) math.value("max")));
+
+        AggregateResult typedGroups = gateway.aggregateResult(Criteria.of().eq("marker", marker), AggregateQuery.builder()
+                .groupBy("active", "status")
+                .count("count")
+                .min("day", "firstDay")
+                .max("happenedAt", "lastHappenedAt")
+                .build());
+        assertEquals(2, typedGroups.rows().size());
+        assertTrue(typedGroups.rows().stream().allMatch(row -> row.value("active") instanceof Boolean));
+        assertTrue(typedGroups.rows().stream().allMatch(row -> row.value("status") instanceof CollectionStatus));
+        assertTrue(typedGroups.rows().stream().allMatch(row -> row.value("firstDay") instanceof LocalDate));
+        assertTrue(typedGroups.rows().stream().allMatch(row -> row.value("lastHappenedAt") instanceof LocalDateTime));
+
+        AggregateRow empty = gateway.aggregateResult(Criteria.of().eq("marker", "missing_" + marker), AggregateQuery.builder()
+                .count("count")
+                .sum("amount", "sum")
+                .avg("amount", "avg")
+                .min("day", "firstDay")
+                .max("happenedAt", "lastHappenedAt")
+                .build()).rows().getFirst();
+        assertEquals(0L, empty.value("count"));
+        assertNull(empty.value("sum"));
+        assertNull(empty.value("avg"));
+        assertNull(empty.value("firstDay"));
+        assertNull(empty.value("lastHappenedAt"));
     }
 
     protected void testRuntimeTableGatewayCollectionCriteriaAgainstDatabase() {

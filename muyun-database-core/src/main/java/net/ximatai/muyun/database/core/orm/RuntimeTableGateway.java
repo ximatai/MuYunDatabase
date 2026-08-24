@@ -153,15 +153,22 @@ public class RuntimeTableGateway {
         return count == null ? 0L : count;
     }
 
-    /** Runs a metadata-checked single-table aggregate; raw SQL expressions are not accepted. */
+    /**
+     * @deprecated Use {@link #aggregateResult(Criteria, AggregateQuery)} to retain the projection contract.
+     */
+    @Deprecated(since = "3.26.16", forRemoval = false)
     public List<Map<String, Object>> aggregate(Criteria criteria, AggregateQuery aggregateQuery) {
         return aggregateResult(criteria, aggregateQuery).rows().stream().map(AggregateRow::asMap).toList();
     }
 
-    /** Runs an aggregate and returns rows together with their projection definition. */
+    /**
+     * Runs a metadata-governed aggregate and returns rows together with their projection definition.
+     * This projection-only API deliberately does not accept SQL fragments, HAVING clauses, aggregate ordering, or pagination.
+     */
     public AggregateResult aggregateResult(Criteria criteria, AggregateQuery aggregateQuery) {
         Objects.requireNonNull(criteria, "criteria must not be null");
         Objects.requireNonNull(aggregateQuery, "aggregateQuery must not be null");
+        requireAggregateMetadata();
         CompiledCriteria compiled = compile(criteria);
         List<String> groupColumns = aggregateQuery.groupByFields().stream().map(field -> {
             validateAggregateGroupBy(field);
@@ -235,6 +242,13 @@ public class RuntimeTableGateway {
 
     private FieldMeta selectionFieldMeta(AggregateSelection selection) {
         return selection.field() == null ? null : resolveFieldMeta(selection.field());
+    }
+
+    private void requireAggregateMetadata() {
+        if (tableMeta == null) {
+            throw new OrmException(OrmException.Code.INVALID_MAPPING,
+                    "Runtime table aggregates require a TableMeta-backed RuntimeTableGateway");
+        }
     }
 
     private static Object columnValue(Map<String, Object> row, String alias) {

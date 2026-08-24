@@ -82,7 +82,7 @@ class RuntimeTableGatewayTest {
     void shouldAggregateCurrentCriteriaWithSafeFieldsAndGroupBy() {
         CapturingOperations operations = new CapturingOperations();
         operations.queryResult = List.of(Map.of("g0", "math", "a0", 3L, "a1", new java.math.BigDecimal("33.10")));
-        RuntimeTableGateway gateway = new RuntimeTableGateway(operations, "public", "runtime_record", this::resolveColumn);
+        RuntimeTableGateway gateway = aggregateGateway(operations);
 
         List<Map<String, Object>> rows = gateway.aggregate(Criteria.of().eq("title", "First"),
                 AggregateQuery.groupBy(List.of("category"), List.of(
@@ -101,7 +101,7 @@ class RuntimeTableGatewayTest {
     void shouldBuildAndReturnStructuredAggregateResults() {
         CapturingOperations operations = new CapturingOperations();
         operations.queryResult = List.of(Map.of("g0", "math", "a0", 3L, "a1", new java.math.BigDecimal("33.10")));
-        RuntimeTableGateway gateway = new RuntimeTableGateway(operations, "public", "runtime_record", this::resolveColumn);
+        RuntimeTableGateway gateway = aggregateGateway(operations);
         AggregateQuery query = AggregateQuery.builder()
                 .groupBy("category")
                 .count("count")
@@ -129,6 +129,12 @@ class RuntimeTableGatewayTest {
         assertThrows(IllegalArgumentException.class, () -> new AggregateQuery(List.of(), java.util.Arrays.asList(
                 AggregateSelection.count("count"), null
         )));
+
+        CapturingOperations operations = new CapturingOperations();
+        RuntimeTableGateway legacyGateway = new RuntimeTableGateway(operations, "public", "runtime_record", this::resolveColumn);
+        OrmException exception = assertThrows(OrmException.class,
+                () -> legacyGateway.aggregateResult(Criteria.of(), AggregateQuery.of(List.of(AggregateSelection.count("count")))));
+        assertEquals(OrmException.Code.INVALID_MAPPING, exception.getCode());
     }
 
     @Test
@@ -464,6 +470,16 @@ class RuntimeTableGatewayTest {
             case "amount" -> "amount";
             default -> null;
         };
+    }
+
+    private RuntimeTableGateway aggregateGateway(CapturingOperations operations) {
+        return new RuntimeTableGateway(operations, TableMeta.builder("public", "runtime_record")
+                .id("id", "id", ColumnType.VARCHAR, String.class)
+                .field("title", "record_title", ColumnType.VARCHAR, String.class)
+                .field("version", "version", ColumnType.INT, Integer.class)
+                .field("category", "category", ColumnType.VARCHAR, String.class)
+                .field("amount", "amount", ColumnType.NUMERIC, java.math.BigDecimal.class)
+                .build());
     }
 
     private enum RuntimeStatus {

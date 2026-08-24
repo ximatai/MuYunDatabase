@@ -71,7 +71,30 @@ RuntimeTableGateway gateway = RuntimeTableGateway.of(db, tableMeta, statusConver
 3. 不使用自定义转换器时，可调用 `RuntimeTableGateway.of(db, tableMeta)`。
 4. PostgreSQL 原生数组字段可额外使用 `.array("labels", "labels", ColumnType.VARCHAR, List.class, String.class)` 声明。
 
-## 3. 集合字段声明矩阵
+## 3. 聚合迁移
+
+聚合必须使用 `TableMeta` 路径。旧的 `CriteriaColumnResolver` Gateway 调用聚合会直接拒绝，因为它没有字段类型、codec 和跨方言能力校验所需的元数据。
+
+```java
+AggregateResult result = gateway.aggregateResult(
+        Criteria.of().eq("status", Status.ENABLED),
+        AggregateQuery.builder()
+                .groupBy("category")
+                .count("count")
+                .sum("amount", "amountSum")
+                .build()
+);
+
+for (AggregateRow row : result.rows()) {
+    String category = (String) row.value("category");
+    Long count = (Long) row.value("count");
+    BigDecimal amountSum = (BigDecimal) row.value("amountSum");
+}
+```
+
+`aggregateResult` 是正式入口。旧的 `aggregate` Map 返回方法已标记废弃，只保留给迁移期调用方。当前聚合投影不提供 `HAVING`、排序或分页；需要这些能力时使用显式 SQL Object，直到统一查询 AST 提供相应节点。
+
+## 4. 集合字段声明矩阵
 
 | 字段类型 | TableMeta 声明 | 适用数据库 | 典型用途 | 主要限制 |
 | --- | --- | --- | --- | --- |
@@ -79,7 +102,7 @@ RuntimeTableGateway gateway = RuntimeTableGateway.of(db, tableMeta, statusConver
 | JSON_SET | `.jsonSet("statuses", "json_statuses", Set.class, Status.class)` | MySQL / PostgreSQL | 跨库集合查询、元素可能包含逗号 | 底层按 JSON 字符串数组保存 |
 | ARRAY | `.array("labels", "labels", ColumnType.VARCHAR, List.class, String.class)` | PostgreSQL | 原生数组列 | MySQL 不降级为 JSON |
 
-## 4. 查询写法
+## 5. 查询写法
 
 ```java
 Criteria enabled = Criteria.of()
@@ -102,7 +125,7 @@ Criteria emptyTags = Criteria.of()
 3. 如果业务把空集合视为“不加条件”，调用方应在组装 Criteria 前跳过该条件。
 4. `raw` 和 `SqlSubQuery` 没有字段上下文，不自动执行集合元素 codec。
 
-## 5. 返回 Map 的字段名变化
+## 6. 返回 Map 的字段名变化
 
 使用 `TableMeta` 后：
 
@@ -126,7 +149,7 @@ Object rawStatuses = rows.getFirst().get("json_statuses");
 
 迁移时需要检查调用方是否直接读取 Map key。若调用方依赖物理列名，改用 `queryColumns` / `listColumns` / `pageQueryColumns`。
 
-## 6. 回归清单
+## 7. 回归清单
 
 1. 字段名和列名映射：逻辑字段、物理列名都能被正确解析。
 2. 写入路径：`insert` / `patchWhere` 能正确编码 `SET` / `JSON_SET` / `ARRAY`。
