@@ -153,6 +153,110 @@ public class RuntimeTableGateway {
         return count == null ? 0L : count;
     }
 
+    /**
+     * @deprecated Use {@link #aggregateResult(Criteria, AggregateQuery)} to retain the projection contract.
+     */
+    @Deprecated(since = "3.26.16", forRemoval = false)
+    public List<Map<String, Object>> aggregate(Criteria criteria, AggregateQuery aggregateQuery) {
+        return aggregateResult(criteria, aggregateQuery).rows().stream().map(AggregateRow::asMap).toList();
+    }
+
+    /**
+     * Runs a metadata-governed aggregate and returns rows together with their projection definition.
+     * This projection-only API deliberately does not accept SQL fragments, HAVING clauses, aggregate ordering, or pagination.
+     */
+    public AggregateResult aggregateResult(Criteria criteria, AggregateQuery aggregateQuery) {
+        Objects.requireNonNull(criteria, "criteria must not be null");
+        Objects.requireNonNull(aggregateQuery, "aggregateQuery must not be null");
+        requireAggregateMetadata();
+        CompiledCriteria compiled = compile(criteria);
+        List<String> groupColumns = aggregateQuery.groupByFields().stream().map(field -> {
+            validateAggregateGroupBy(field);
+            return resolveColumn(field);
+        }).toList();
+        List<String> selectParts = new java.util.ArrayList<>();
+        for (int i = 0; i < groupColumns.size(); i++) {
+            selectParts.add(SqlIdentifiers.quote(groupColumns.get(i), databaseType()) + " AS g" + i);
+        }
+        for (int i = 0; i < aggregateQuery.selections().size(); i++) {
+            AggregateSelection selection = aggregateQuery.selections().get(i);
+            AggregateCapabilities.validateSelection(selection, selectionFieldMeta(selection));
+            String expression = selection.operation() == AggregateOperation.COUNT ? "COUNT(*)"
+                    : selection.operation().name() + "(" + SqlIdentifiers.quote(resolveColumn(selection.field()), databaseType()) + ")";
+            selectParts.add(expression + " AS a" + i);
+        }
+        StringBuilder sql = new StringBuilder("SELECT ").append(String.join(", ", selectParts))
+                .append(" FROM ").append(qualifiedTable());
+        if (!compiled.getSql().isBlank()) sql.append(" WHERE ").append(compiled.getSql());
+        if (!groupColumns.isEmpty()) sql.append(" GROUP BY ").append(groupColumns.stream()
+                .map(column -> SqlIdentifiers.quote(column, databaseType())).collect(java.util.stream.Collectors.joining(", ")));
+        List<AggregateRow> rows = operations.query(sql.toString(), compiled.getParams()).stream()
+                .map(row -> new AggregateRow(aggregateRow(row, aggregateQuery))).toList();
+        return new AggregateResult(aggregateQuery, rows);
+    }
+
+    private Map<String, Object> aggregateRow(Map<String, Object> row, AggregateQuery query) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        for (int i = 0; i < query.groupByFields().size(); i++) {
+            String field = query.groupByFields().get(i);
+            result.put(field, aggregateFieldValue(columnValue(row, "g" + i), field));
+        }
+        for (int i = 0; i < query.selections().size(); i++) {
+            AggregateSelection selection = query.selections().get(i);
+            Object value = columnValue(row, "a" + i);
+            result.put(selection.key(), aggregateSelectionValue(value, selection));
+        }
+        return result;
+    }
+
+    private Object aggregateFieldValue(Object value, String fieldOrColumn) {
+        FieldMeta fieldMeta = resolveFieldMeta(fieldOrColumn);
+        if (fieldMeta == null) {
+            return value;
+        }
+        try {
+            return FieldValueCodec.fromDatabaseValue(value, fieldMeta, valueConverter);
+        } catch (OrmException ex) {
+            throw ex;
+        } catch (RuntimeException ex) {
+            throw new OrmException(OrmException.Code.INVALID_ENTITY, ex.getMessage(), ex);
+        }
+    }
+
+    private Object aggregateSelectionValue(Object value, AggregateSelection selection) {
+        try {
+            return AggregateCapabilities.normalizeSelectionValue(value, selection,
+                    selectionFieldMeta(selection), valueConverter);
+        } catch (OrmException ex) {
+            throw ex;
+        } catch (RuntimeException ex) {
+            throw new OrmException(OrmException.Code.INVALID_ENTITY, ex.getMessage(), ex);
+        }
+    }
+
+    private void validateAggregateGroupBy(String field) {
+        if (tableMeta != null) {
+            AggregateCapabilities.validateGroupBy(resolveFieldMeta(field), field);
+        }
+    }
+
+    private FieldMeta selectionFieldMeta(AggregateSelection selection) {
+        return selection.field() == null ? null : resolveFieldMeta(selection.field());
+    }
+
+    private void requireAggregateMetadata() {
+        if (tableMeta == null) {
+            throw new OrmException(OrmException.Code.INVALID_MAPPING,
+                    "Runtime table aggregates require a TableMeta-backed RuntimeTableGateway");
+        }
+    }
+
+    private static Object columnValue(Map<String, Object> row, String alias) {
+        if (row.containsKey(alias)) return row.get(alias);
+        return row.entrySet().stream().filter(entry -> alias.equalsIgnoreCase(entry.getKey()))
+                .map(Map.Entry::getValue).findFirst().orElse(null);
+    }
+
     public int patchWhere(Map<String, Object> patchValues, Map<String, Object> whereValues) {
         return operations.patchUpdateItemWhere(
                 schema,
