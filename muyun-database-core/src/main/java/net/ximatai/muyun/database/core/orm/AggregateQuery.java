@@ -1,6 +1,7 @@
 package net.ximatai.muyun.database.core.orm;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.HashSet;
 import java.util.Objects;
@@ -33,10 +34,58 @@ public record AggregateQuery(List<String> groupByFields, List<AggregateSelection
         return new AggregateQuery(fields, selections);
     }
 
+    /** Starts a fluent aggregate projection definition. */
+    public static Builder builder() {
+        return new Builder();
+    }
+
     private static String normalizeGroupByField(String field) {
         if (field == null || field.isBlank()) {
             throw new IllegalArgumentException("aggregate group-by field must not be blank");
         }
         return field.trim();
+    }
+
+    /** Fluent builder for a metadata-safe aggregate projection. */
+    public static final class Builder {
+        private final List<String> groupByFields = new ArrayList<>();
+        private final List<AggregateSelection> selections = new ArrayList<>();
+
+        public Builder groupBy(String... fields) {
+            if (fields != null) {
+                groupByFields.addAll(Arrays.asList(fields));
+            }
+            return this;
+        }
+
+        public Builder count(String key) {
+            selections.add(AggregateSelection.count(key));
+            return this;
+        }
+
+        public Builder sum(String field, String key) {
+            return add(key, AggregateOperation.SUM, field);
+        }
+
+        public Builder avg(String field, String key) {
+            return add(key, AggregateOperation.AVG, field);
+        }
+
+        public Builder min(String field, String key) {
+            return add(key, AggregateOperation.MIN, field);
+        }
+
+        public Builder max(String field, String key) {
+            return add(key, AggregateOperation.MAX, field);
+        }
+
+        public AggregateQuery build() {
+            return new AggregateQuery(groupByFields, selections);
+        }
+
+        private Builder add(String key, AggregateOperation operation, String field) {
+            selections.add(AggregateSelection.of(key, operation, field));
+            return this;
+        }
     }
 }

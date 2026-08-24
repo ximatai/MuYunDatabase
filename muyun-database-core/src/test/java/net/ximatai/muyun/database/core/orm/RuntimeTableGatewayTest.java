@@ -98,6 +98,26 @@ class RuntimeTableGatewayTest {
     }
 
     @Test
+    void shouldBuildAndReturnStructuredAggregateResults() {
+        CapturingOperations operations = new CapturingOperations();
+        operations.queryResult = List.of(Map.of("g0", "math", "a0", 3L, "a1", new java.math.BigDecimal("33.10")));
+        RuntimeTableGateway gateway = new RuntimeTableGateway(operations, "public", "runtime_record", this::resolveColumn);
+        AggregateQuery query = AggregateQuery.builder()
+                .groupBy("category")
+                .count("count")
+                .sum("amount", "amountSum")
+                .build();
+
+        AggregateResult result = gateway.aggregateResult(Criteria.of(), query);
+
+        assertEquals(query, result.query());
+        assertEquals(List.of(new AggregateRow(Map.of("category", "math", "count", 3L,
+                "amountSum", new java.math.BigDecimal("33.10")))), result.rows());
+        assertEquals(3L, result.rows().get(0).value("count"));
+        assertTrue(result.rows().get(0).asMap().containsKey("amountSum"));
+    }
+
+    @Test
     void shouldValidateAggregateProjectionKeysAndCountSemantics() {
         assertThrows(IllegalArgumentException.class, () -> AggregateQuery.groupBy(List.of("category"), List.of(
                 AggregateSelection.count("category")

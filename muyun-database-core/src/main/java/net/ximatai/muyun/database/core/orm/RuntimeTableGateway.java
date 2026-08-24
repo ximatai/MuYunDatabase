@@ -156,6 +156,11 @@ public class RuntimeTableGateway {
 
     /** Runs a metadata-checked single-table aggregate; raw SQL expressions are not accepted. */
     public List<Map<String, Object>> aggregate(Criteria criteria, AggregateQuery aggregateQuery) {
+        return aggregateResult(criteria, aggregateQuery).rows().stream().map(AggregateRow::asMap).toList();
+    }
+
+    /** Runs an aggregate and returns rows together with their projection definition. */
+    public AggregateResult aggregateResult(Criteria criteria, AggregateQuery aggregateQuery) {
         Objects.requireNonNull(criteria, "criteria must not be null");
         Objects.requireNonNull(aggregateQuery, "aggregateQuery must not be null");
         CompiledCriteria compiled = compile(criteria);
@@ -176,8 +181,9 @@ public class RuntimeTableGateway {
         if (!compiled.getSql().isBlank()) sql.append(" WHERE ").append(compiled.getSql());
         if (!groupColumns.isEmpty()) sql.append(" GROUP BY ").append(groupColumns.stream()
                 .map(column -> SqlIdentifiers.quote(column, databaseType())).collect(java.util.stream.Collectors.joining(", ")));
-        return operations.query(sql.toString(), compiled.getParams()).stream()
-                .map(row -> aggregateRow(row, aggregateQuery)).toList();
+        List<AggregateRow> rows = operations.query(sql.toString(), compiled.getParams()).stream()
+                .map(row -> new AggregateRow(aggregateRow(row, aggregateQuery))).toList();
+        return new AggregateResult(aggregateQuery, rows);
     }
 
     private Map<String, Object> aggregateRow(Map<String, Object> row, AggregateQuery query) {
