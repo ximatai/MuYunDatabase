@@ -156,7 +156,7 @@ public class RuntimeTableGateway {
     /**
      * @deprecated Use {@link #aggregateResult(Criteria, AggregateQuery)} to retain the projection contract.
      */
-    @Deprecated(since = "3.26.16", forRemoval = false)
+    @Deprecated(since = "3.26.17", forRemoval = false)
     public List<Map<String, Object>> aggregate(Criteria criteria, AggregateQuery aggregateQuery) {
         return aggregateResult(criteria, aggregateQuery).rows().stream().map(AggregateRow::asMap).toList();
     }

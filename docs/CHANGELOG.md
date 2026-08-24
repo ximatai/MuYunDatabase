@@ -6,11 +6,13 @@
 
 ### 新增
 
-- 暂无。
+- 新增运行态单表聚合能力：`AggregateQuery` 支持 `COUNT/SUM/AVG/MIN/MAX` 与 `GROUP BY`，`AggregateResult/AggregateRow` 提供带投影定义的结构化结果，`AggregateQuery.builder()` 提供 fluent 构造方式。
+- 聚合能力矩阵按 `TableMeta` 校验字段类型，并在 PostgreSQL/MySQL 实际数据库中验证数值、空集、日期、时间戳、布尔分组与自定义 codec 语义。
 
 ### 变更
 
-- 暂无。
+- 聚合执行现在强制要求 `RuntimeTableGateway + TableMeta`，不再允许旧单向 `CriteriaColumnResolver` 路径绕过字段类型、codec 与方言能力治理。
+- `aggregateResult` 成为正式聚合入口；Map 返回的 `aggregate` 已标记为废弃。`COUNT` 归一为 `Long`，`SUM/AVG` 归一为 `BigDecimal`。
 
 ### 修复
 
@@ -20,6 +22,7 @@
 ### 迁移说明
 
 - MySQL 用户注意：`DATETIME` 与 `TIMESTAMP` 保持区分。若既有列为 `DATETIME`、模型声明为 `ColumnType.TIMESTAMP`，重复 ensure 会计划并执行将其收敛为 `TIMESTAMP` 的 ALTER；升级前请评估两者在时区转换、取值范围和存储宽度上的差异。
+- 使用旧 resolver Gateway 执行聚合的调用方必须迁移为 `TableMeta` Gateway，并改用 `aggregateResult`；详见 `RUNTIME_METADATA_MIGRATION.md`。
 
 ## 3.26.15
 
