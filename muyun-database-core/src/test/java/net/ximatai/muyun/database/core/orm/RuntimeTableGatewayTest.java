@@ -79,6 +79,56 @@ class RuntimeTableGatewayTest {
     }
 
     @Test
+    void shouldAggregateCurrentCriteriaWithSafeFieldsAndGroupBy() {
+        CapturingOperations operations = new CapturingOperations();
+        operations.queryResult = List.of(Map.of("g0", "math", "a0", 3L, "a1", new java.math.BigDecimal("33.10")));
+        RuntimeTableGateway gateway = new RuntimeTableGateway(operations, "public", "runtime_record", this::resolveColumn);
+
+        List<Map<String, Object>> rows = gateway.aggregate(Criteria.of().eq("title", "First"),
+                AggregateQuery.groupBy(List.of("category"), List.of(
+                        AggregateSelection.count("count"),
+                        AggregateSelection.of("amount", AggregateOperation.SUM, "amount"))));
+
+        assertEquals(List.of(Map.of("category", "math", "count", 3L,
+                "amount", new java.math.BigDecimal("33.10"))), rows);
+        assertTrue(operations.querySql.contains("COUNT(*) AS a0"));
+        assertTrue(operations.querySql.contains("SUM(\"amount\") AS a1"));
+        assertTrue(operations.querySql.contains("GROUP BY \"category\""));
+        assertTrue(operations.querySql.contains("\"record_title\" = :p0"));
+    }
+
+    @Test
+    void shouldValidateAggregateProjectionKeysAndCountSemantics() {
+        assertThrows(IllegalArgumentException.class, () -> AggregateQuery.groupBy(List.of("category"), List.of(
+                AggregateSelection.count("category")
+        )));
+        assertThrows(IllegalArgumentException.class, () -> AggregateSelection.of("count", AggregateOperation.COUNT, "id"));
+        assertThrows(IllegalArgumentException.class, () -> new AggregateQuery(List.of(" category ", "category"), List.of(
+                AggregateSelection.count("count")
+        )));
+        assertThrows(IllegalArgumentException.class, () -> new AggregateQuery(List.of(), java.util.Arrays.asList(
+                AggregateSelection.count("count"), null
+        )));
+    }
+
+    @Test
+    void shouldApplyRuntimeFieldCodecToAggregateGroupValues() {
+        CapturingOperations operations = new CapturingOperations();
+        operations.queryResult = List.of(Map.of("g0", "enabled", "a0", 2L));
+        TableMeta tableMeta = TableMeta.builder("public", "runtime_record")
+                .id("id", "id", ColumnType.VARCHAR, String.class)
+                .field("status", "status", ColumnType.VARCHAR, RuntimeStatus.class)
+                .build();
+        RuntimeTableGateway gateway = new RuntimeTableGateway(operations, tableMeta, new RuntimeStatusCodeConverter());
+
+        List<Map<String, Object>> rows = gateway.aggregate(Criteria.of(), AggregateQuery.groupBy(List.of("status"), List.of(
+                AggregateSelection.count("count")
+        )));
+
+        assertEquals(List.of(Map.of("status", RuntimeStatus.ENABLED, "count", 2L)), rows);
+    }
+
+    @Test
     void shouldMapQueryRowsToFieldsWhenRuntimeColumnMapperIsProvided() {
         CapturingOperations operations = new CapturingOperations();
         operations.queryResult = List.of(Map.of("id", "r-1", "record_title", "First", "version", 2));
@@ -339,6 +389,8 @@ class RuntimeTableGatewayTest {
             case "id" -> "id";
             case "title", "record_title" -> "record_title";
             case "version" -> "version";
+            case "category" -> "category";
+            case "amount" -> "amount";
             default -> null;
         };
     }

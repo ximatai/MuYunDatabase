@@ -153,6 +153,61 @@ public class RuntimeTableGateway {
         return count == null ? 0L : count;
     }
 
+    /** Runs a metadata-checked single-table aggregate; raw SQL expressions are not accepted. */
+    public List<Map<String, Object>> aggregate(Criteria criteria, AggregateQuery aggregateQuery) {
+        Objects.requireNonNull(criteria, "criteria must not be null");
+        Objects.requireNonNull(aggregateQuery, "aggregateQuery must not be null");
+        CompiledCriteria compiled = compile(criteria);
+        List<String> groupColumns = aggregateQuery.groupByFields().stream().map(this::resolveColumn).toList();
+        List<String> selectParts = new java.util.ArrayList<>();
+        for (int i = 0; i < groupColumns.size(); i++) {
+            selectParts.add(SqlIdentifiers.quote(groupColumns.get(i), databaseType()) + " AS g" + i);
+        }
+        for (int i = 0; i < aggregateQuery.selections().size(); i++) {
+            AggregateSelection selection = aggregateQuery.selections().get(i);
+            String expression = selection.operation() == AggregateOperation.COUNT ? "COUNT(*)"
+                    : selection.operation().name() + "(" + SqlIdentifiers.quote(resolveColumn(selection.field()), databaseType()) + ")";
+            selectParts.add(expression + " AS a" + i);
+        }
+        StringBuilder sql = new StringBuilder("SELECT ").append(String.join(", ", selectParts))
+                .append(" FROM ").append(qualifiedTable());
+        if (!compiled.getSql().isBlank()) sql.append(" WHERE ").append(compiled.getSql());
+        if (!groupColumns.isEmpty()) sql.append(" GROUP BY ").append(groupColumns.stream()
+                .map(column -> SqlIdentifiers.quote(column, databaseType())).collect(java.util.stream.Collectors.joining(", ")));
+        return operations.query(sql.toString(), compiled.getParams()).stream()
+                .map(row -> aggregateRow(row, aggregateQuery)).toList();
+    }
+
+    private Map<String, Object> aggregateRow(Map<String, Object> row, AggregateQuery query) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        for (int i = 0; i < query.groupByFields().size(); i++) {
+            String field = query.groupByFields().get(i);
+            result.put(field, aggregateGroupValue(columnValue(row, "g" + i), field));
+        }
+        for (int i = 0; i < query.selections().size(); i++) result.put(query.selections().get(i).key(), columnValue(row, "a" + i));
+        return result;
+    }
+
+    private Object aggregateGroupValue(Object value, String fieldOrColumn) {
+        FieldMeta fieldMeta = resolveFieldMeta(fieldOrColumn);
+        if (fieldMeta == null) {
+            return value;
+        }
+        try {
+            return FieldValueCodec.fromDatabaseValue(value, fieldMeta, valueConverter);
+        } catch (OrmException ex) {
+            throw ex;
+        } catch (RuntimeException ex) {
+            throw new OrmException(OrmException.Code.INVALID_ENTITY, ex.getMessage(), ex);
+        }
+    }
+
+    private static Object columnValue(Map<String, Object> row, String alias) {
+        if (row.containsKey(alias)) return row.get(alias);
+        return row.entrySet().stream().filter(entry -> alias.equalsIgnoreCase(entry.getKey()))
+                .map(Map.Entry::getValue).findFirst().orElse(null);
+    }
+
     public int patchWhere(Map<String, Object> patchValues, Map<String, Object> whereValues) {
         return operations.patchUpdateItemWhere(
                 schema,

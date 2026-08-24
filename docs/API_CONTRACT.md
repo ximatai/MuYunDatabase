@@ -92,7 +92,7 @@ int upsert(T entity);
 1. `EntityDao` 聚焦单表高频场景。
 2. 复杂查询由 Jdbi SQL 注解方法或底层 SQL 承担。
 3. 不提供关系映射 ORM（`1:N/N:N`、级联、延迟加载）。
-4. `RuntimeTableGateway` 面向运行时定义的单表 Map 记录，输入 `TableMeta` 后提供 `insert/query/queryColumns/list/listColumns/pageQuery/pageQueryColumns/count/patchWhere/deleteWhere`。
+4. `RuntimeTableGateway` 面向运行时定义的单表 Map 记录，输入 `TableMeta` 后提供 `insert/query/queryColumns/list/listColumns/pageQuery/pageQueryColumns/count/aggregate/patchWhere/deleteWhere`。
 5. `TableMeta` 是运行态表模型元数据，包含 schema、tableName、字段名、列名、`ColumnType`、`elementColumnType`、字段 Java 类型、集合元素 Java 类型和可选 id 字段。
 6. `RuntimeTableGateway + TableMeta` 路径会按字段元数据执行字段级 codec、集合元素 codec 和集合 Criteria 编译，支持 `SET` / `JSON_SET` / PostgreSQL `ARRAY`。
 7. `RuntimeTableGateway` 只理解运行态单表字段元数据并复用 Criteria、分页、排序、count 和条件写 SQL 能力；不理解动态模块、生命周期、租户、软删、权限、审计或乐观锁语义。
@@ -113,5 +113,7 @@ int upsert(T entity);
 22. `ColumnType.ARRAY` 读取时按字段声明适配：`List<T>` 返回 `ArrayList<T>`，`Set<T>` 返回 `LinkedHashSet<T>`，`T[]` 返回 Java 数组；元素会经过字段级 `DatabaseValueConverter`。
 23. `ColumnType.ARRAY` 的集合查询复用 `contains` / `containsAny` / `containsAll` / `isEmpty` / `isNotEmpty` API，PostgreSQL 下分别使用原生数组操作符和 `cardinality`。
 24. `ColumnType.VARCHAR_ARRAY` / `ColumnType.INT_ARRAY` 属于遗留枚举，不作为新代码推荐入口；新数组列统一使用 `ColumnType.ARRAY + elementType`。
+25. `aggregate(Criteria, AggregateQuery)` 只提供单表、元数据校验后的 `COUNT/SUM/AVG/MIN/MAX` 与 `GROUP BY`；字段必须是已知逻辑字段或物理列，不接受调用方 SQL 表达式。
+26. `aggregate` 不承载联表、租户、软删、权限、审计或业务维度；这些约束必须由上层先编译为传入的 `Criteria`，复杂 SQL 仍应使用显式 SQL Object。
 
 下一步：若你在做历史项目改造，请按 [`REFACTOR_GUIDE.md`](REFACTOR_GUIDE.md) 的“推荐重构路径”执行；若你在做运行态字段元数据迁移，请按 [`RUNTIME_METADATA_MIGRATION.md`](RUNTIME_METADATA_MIGRATION.md) 执行。
