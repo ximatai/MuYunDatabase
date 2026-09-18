@@ -144,6 +144,14 @@ public class Criteria {
         return or(field, CriteriaOperator.LIKE, value);
     }
 
+    public Criteria likeIgnoreCase(String field, String value) {
+        return and(field, CriteriaOperator.LIKE_IGNORE_CASE, value);
+    }
+
+    public Criteria orLikeIgnoreCase(String field, String value) {
+        return or(field, CriteriaOperator.LIKE_IGNORE_CASE, value);
+    }
+
     public Criteria in(String field, List<?> values) {
         return and(field, CriteriaOperator.IN, values.toArray());
     }

@@ -10,6 +10,18 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class CriteriaDialectExpressionsTest {
 
     @Test
+    void shouldBuildCaseInsensitiveLikeExpressions() {
+        assertEquals(
+                "LOWER(`code`) LIKE LOWER(:p0)",
+                CriteriaDialectExpressions.likeIgnoreCase(DBInfo.Type.MYSQL, "`code`", ":p0")
+        );
+        assertEquals(
+                "\"code\" ILIKE :p0",
+                CriteriaDialectExpressions.likeIgnoreCase(DBInfo.Type.POSTGRESQL, "\"code\"", ":p0")
+        );
+    }
+
+    @Test
     void shouldBuildCsvSetContainsExpressions() {
         assertEquals(
                 "FIND_IN_SET(:p0, COALESCE(`tags`, '')) > 0",

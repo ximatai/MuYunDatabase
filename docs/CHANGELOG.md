@@ -6,6 +6,7 @@
 
 ### 新增
 
+- `Criteria` / `CriteriaGroup` 新增 `likeIgnoreCase` 与 `orLikeIgnoreCase`，统一提供 PostgreSQL/MySQL 大小写无关模糊匹配；编译器继续负责逻辑字段到物理列解析和参数绑定。
 - 新增运行态单表聚合能力：`AggregateQuery` 支持 `COUNT/SUM/AVG/MIN/MAX` 与 `GROUP BY`，`AggregateResult/AggregateRow` 提供带投影定义的结构化结果，`AggregateQuery.builder()` 提供 fluent 构造方式。
 - 聚合能力矩阵按 `TableMeta` 校验字段类型，并在 PostgreSQL/MySQL 实际数据库中验证数值、空集、日期、时间戳、布尔分组与自定义 codec 语义。
 

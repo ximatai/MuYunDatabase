@@ -54,6 +54,44 @@ class CriteriaSqlCompilerTest {
     }
 
     @Test
+    void shouldCompileCaseInsensitiveLikeForPostgres() {
+        CompiledCriteria compiled = compiler.compile(
+                Criteria.of().likeIgnoreCase("code", "%deep%"),
+                this::resolveColumn,
+                DBInfo.Type.POSTGRESQL
+        );
+
+        assertEquals("\"v_code\" ILIKE :p0", compiled.getSql());
+        assertEquals(Map.of("p0", "%deep%"), compiled.getParams());
+    }
+
+    @Test
+    void shouldCompileCaseInsensitiveLikeForMysql() {
+        CompiledCriteria compiled = compiler.compile(
+                Criteria.of().eq("tenant", "t1").orLikeIgnoreCase("code", "%deep%"),
+                this::resolveColumn,
+                DBInfo.Type.MYSQL
+        );
+
+        assertEquals("`tenant_id` = :p0 OR LOWER(`v_code`) LIKE LOWER(:p1)", compiled.getSql());
+        assertEquals(Map.of("p0", "t1", "p1", "%deep%"), compiled.getParams());
+    }
+
+    @Test
+    void shouldCompileCaseInsensitiveLikeInsideGroup() {
+        CompiledCriteria compiled = compiler.compile(
+                Criteria.of().andGroup(group -> group
+                        .eq("tenant", "t1")
+                        .orLikeIgnoreCase("code", "%deep%")),
+                this::resolveColumn,
+                DBInfo.Type.POSTGRESQL
+        );
+
+        assertEquals("(\"tenant_id\" = :p0 OR \"v_code\" ILIKE :p1)", compiled.getSql());
+        assertEquals(Map.of("p0", "t1", "p1", "%deep%"), compiled.getParams());
+    }
+
+    @Test
     void shouldBindEnumNameByDefault() {
         CompiledCriteria compiled = compiler.compile(
                 Criteria.of()
