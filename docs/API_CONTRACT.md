@@ -77,7 +77,7 @@ int upsert(T entity);
 3. 旧的 `andGroup(CriteriaGroup)` / `orGroup(CriteriaGroup)` 保持既有行为，适合调用方显式管理 group 生命周期。
 4. `SET` / `JSON_SET` / `ARRAY` 字段支持集合查询：`contains(field, value)`、`containsAny(field, values)`、`containsAll(field, values)`、`isEmpty(field)`、`isNotEmpty(field)`，并提供对应 `or*` 方法。
 5. 集合查询支持具备字段元数据的静态实体 ORM 路径和 `RuntimeTableGateway + TableMeta` 路径；只有单向 `CriteriaColumnResolver` 的公开编译路径不承诺支持集合查询。
-6. `likeIgnoreCase` / `orLikeIgnoreCase` 表达大小写无关的 `LIKE` 语义；PostgreSQL 编译为 `ILIKE`，MySQL 编译为 `LOWER(column) LIKE LOWER(:value)`，字段解析和参数绑定规则与其他 Criteria 操作符一致。
+6. `likeIgnoreCase` / `orLikeIgnoreCase` 表达大小写无关的 `LIKE` 语义；PostgreSQL 编译为 `ILIKE`，MySQL 编译为 `LOWER(column) LIKE LOWER(:value)`，字段解析和参数绑定规则与其他 Criteria 操作符一致。Unicode 字符、重音符号和特定语言的大小写结果继承数据库的 locale/collation 规则，不承诺 PostgreSQL/MySQL 之间完全相同的 Unicode case-fold 语义。
 7. 集合查询用于非 `SET` / `JSON_SET` / `ARRAY` 字段时直接抛出 `INVALID_CRITERIA`。
 8. `containsAny(field, List.of())` 固定编译为 false 条件；`containsAll(field, List.of())` 固定编译为 true 条件。
 9. `contains` / `containsAny` / `containsAll` 的元素参数会经过集合元素 codec；例如声明了可识别泛型元素类型且配置了自定义 `DatabaseValueConverter` 时，枚举 code 会参与查询参数绑定。
