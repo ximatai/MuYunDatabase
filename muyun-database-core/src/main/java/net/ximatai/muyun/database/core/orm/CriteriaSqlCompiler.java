@@ -33,6 +33,7 @@ public final class CriteriaSqlCompiler {
         renderers.put(CriteriaOperator.LT, (clause, context) -> compare(clause, context, "<"));
         renderers.put(CriteriaOperator.LTE, (clause, context) -> compare(clause, context, "<="));
         renderers.put(CriteriaOperator.LIKE, (clause, context) -> compare(clause, context, "LIKE"));
+        renderers.put(CriteriaOperator.LIKE_IGNORE_CASE, this::renderLikeIgnoreCase);
         renderers.put(CriteriaOperator.IS_NULL, (clause, context) -> resolveColumn(clause, context) + " IS NULL");
         renderers.put(CriteriaOperator.IS_NOT_NULL, (clause, context) -> resolveColumn(clause, context) + " IS NOT NULL");
         renderers.put(CriteriaOperator.BETWEEN, this::renderBetween);
@@ -120,6 +121,16 @@ public final class CriteriaSqlCompiler {
         String key = "p" + context.nextParamIndex();
         context.params.put(key, context.toDatabaseValue(clause, firstValue(clause)));
         return resolveColumn(clause, context) + " " + op + " :" + key;
+    }
+
+    private String renderLikeIgnoreCase(CriteriaClause clause, ClauseContext context) {
+        String key = "p" + context.nextParamIndex();
+        context.params.put(key, context.toDatabaseValue(clause, firstValue(clause)));
+        return CriteriaDialectExpressions.likeIgnoreCase(
+                context.dbType,
+                resolveColumn(clause, context),
+                ":" + key
+        );
     }
 
     private String renderBetween(CriteriaClause clause, ClauseContext context) {

@@ -98,6 +98,10 @@ public class CriteriaGroup implements CriteriaNode {
         return and(field, CriteriaOperator.LIKE, value);
     }
 
+    public CriteriaGroup likeIgnoreCase(String field, String value) {
+        return and(field, CriteriaOperator.LIKE_IGNORE_CASE, value);
+    }
+
     public CriteriaGroup in(String field, List<?> values) {
         return and(field, CriteriaOperator.IN, values.toArray());
     }
@@ -188,6 +192,10 @@ public class CriteriaGroup implements CriteriaNode {
 
     public CriteriaGroup orLike(String field, String value) {
         return or(field, CriteriaOperator.LIKE, value);
+    }
+
+    public CriteriaGroup orLikeIgnoreCase(String field, String value) {
+        return or(field, CriteriaOperator.LIKE_IGNORE_CASE, value);
     }
 
     public CriteriaGroup orIn(String field, List<?> values) {

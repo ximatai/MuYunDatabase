@@ -8,6 +8,7 @@ public enum CriteriaOperator {
     LT,
     LTE,
     LIKE,
+    LIKE_IGNORE_CASE,
     IN,
     NOT_IN,
     IN_SUBQUERY,

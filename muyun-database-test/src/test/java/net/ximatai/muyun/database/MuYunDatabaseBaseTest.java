@@ -48,6 +48,7 @@ import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -625,6 +626,37 @@ public abstract class MuYunDatabaseBaseTest {
 
         assertEquals(1, gateway.deleteWhere(Map.of("id", id)));
         assertNull(db.getItem("basic", (String) id));
+    }
+
+    protected void testRuntimeTableGatewayLikeIgnoreCaseAgainstDatabase() {
+        RuntimeTableGateway gateway = new RuntimeTableGateway(
+                db,
+                db.getDefaultSchemaName(),
+                "basic",
+                RuntimeColumnMapper.of(Map.of(
+                        "id", "id",
+                        "name", "v_name",
+                        "age", "i_age"
+                ))
+        );
+        String marker = "Case" + UUID.randomUUID().toString().substring(0, 10);
+        Object id = gateway.insert(Map.of(
+                "name", marker,
+                "age", 37
+        ));
+
+        try {
+            String lowercasePattern = "%" + marker.toLowerCase(Locale.ROOT) + "%";
+            assertEquals(1L, gateway.count(Criteria.of().likeIgnoreCase("name", lowercasePattern)));
+            assertEquals(1L, gateway.count(
+                    Criteria.of().eq("age", -1).orLikeIgnoreCase("name", lowercasePattern)
+            ));
+            assertEquals(0L, gateway.count(
+                    Criteria.of().likeIgnoreCase("name", lowercasePattern + "_missing")
+            ));
+        } finally {
+            gateway.deleteWhere(Map.of("id", id));
+        }
     }
 
     protected void testRuntimeTableGatewayAggregateAgainstDatabase() {

@@ -11,6 +11,19 @@ final class CriteriaDialectExpressions {
     private CriteriaDialectExpressions() {
     }
 
+    static String likeIgnoreCase(DBInfo.Type dbType,
+                                 String columnSql,
+                                 String valueExpression) {
+        Objects.requireNonNull(dbType, "dbType must not be null");
+        requireExpression(columnSql, "columnSql");
+        requireExpression(valueExpression, "valueExpression");
+
+        if (dbType == DBInfo.Type.POSTGRESQL) {
+            return columnSql + " ILIKE " + valueExpression;
+        }
+        return "LOWER(" + columnSql + ") LIKE LOWER(" + valueExpression + ")";
+    }
+
     static String collectionContains(DBInfo.Type dbType,
                                      ColumnType columnType,
                                      ColumnType elementColumnType,
