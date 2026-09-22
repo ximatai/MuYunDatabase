@@ -81,6 +81,9 @@ int upsert(T entity);
 5. programmatic schema 支持显式 `UUID`、`TIMESTAMP_WITH_TIME_ZONE`、`DOUBLE`、复合主键、命名唯一约束、单列/复合外键、索引排序方向和 PostgreSQL 条件索引。
 6. PostgreSQL 专有条件索引在其他数据库上必须明确失败，不做语义降级。
 7. 为保持兼容，本版本不会改变 `UUID`、`Instant`、`Double` 的实体字段默认类型推断；需要原生物理类型时必须显式声明 `ColumnType`。
+8. ORM 实体需要补充注解暂未表达的外键、有序索引或条件索引时，使用 `MuYunEntitySchemaCustomizer.forEntity(...)` 增量修改实体解析出的 `TableWrapper`；不得再通过 contributor 重复声明同一物理表。
+9. 同一实体的 customizer 按注入顺序累计应用，并在该实体元数据首次解析时只执行一次。Customizer 只负责补充表级约束、索引等 Schema 细节，不允许改名或重定义 ORM 映射字段，也不允许执行 DDL 或数据回填；定制后的表模型进入该实体的 Schema 迁移。
+10. 非主键字段的 `@Column(unique = true)` 必须生成单列唯一索引；`@Indexed(name = "...")` 的显式名称必须进入最终索引模型。字段可单独使用 `@Id`，此时类型仍遵循兼容性的 Java 类型推断规则。
 
 ## 6. Criteria 组合契约（稳定）
 

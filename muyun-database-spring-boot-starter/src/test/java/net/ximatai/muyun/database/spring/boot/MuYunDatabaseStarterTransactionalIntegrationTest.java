@@ -3,7 +3,10 @@ package net.ximatai.muyun.database.spring.boot;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import net.ximatai.muyun.database.core.IDatabaseOperations;
+import net.ximatai.muyun.database.core.builder.Index;
+import net.ximatai.muyun.database.core.orm.MuYunEntitySchemaCustomizer;
 import net.ximatai.muyun.database.core.orm.SimpleEntityManager;
+import net.ximatai.muyun.database.jdbi.JdbiMetaDataLoader;
 import net.ximatai.muyun.database.spring.boot.txprobe.TxProbeBeanEntity;
 import net.ximatai.muyun.database.spring.boot.txprobe.TxProbeBeanRepository;
 import net.ximatai.muyun.database.spring.boot.txprobe.TxProbeOrmEntity;
@@ -110,6 +113,17 @@ class MuYunDatabaseStarterTransactionalIntegrationTest {
         });
     }
 
+    @Test
+    void shouldApplyAdvancedSchemaCustomizationToAnOrmEntity() {
+        contextRunner.run(context -> {
+            JdbiMetaDataLoader loader = context.getBean(JdbiMetaDataLoader.class);
+
+            assertTrue(loader.getIndexList("public", "tx_probe_orm").stream()
+                    .anyMatch(index -> "idx_tx_probe_named_rows".equals(index.getName())
+                            && index.getPredicate() != null));
+        });
+    }
+
     private static void await(CountDownLatch latch) {
         try {
             if (!latch.await(5, TimeUnit.SECONDS)) {
@@ -155,6 +169,17 @@ class MuYunDatabaseStarterTransactionalIntegrationTest {
     @EnableTransactionManagement
     @EnableMuYunRepositories(basePackageClasses = TxProbeRepository.class)
     static class TxIntegrationConfig {
+
+        @Bean
+        MuYunEntitySchemaCustomizer<TxProbeOrmEntity> txProbeOrmSchema() {
+            return MuYunEntitySchemaCustomizer.forEntity(
+                    TxProbeOrmEntity.class,
+                    table -> table.addIndex(
+                            new Index("v_name", false)
+                                    .named("idx_tx_probe_named_rows")
+                                    .predicate("v_name is not null"))
+            );
+        }
 
         @Bean
         TxProbeService txProbeService(IDatabaseOperations<?> operations,

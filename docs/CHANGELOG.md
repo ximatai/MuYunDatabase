@@ -11,6 +11,7 @@
 - 新增复合主键、命名唯一约束、单列/复合外键及 `ON DELETE` 行为描述。
 - 索引模型新增有序列、`ASC/DESC` 和 PostgreSQL predicate；非 PostgreSQL 数据库不再静默降级条件索引。
 - Spring Boot starter 新增 `MuYunSchemaContributor + ManagedTable` 技术表注册入口，支持显式依赖、外键依赖推导、拓扑排序，以及默认事务感知配置下的 PostgreSQL 多实例迁移锁。
+- 新增 `MuYunEntitySchemaCustomizer`，允许在 ORM 实体解析出的唯一表模型上增量补充命名外键、有序索引和条件索引，无需复制整张表或关闭 Repository 拉齐。
 - `MigrationChange` 新增风险等级：安全增量、需要数据校验、破坏性变更。
 - 新增运行态单表聚合能力：`AggregateQuery` 支持 `COUNT/SUM/AVG/MIN/MAX` 与 `GROUP BY`，`AggregateResult/AggregateRow` 提供带投影定义的结构化结果，`AggregateQuery.builder()` 提供 fluent 构造方式。
 - 聚合能力矩阵按 `TableMeta` 校验字段类型，并在 PostgreSQL/MySQL 实际数据库中验证数值、空集、日期、时间戳、布尔分组与自定义 codec 语义。
@@ -27,6 +28,8 @@
 
 ### 修复
 
+- 修复 `@Column(unique = true)`、`@Indexed(name = "...")` 未进入 Schema 模型，以及字段单独使用 `@Id` 时解析空指针的问题。
+- 修复 MySQL 新增未显式指定长度的 `VARCHAR` 列时生成非法 DDL；MySQL 统一使用兼容默认长度 255，PostgreSQL 仍保留无长度 `varchar` 语义。
 - 收敛 Maven publication、签名和 Sonatype 上传配置到正式发布模块白名单；Quarkus 集成测试模块和通用数据库测试模块不再生成或发布 Maven 元数据，避免 `enforcedPlatform(quarkus-bom)` 泄漏到消费者。
 - 修复列类型比对未归一数据库内部别名，导致重复 ensure 同一表定义时产生虚假 ALTER 计划、被严格迁移模式拒绝的问题：PostgreSQL 归一 `int4`/`int8`/`bool` 等内部别名（数组形式 `_int4`/`_bool` 等的既有归一同步补充测试固化），并补齐 `DEC`→`NUMERIC` 的 JDBC 别名归一。
 - 抽取共享列差异判定规则，供 `TableBuilder` 与 `SchemaMigrationPlanner` 共用：统一类型、长度、主键、可空性、默认值、序列和注释的判断；其中 `TEXT`/`LONGTEXT`/`ARRAY` 列不再参与长度比对。

@@ -27,6 +27,7 @@ public class Column {
     // 序列和索引属性
     private boolean sequence = false;  // 是否使用序列，默认为false
     private boolean indexed = false;   // 是否创建索引，默认为false
+    private String indexName;           // 显式索引名称，为空时按规则生成
 
     /**
      * 构造函数：创建一个列定义
@@ -252,6 +253,11 @@ public class Column {
         return this;
     }
 
+    public Column setIndexName(String indexName) {
+        this.indexName = indexName == null || indexName.isBlank() ? null : indexName.trim();
+        return this;
+    }
+
     // ============ Getter方法 ============
 
     /**
@@ -377,6 +383,10 @@ public class Column {
      */
     public boolean isIndexed() {
         return indexed;
+    }
+
+    public String getIndexName() {
+        return indexName;
     }
 
     /**

@@ -194,7 +194,11 @@ class SchemaMigrationPlanner {
         ColumnDiffEvaluator.ColumnDiff columnDiff = ColumnDiffEvaluator.evaluate(column, dbColumn, type, getDatabaseType());
 
         if (columnDiff.typeChanged()) {
-            builder.addNonAdditive(MigrationChange.Type.ALTER_COLUMN_TYPE, column.getName(), dialect.alterColumnType(schemaDotTable, quotedColumnName, type + SchemaBuildRules.columnLength(column), baseColumnString));
+            builder.addNonAdditive(MigrationChange.Type.ALTER_COLUMN_TYPE, column.getName(), dialect.alterColumnType(
+                    schemaDotTable,
+                    quotedColumnName,
+                    type + SchemaBuildRules.columnLength(column, getDatabaseType()),
+                    baseColumnString));
         }
 
         if (columnDiff.nullableChanged()) {

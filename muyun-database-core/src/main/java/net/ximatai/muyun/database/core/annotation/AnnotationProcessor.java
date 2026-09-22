@@ -108,23 +108,32 @@ public class AnnotationProcessor {
                     if (!columnAnnotation.comment().isEmpty()) {
                         column.setComment(columnAnnotation.comment());
                     }
+                    if (columnAnnotation.unique()) {
+                        column.setUnique();
+                    }
+                } else {
+                    column.setType(TypeMapper.inferSqlType(field.getType()));
                 }
 
                 if (field.isAnnotationPresent(Indexed.class)) {
                     Indexed indexed = field.getAnnotation(Indexed.class);
+                    if (columnAnnotation != null && columnAnnotation.unique() && !indexed.unique()) {
+                        throw new IllegalArgumentException(
+                                "Conflicting unique declarations on field: " + entityClass.getName() + "." + field.getName());
+                    }
                     if (indexed.unique()) {
                         column.setUnique();
                     } else {
                         column.setIndexed();
                     }
-
+                    column.setIndexName(indexed.name());
                 }
 
                 if (field.isAnnotationPresent(Sequence.class)) {
                     column.setSequence();
                 }
 
-                Default defaultVal = columnAnnotation.defaultVal();
+                Default defaultVal = columnAnnotation == null ? null : columnAnnotation.defaultVal();
 
                 if (defaultVal != null && !defaultVal.unset()) {
                     if (!defaultVal.function().isEmpty()) {

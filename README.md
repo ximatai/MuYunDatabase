@@ -13,7 +13,7 @@ MuYun-Database 是一个基于 `Jdbi` 的轻量数据库工具库，面向 Java 
 
 - **少写单表 DAO 样板代码**：`@MuYunRepository + EntityDao` 直接获得 `insert/update/delete/findById/query/pageQuery/count/upsert`。
 - **CRUD 和手写 SQL 不割裂**：简单操作走标准接口，复杂查询或定制更新继续使用 Jdbi `@SqlQuery/@SqlUpdate`，放在同一个 Repository。
-- **表结构可以自动拉齐**：实体或 `TableWrapper` 可驱动建表、增量加列和注释同步；Spring Boot / Quarkus 可在启动期按策略执行。
+- **表结构可以自动拉齐**：实体或 `TableWrapper` 可驱动建表、增量加列和注释同步，Spring Boot / Quarkus 可在启动期按策略执行；Spring Boot 还可用 `MuYunEntitySchemaCustomizer` 为 ORM 实体补充高级约束和索引。
 - **动态条件实用且克制**：`Criteria` 支持查询、分页、排序、count、条件更新和条件删除；空 where 或未知字段默认拒绝。
 - **事务边界一致**：`EntityDao` 方法和 Jdbi SQL 注解方法在 Spring `@Transactional` 或 Quarkus `jakarta.transaction.Transactional` 下共用同一事务边界。
 

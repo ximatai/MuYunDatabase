@@ -5,6 +5,7 @@ import net.ximatai.muyun.database.core.orm.DatabaseValueConverter;
 import net.ximatai.muyun.database.core.orm.DefaultSimpleEntityManager;
 import net.ximatai.muyun.database.core.orm.EntityMetaResolver;
 import net.ximatai.muyun.database.core.orm.MigrationOptions;
+import net.ximatai.muyun.database.core.orm.MuYunEntitySchemaCustomizer;
 import net.ximatai.muyun.database.core.orm.MuYunSchemaContributor;
 import net.ximatai.muyun.database.core.orm.SimpleEntityManager;
 import net.ximatai.muyun.database.jdbi.JdbiMetaDataLoader;
@@ -81,8 +82,9 @@ public class MuYunDatabaseAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public EntityMetaResolver entityMetaResolver() {
-        return new EntityMetaResolver();
+    public EntityMetaResolver entityMetaResolver(
+            ObjectProvider<MuYunEntitySchemaCustomizer<?>> schemaCustomizersProvider) {
+        return new EntityMetaResolver(schemaCustomizersProvider.orderedStream().toList());
     }
 
     @Bean

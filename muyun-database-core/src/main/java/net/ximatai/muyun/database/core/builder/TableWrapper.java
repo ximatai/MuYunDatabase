@@ -166,9 +166,17 @@ public class TableWrapper extends TableBase {
         columns.add(column);
 
         if (column.isUnique()) {
-            addIndex(column.getName(), true);
+            Index index = new Index(column.getName(), true);
+            if (column.getIndexName() != null) {
+                index.named(column.getIndexName());
+            }
+            addIndex(index);
         } else if (column.isIndexed()) {
-            addIndex(column.getName());
+            Index index = new Index(column.getName(), false);
+            if (column.getIndexName() != null) {
+                index.named(column.getIndexName());
+            }
+            addIndex(index);
         }
 
         return this;

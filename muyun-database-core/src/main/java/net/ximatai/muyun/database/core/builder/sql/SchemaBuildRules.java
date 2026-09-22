@@ -130,6 +130,16 @@ public final class SchemaBuildRules {
         return length;
     }
 
+    public static String columnLength(Column column, DBInfo.Type dbType) {
+        String configuredLength = columnLength(column);
+        if (configuredLength.isEmpty()
+                && dbType == DBInfo.Type.MYSQL
+                && column.getType() == ColumnType.VARCHAR) {
+            return "(255)";
+        }
+        return configuredLength;
+    }
+
     public static boolean ignoresColumnLength(Column column) {
         return column.getType().equals(ColumnType.TEXT)
                 || column.getType().equals(ColumnType.LONGTEXT)
@@ -150,7 +160,7 @@ public final class SchemaBuildRules {
         return quoteIdentifier(column.getName(), dbType)
                 + " "
                 + mappedType
-                + columnLength(column)
+                + columnLength(column, dbType)
                 + (column.isNullable() ? " null " : " not null ")
                 + defaultValueString
                 + primaryKeyString;
