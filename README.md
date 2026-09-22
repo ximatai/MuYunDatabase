@@ -23,7 +23,7 @@ MuYun-Database 是一个基于 `Jdbi` 的轻量数据库工具库，面向 Java 
 
 ```groovy
 dependencies {
-    implementation("net.ximatai.muyun.database:muyun-database-spring-boot-starter:3.26.19")
+    implementation("net.ximatai.muyun.database:muyun-database-spring-boot-starter:3.26.20")
 }
 ```
 
@@ -147,7 +147,7 @@ class UserService {
 
 ```groovy
 dependencies {
-    implementation("net.ximatai.muyun.database:muyun-database-jdbi:3.26.19")
+    implementation("net.ximatai.muyun.database:muyun-database-jdbi:3.26.20")
 }
 ```
 
@@ -166,7 +166,7 @@ UserEntity loaded = orm.findById(UserEntity.class, user.id);
 
 ```groovy
 dependencies {
-    implementation("net.ximatai.muyun.database:muyun-database-quarkus:3.26.19")
+    implementation("net.ximatai.muyun.database:muyun-database-quarkus:3.26.20")
 }
 ```
 
@@ -219,7 +219,7 @@ MuYun-Database 不提供关系映射 ORM 能力，包括 `1:N/N:N`、级联、�
 
 ## 版本与模块
 
-- 当前版本 `3.26.19` 兼容 Java 21 及以上
+- 当前版本 `3.26.20` 兼容 Java 21 及以上
 - `1.26.+` 兼容 Java 8，位于 `jdbi-jdk8` 分支
 - 具体发布版本以仓库 release / Maven Central 为准
 

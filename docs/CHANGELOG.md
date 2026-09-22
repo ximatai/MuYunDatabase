@@ -6,38 +6,116 @@
 
 ### 新增
 
-- `Criteria` / `CriteriaGroup` 新增 `likeIgnoreCase` 与 `orLikeIgnoreCase`，统一提供 PostgreSQL/MySQL 大小写无关模糊匹配；编译器继续负责逻辑字段到物理列解析和参数绑定。
-- 新增 programmatic schema 的原生 `UUID`、`TIMESTAMP_WITH_TIME_ZONE` 和 `DOUBLE` 类型。
-- 新增复合主键、命名唯一约束、单列/复合外键及 `ON DELETE` 行为描述。
-- 索引模型新增有序列、`ASC/DESC` 和 PostgreSQL predicate；非 PostgreSQL 数据库不再静默降级条件索引。
-- Spring Boot starter 新增 `MuYunSchemaContributor + ManagedTable` 技术表注册入口，支持显式依赖、外键依赖推导、拓扑排序，以及默认事务感知配置下的 PostgreSQL 多实例迁移锁。
-- 新增 `MuYunEntitySchemaCustomizer`，允许在 ORM 实体解析出的唯一表模型上增量补充命名外键、有序索引和条件索引，无需复制整张表或关闭 Repository 拉齐。
-- `MigrationChange` 新增风险等级：安全增量、需要数据校验、破坏性变更。
-- 新增运行态单表聚合能力：`AggregateQuery` 支持 `COUNT/SUM/AVG/MIN/MAX` 与 `GROUP BY`，`AggregateResult/AggregateRow` 提供带投影定义的结构化结果，`AggregateQuery.builder()` 提供 fluent 构造方式。
-- 聚合能力矩阵按 `TableMeta` 校验字段类型，并在 PostgreSQL/MySQL 实际数据库中验证数值、空集、日期、时间戳、布尔分组与自定义 codec 语义。
+- 暂无。
 
 ### 变更
 
-- `SchemaManager` 现在直接执行已生成的 `MigrationPlan`，dry-run、strict 判断、审计结果与实际执行 SQL 使用同一事实源。
-- 索引差异比较改为保留列顺序、排序方向、唯一性、名称和 predicate，不再使用无序列集合比较。
-- PostgreSQL 元数据加载补齐主键、唯一约束、外键、索引方向与条件索引 predicate。
-- Spring 启动结构拉齐将 contributor 与 Repository 表纳入统一依赖图；PostgreSQL 多实例迁移由独立会话持有 advisory lock，迁移失败后也会可靠释放。
-- 索引迁移按确定性名称识别，并排除 PostgreSQL 约束拥有的 backing index；名称冲突与不支持的语义改为明确失败，不再静默跳过或随机替换同列索引。
-- 聚合执行现在强制要求 `RuntimeTableGateway + TableMeta`，不再允许旧单向 `CriteriaColumnResolver` 路径绕过字段类型、codec 与方言能力治理。
-- `aggregateResult` 成为正式聚合入口；Map 返回的 `aggregate` 已标记为废弃。`COUNT` 归一为 `Long`，`SUM/AVG` 归一为 `BigDecimal`。
+- 暂无。
+
+### 修复
+
+- 暂无。
+
+### 迁移说明
+
+- 暂无。
+
+## 3.26.20
+
+发布日期：2026-09-22
+
+### 新增
+
+- 新增 programmatic schema 的原生 `UUID`、`TIMESTAMP_WITH_TIME_ZONE` 和 `DOUBLE` 类型。
+- 新增复合主键、命名唯一约束、单列/复合外键及 `ON DELETE` 行为描述。
+- 索引模型新增有序列、`ASC/DESC` 和 PostgreSQL predicate；非 PostgreSQL 数据库不再静默降级条件索引。
+- Spring Boot starter 新增 `MuYunSchemaContributor + ManagedTable` 技术表注册入口，支持显式依赖、外键依赖推导和拓扑排序。
+- 新增 `MuYunEntitySchemaCustomizer`，允许在 ORM 实体的唯一表模型上增量补充命名外键、有序索引和条件索引。
+- `MigrationChange` 新增安全增量、需要数据校验、破坏性变更三级风险。
+
+### 变更
+
+- `SchemaManager` 直接执行已生成的迁移计划，dry-run、strict 判断、审计结果和实际 SQL 使用同一事实源。
+- contributor 与 Repository 表进入统一物理表查重和依赖图；PostgreSQL APPLY 模式通过独立 JDBC 会话持有 session advisory lock。
+- 元数据反查补齐主键、唯一约束、外键、索引顺序、方向和 PostgreSQL predicate。
+- 索引使用确定性身份，排除 PostgreSQL constraint backing index；名称冲突和不支持的语义改为明确失败。
+- DDL 执行失败后同样失效元数据缓存，保证重试基于数据库真实状态重新规划。
 
 ### 修复
 
 - 修复 `@Column(unique = true)`、`@Indexed(name = "...")` 未进入 Schema 模型，以及字段单独使用 `@Id` 时解析空指针的问题。
-- 修复 MySQL 新增未显式指定长度的 `VARCHAR` 列时生成非法 DDL；MySQL 统一使用兼容默认长度 255，PostgreSQL 仍保留无长度 `varchar` 语义。
-- 收敛 Maven publication、签名和 Sonatype 上传配置到正式发布模块白名单；Quarkus 集成测试模块和通用数据库测试模块不再生成或发布 Maven 元数据，避免 `enforcedPlatform(quarkus-bom)` 泄漏到消费者。
-- 修复列类型比对未归一数据库内部别名，导致重复 ensure 同一表定义时产生虚假 ALTER 计划、被严格迁移模式拒绝的问题：PostgreSQL 归一 `int4`/`int8`/`bool` 等内部别名（数组形式 `_int4`/`_bool` 等的既有归一同步补充测试固化），并补齐 `DEC`→`NUMERIC` 的 JDBC 别名归一。
-- 抽取共享列差异判定规则，供 `TableBuilder` 与 `SchemaMigrationPlanner` 共用：统一类型、长度、主键、可空性、默认值、序列和注释的判断；其中 `TEXT`/`LONGTEXT`/`ARRAY` 列不再参与长度比对。
+- 修复 MySQL 新增未显式指定长度的 `VARCHAR` 列时生成非法 DDL；MySQL 使用兼容默认长度 255，PostgreSQL 保留无长度 `varchar` 语义。
+- 修复默认 schema 物理身份、条件索引 literal 大小写、PostgreSQL 继承列、注释转义、MySQL 外键动作比较和异常路径锁释放等边界问题。
 
 ### 迁移说明
 
-- MySQL 用户注意：`DATETIME` 与 `TIMESTAMP` 保持区分。若既有列为 `DATETIME`、模型声明为 `ColumnType.TIMESTAMP`，重复 ensure 会计划并执行将其收敛为 `TIMESTAMP` 的 ALTER；升级前请评估两者在时区转换、取值范围和存储宽度上的差异。
+- PostgreSQL 迁移锁会话和迁移会话相互独立，连接池至少需要允许同时使用两个连接。
+- 为保持兼容，实体字段的 `UUID`、`Instant`、`Double` 默认类型推断不变；需要原生物理类型时应显式声明 `ColumnType`。
+- 本版本不提供任意 Java callback 数据迁移；数据回填仍需保持幂等，后续由版本化 SQL migration runner 承接。
+
+## 3.26.19
+
+发布日期：2026-09-19
+
+### 新增
+
+- `Criteria` / `CriteriaGroup` 新增 `likeIgnoreCase` 与 `orLikeIgnoreCase`，统一提供 PostgreSQL/MySQL 大小写无关模糊匹配。
+
+### 变更
+
+- 暂无。
+
+### 修复
+
+- 新增 MySQL 大小写敏感 collation 下的数据库回归验证。
+
+### 迁移说明
+
+- Unicode、重音符号和特定语言的大小写结果仍继承数据库 locale/collation 规则。
+
+## 3.26.18
+
+发布日期：2026-08-24
+
+### 新增
+
+- 暂无。
+
+### 变更
+
+- Maven publication、签名和 Sonatype 上传收敛到正式发布模块白名单。
+
+### 修复
+
+- Quarkus 集成测试模块和通用数据库测试模块不再生成或发布 Maven 元数据，避免 `enforcedPlatform(quarkus-bom)` 泄漏到消费者。
+
+### 迁移说明
+
+- 无需业务迁移。
+
+## 3.26.17
+
+发布日期：2026-08-24
+
+### 新增
+
+- 新增运行态单表聚合能力：`AggregateQuery` 支持 `COUNT/SUM/AVG/MIN/MAX` 与 `GROUP BY`，`AggregateResult/AggregateRow` 提供结构化结果。
+- 聚合能力矩阵按 `TableMeta` 校验字段类型，并在 PostgreSQL/MySQL 实际数据库中验证数值、空集、日期、时间戳、布尔分组与自定义 codec 语义。
+
+### 变更
+
+- 聚合执行强制要求 `RuntimeTableGateway + TableMeta`；`aggregateResult` 成为正式入口，Map 返回的 `aggregate` 标记为废弃。
+- `COUNT` 归一为 `Long`，`SUM/AVG` 归一为 `BigDecimal`。
+
+### 修复
+
+- 归一 PostgreSQL `int4`、`int8`、`bool` 等内部别名及数组别名，并补齐 `DEC` 到 `NUMERIC` 的 JDBC 别名归一。
+- 统一 `TableBuilder` 与 `SchemaMigrationPlanner` 的列差异判定规则，同时保持 MySQL `DATETIME` 与 `TIMESTAMP` 的区别。
+
+### 迁移说明
+
 - 使用旧 resolver Gateway 执行聚合的调用方必须迁移为 `TableMeta` Gateway，并改用 `aggregateResult`；详见 `RUNTIME_METADATA_MIGRATION.md`。
+- 若既有 MySQL 列为 `DATETIME`、模型声明为 `ColumnType.TIMESTAMP`，升级前应评估 ALTER 对时区转换和取值范围的影响。
 
 ## 3.26.15
 

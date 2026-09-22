@@ -29,8 +29,9 @@ gpg --armor --export-secret-keys <KEY_ID> | base64 | tr -d '\n'
 4. 推送匹配的 tag：
 
 ```bash
-git tag v3.26.15
-git push origin v3.26.15
+releaseVersion=<new-version>
+git tag "v${releaseVersion}"
+git push origin "v${releaseVersion}"
 ```
 
 发布 workflow 会校验 tag 等于 `v<project.version>`，然后执行
@@ -39,5 +40,6 @@ git push origin v3.26.15
 本地可用以下命令 dry-run 校验 tag guard：
 
 ```bash
-./gradlew verifyReleaseTagVersion -Prelease.tag=v3.26.15
+releaseVersion=<new-version>
+./gradlew verifyReleaseTagVersion -Prelease.tag="v${releaseVersion}"
 ```
