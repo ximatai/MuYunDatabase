@@ -1,6 +1,8 @@
 package net.ximatai.muyun.database.spring.boot;
 
 import net.ximatai.muyun.database.core.orm.EntityDao;
+import net.ximatai.muyun.database.core.builder.TableWrapper;
+import net.ximatai.muyun.database.core.orm.ManagedTable;
 import net.ximatai.muyun.database.spring.boot.sql.annotation.MuYunRepository;
 import net.ximatai.muyun.database.spring.boot.sql.repository.MuYunRepositoryCatalog;
 import org.junit.jupiter.api.Test;
@@ -11,6 +13,22 @@ import java.util.Set;
 import static org.mockito.Mockito.*;
 
 class MuYunRepositorySchemaInitializerTest {
+
+    @Test
+    void shouldInitializeContributedTablesWithoutRepositoryEntity() {
+        MuYunSchemaManager schemaManager = mock(MuYunSchemaManager.class);
+        MuYunDatabaseProperties properties = new MuYunDatabaseProperties();
+        ManagedTable managedTable = ManagedTable.of("technical", TableWrapper.withName("technical"));
+        MuYunRepositorySchemaInitializer initializer = new MuYunRepositorySchemaInitializer(
+                List.of(), schemaManager, properties, getClass().getClassLoader(),
+                List.of(() -> List.of(managedTable)), null
+        );
+
+        initializer.afterSingletonsInstantiated();
+
+        verify(schemaManager).ensureTables(List.of(managedTable));
+        verify(schemaManager, never()).ensureTable(org.mockito.ArgumentMatchers.<Class<Object>>any());
+    }
 
     @Test
     void shouldEnsureSchemaForAllRepositoryEntitiesWhenModeIsEnsure() {

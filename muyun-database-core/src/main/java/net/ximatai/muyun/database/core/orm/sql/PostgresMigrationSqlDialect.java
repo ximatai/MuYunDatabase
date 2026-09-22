@@ -15,6 +15,11 @@ public class PostgresMigrationSqlDialect implements MigrationSqlDialect {
     }
 
     @Override
+    public String createTableWithTempColumn(String schemaDotTable, String inheritClause) {
+        return createTableWithTempColumn(schemaDotTable) + (inheritClause == null ? "" : inheritClause);
+    }
+
+    @Override
     public String setTableComment(String schemaDotTable, String comment) {
         return "comment on table " + schemaDotTable + " is '" + comment + "'";
     }
@@ -74,8 +79,34 @@ public class PostgresMigrationSqlDialect implements MigrationSqlDialect {
 
     @Override
     public String createIndex(String schemaDotTable, String indexName, List<String> columns, boolean unique) {
+        return createIndex(schemaDotTable, indexName, columns, unique, null);
+    }
+
+    @Override
+    public String createIndex(String schemaDotTable, String indexName, List<String> columns, boolean unique, String predicate) {
         String uniqueString = unique ? "unique " : "";
-        return "create " + uniqueString + "index if not exists " + indexName + " on " + schemaDotTable + "(" + String.join(",", columns) + ");";
+        String where = predicate == null ? "" : " where " + predicate;
+        return "create " + uniqueString + "index if not exists " + indexName + " on " + schemaDotTable + "(" + String.join(",", columns) + ")" + where + ";";
+    }
+
+    @Override
+    public String addConstraint(String schemaDotTable, String constraintName, String definition) {
+        return "alter table " + schemaDotTable + " add constraint " + constraintName + " " + definition;
+    }
+
+    @Override
+    public String dropPrimaryKey(String schemaDotTable, String constraintName) {
+        return "alter table " + schemaDotTable + " drop constraint " + constraintName;
+    }
+
+    @Override
+    public String dropUniqueConstraint(String schemaDotTable, String constraintName) {
+        return dropPrimaryKey(schemaDotTable, constraintName);
+    }
+
+    @Override
+    public String dropForeignKey(String schemaDotTable, String constraintName) {
+        return dropPrimaryKey(schemaDotTable, constraintName);
     }
 
     @Override

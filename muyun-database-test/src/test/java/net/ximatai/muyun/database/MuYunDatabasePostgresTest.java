@@ -7,12 +7,19 @@ import net.ximatai.muyun.database.core.builder.ColumnType;
 import net.ximatai.muyun.database.core.builder.PredefinedColumn;
 import net.ximatai.muyun.database.core.builder.TableBuilder;
 import net.ximatai.muyun.database.core.builder.TableWrapper;
+import net.ximatai.muyun.database.core.builder.ForeignKeyAction;
+import net.ximatai.muyun.database.core.builder.ForeignKeyConstraint;
+import net.ximatai.muyun.database.core.builder.Index;
+import net.ximatai.muyun.database.core.builder.IndexColumn;
+import net.ximatai.muyun.database.core.builder.PrimaryKeyConstraint;
+import net.ximatai.muyun.database.core.builder.UniqueConstraint;
 import net.ximatai.muyun.database.core.orm.Criteria;
 import net.ximatai.muyun.database.core.orm.MigrationOptions;
 import net.ximatai.muyun.database.core.orm.MigrationResult;
 import net.ximatai.muyun.database.core.orm.PageRequest;
 import net.ximatai.muyun.database.core.orm.RuntimeTableGateway;
 import net.ximatai.muyun.database.core.orm.TableMeta;
+import net.ximatai.muyun.database.core.orm.SchemaManager;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.JdbcDatabaseContainer;
@@ -56,6 +63,46 @@ public class MuYunDatabasePostgresTest extends MuYunDatabaseUsageExamplesTestBas
     @Override
     Class<?> getEntityClass() {
         return TestEntityForPG.class;
+    }
+
+    @Test
+    void testGovernedTechnicalSchemaIsIdempotent() {
+        String parentName = "governed_session";
+        String childName = "governed_participant";
+        TableWrapper parent = TableWrapper.withName(parentName)
+                .setPrimaryKey(Column.of("session_id").setType(ColumnType.UUID).setPrimaryKey())
+                .addColumn(Column.of("tenant_id").setType(ColumnType.VARCHAR).setLength(128).setNullable(false))
+                .addColumn(Column.of("created_at").setType(ColumnType.TIMESTAMP_WITH_TIME_ZONE).setNullable(false))
+                .addColumn(Column.of("latitude").setType(ColumnType.DOUBLE))
+                .addColumn(Column.of("status").setType(ColumnType.VARCHAR).setLength(32).setNullable(false))
+                .addUniqueConstraint(UniqueConstraint.named("uk_governed_session_scope", "tenant_id", "session_id"))
+                .addIndex(Index.of(List.of(IndexColumn.asc("tenant_id"), IndexColumn.desc("created_at")), false)
+                        .named("ix_governed_session_created"))
+                .addIndex(new Index(List.of("tenant_id", "status"), true)
+                        .named("ux_governed_session_active")
+                        .predicate("status in ('ACTIVE', 'WAITING')"));
+        TableWrapper child = TableWrapper.withName(childName)
+                .addColumn(Column.of("tenant_id").setType(ColumnType.VARCHAR).setLength(128).setNullable(false))
+                .addColumn(Column.of("session_id").setType(ColumnType.UUID).setNullable(false))
+                .addColumn(Column.of("participant_id").setType(ColumnType.VARCHAR).setLength(128).setNullable(false))
+                .setPrimaryKey(PrimaryKeyConstraint.named(
+                        "pk_governed_participant", "tenant_id", "session_id", "participant_id"))
+                .addForeignKey(ForeignKeyConstraint.named(
+                        "fk_governed_participant_session",
+                        List.of("session_id"), parentName, List.of("session_id"), ForeignKeyAction.CASCADE));
+
+        SchemaManager manager = new SchemaManager(db);
+        manager.ensureTable(parent, MigrationOptions.execute());
+        db.resetDBInfo();
+        manager.ensureTable(child, MigrationOptions.execute());
+        db.resetDBInfo();
+
+        MigrationResult parentPlan = manager.ensureTable(parent, MigrationOptions.dryRun());
+        MigrationResult childPlan = manager.ensureTable(child, MigrationOptions.dryRun());
+        assertFalse(parentPlan.isChanged(), parentPlan.getStatements() + " metadata="
+                + loader.getIndexList("public", parentName).stream()
+                .map(index -> index.getName() + ":" + index.getPredicate()).toList());
+        assertFalse(childPlan.isChanged(), childPlan.getStatements().toString());
     }
 
     @Test

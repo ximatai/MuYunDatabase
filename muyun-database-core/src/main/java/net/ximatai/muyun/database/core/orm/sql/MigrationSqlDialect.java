@@ -8,6 +8,13 @@ public interface MigrationSqlDialect {
 
     String createTableWithTempColumn(String schemaDotTable);
 
+    default String createTableWithTempColumn(String schemaDotTable, String inheritClause) {
+        if (inheritClause != null && !inheritClause.isBlank()) {
+            throw new IllegalArgumentException("table inheritance is not supported by this database dialect");
+        }
+        return createTableWithTempColumn(schemaDotTable);
+    }
+
     String setTableComment(String schemaDotTable, String comment);
 
     String addColumn(String schemaDotTable, String columnDefinition);
@@ -27,6 +34,21 @@ public interface MigrationSqlDialect {
     String dropIndex(String schema, String schemaDotTable, String indexName);
 
     String createIndex(String schemaDotTable, String indexName, List<String> columns, boolean unique);
+
+    default String createIndex(String schemaDotTable, String indexName, List<String> columns, boolean unique, String predicate) {
+        if (predicate != null) {
+            throw new IllegalArgumentException("partial indexes are not supported by this database dialect");
+        }
+        return createIndex(schemaDotTable, indexName, columns, unique);
+    }
+
+    String addConstraint(String schemaDotTable, String constraintName, String definition);
+
+    String dropPrimaryKey(String schemaDotTable, String constraintName);
+
+    String dropUniqueConstraint(String schemaDotTable, String constraintName);
+
+    String dropForeignKey(String schemaDotTable, String constraintName);
 
     String dropTempColumn(String schemaDotTable);
 }

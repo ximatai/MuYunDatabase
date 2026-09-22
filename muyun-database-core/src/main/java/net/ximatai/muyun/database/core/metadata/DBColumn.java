@@ -216,8 +216,11 @@ public class DBColumn {
             case "bigint" -> ColumnType.BIGINT;
             case "bool" -> ColumnType.BOOLEAN;
             case "timestamp" -> ColumnType.TIMESTAMP;
+            case "timestamp with time zone" -> ColumnType.TIMESTAMP_WITH_TIME_ZONE;
             case "date" -> ColumnType.DATE;
             case "numeric" -> ColumnType.NUMERIC;
+            case "double precision" -> ColumnType.DOUBLE;
+            case "uuid" -> ColumnType.UUID;
             case "json", "jsonb" -> ColumnType.JSON;
             default -> ColumnType.valueOf(normalizedType.toUpperCase());
         };
@@ -231,8 +234,11 @@ public class DBColumn {
             case "bigint" -> ColumnType.BIGINT;
             case "boolean" -> ColumnType.BOOLEAN;
             case "timestamp" -> ColumnType.TIMESTAMP;
+            case "timestamp with time zone" -> ColumnType.TIMESTAMP_WITH_TIME_ZONE;
             case "date" -> ColumnType.DATE;
             case "numeric" -> ColumnType.NUMERIC;
+            case "double precision" -> ColumnType.DOUBLE;
+            case "uuid" -> ColumnType.UUID;
             default -> throw new IllegalArgumentException("Unsupported ARRAY element type: " + normalizedElementType);
         };
     }

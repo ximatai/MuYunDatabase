@@ -369,6 +369,42 @@ interface AuditLogRepository extends EntityDao<AuditLogEntity, String> {
 
 `IDatabaseOperations` 与底层 SQL 仍可用，但建议仅用于特殊场景（例如历史 SQL 复用、极端性能调优或跨表手工 SQL），常规业务默认优先 `@MuYunRepository + EntityDao`。
 
+### 2.7 注册非实体技术表
+
+租约、outbox、幂等记录等技术表无需创建伪实体 Repository，可以直接贡献结构模型：
+
+```java
+@Bean
+MuYunSchemaContributor gatewaySchema() {
+    TableWrapper sessions = TableWrapper.withName("gateway_sessions")
+            .addColumn(Column.of("tenant_id").setType(ColumnType.VARCHAR).setLength(128))
+            .addColumn(Column.of("session_id").setType(ColumnType.UUID))
+            .addColumn(Column.of("created_at").setType(ColumnType.TIMESTAMP_WITH_TIME_ZONE))
+            .setPrimaryKey(PrimaryKeyConstraint.named(
+                    "pk_gateway_sessions", "tenant_id", "session_id"));
+
+    TableWrapper participants = TableWrapper.withName("gateway_participants")
+            .addColumn(Column.of("tenant_id").setType(ColumnType.VARCHAR).setLength(128))
+            .addColumn(Column.of("session_id").setType(ColumnType.UUID))
+            .addColumn(Column.of("participant_id").setType(ColumnType.VARCHAR).setLength(128))
+            .setPrimaryKey(PrimaryKeyConstraint.named(
+                    "pk_gateway_participants", "tenant_id", "session_id", "participant_id"))
+            .addForeignKey(ForeignKeyConstraint.named(
+                    "fk_gateway_participants_session",
+                    List.of("tenant_id", "session_id"),
+                    "gateway_sessions",
+                    List.of("tenant_id", "session_id"),
+                    ForeignKeyAction.CASCADE));
+
+    return () -> List.of(
+            ManagedTable.of("sessions", sessions),
+            new ManagedTable("participants", participants, Set.of("sessions"))
+    );
+}
+```
+
+Starter 会在应用可服务前完成拓扑排序和结构拉齐，并尊重全局 `migration-mode`。启用默认的 `transaction-aware-data-source` 时，PostgreSQL APPLY 模式还会持有事务级 advisory lock，避免多个实例同时迁移；关闭该配置会同时放弃这项锁保证。条件索引仅在 PostgreSQL 上受支持，其他数据库会在规划阶段明确失败。
+
 ## 3. 进阶示例
 
 ### 3.1 分页结果

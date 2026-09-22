@@ -48,7 +48,8 @@ final class AggregateCapabilities {
     }
 
     private static boolean isNumeric(ColumnType columnType) {
-        return columnType == ColumnType.INT || columnType == ColumnType.BIGINT || columnType == ColumnType.NUMERIC;
+        return columnType == ColumnType.INT || columnType == ColumnType.BIGINT
+                || columnType == ColumnType.NUMERIC || columnType == ColumnType.DOUBLE;
     }
 
     private static boolean isComparableScalar(ColumnType columnType) {
@@ -57,6 +58,7 @@ final class AggregateCapabilities {
                 || columnType == ColumnType.TEXT
                 || columnType == ColumnType.LONGTEXT
                 || columnType == ColumnType.TIMESTAMP
+                || columnType == ColumnType.TIMESTAMP_WITH_TIME_ZONE
                 || columnType == ColumnType.DATE;
     }
 

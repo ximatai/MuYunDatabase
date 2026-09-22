@@ -34,6 +34,7 @@
 1. Jdbi SQL 注解报错可读：参数名、方法签名、SQL 片段、建议修复动作清晰可见。
 2. 示例可照抄：提供 3 组标准样板（开箱 CRUD、事务回滚、特例 SQL）。
 3. 文档一致性：示例代码与仓库 sample 保持可编译一致。
+4. 受治理的数据迁移：提供可 dry-run、带 checksum、执行历史和并发锁的 SQL migration；第一阶段不接受不可审计的任意 Java callback migration。
 
 ### P2
 

@@ -5,6 +5,13 @@ import net.ximatai.muyun.database.core.IMetaDataLoader;
 import net.ximatai.muyun.database.core.builder.Column;
 import net.ximatai.muyun.database.core.builder.ColumnType;
 import net.ximatai.muyun.database.core.builder.TableWrapper;
+import net.ximatai.muyun.database.core.builder.ForeignKeyAction;
+import net.ximatai.muyun.database.core.builder.ForeignKeyConstraint;
+import net.ximatai.muyun.database.core.builder.Index;
+import net.ximatai.muyun.database.core.builder.IndexColumn;
+import net.ximatai.muyun.database.core.builder.IndexSortDirection;
+import net.ximatai.muyun.database.core.builder.PrimaryKeyConstraint;
+import net.ximatai.muyun.database.core.builder.UniqueConstraint;
 import net.ximatai.muyun.database.core.metadata.DBColumn;
 import net.ximatai.muyun.database.core.metadata.DBIndex;
 import net.ximatai.muyun.database.core.metadata.DBInfo;
@@ -24,6 +31,81 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SchemaManagerTest {
+
+    @Test
+    void shouldPlanPostgresNativeTypesAndRichConstraints() {
+        FakeOperations operations = new FakeOperations(new DBInfo("POSTGRESQL"));
+        Index active = Index.of(List.of(IndexColumn.asc("tenant_id"), IndexColumn.desc("created_at")), true)
+                .named("ux_contract_active")
+                .predicate("status in ('ACTIVE')");
+        TableWrapper table = TableWrapper.withName("contract")
+                .setSchema("public")
+                .addColumn(Column.of("tenant_id").setType(ColumnType.VARCHAR).setLength(64).setNullable(false))
+                .addColumn(Column.of("id").setType(ColumnType.UUID).setNullable(false))
+                .addColumn(Column.of("created_at").setType(ColumnType.TIMESTAMP_WITH_TIME_ZONE).setNullable(false))
+                .addColumn(Column.of("latitude").setType(ColumnType.DOUBLE).setNullable(false))
+                .addColumn(Column.of("status").setType(ColumnType.VARCHAR).setLength(32).setNullable(false))
+                .setPrimaryKey(PrimaryKeyConstraint.named("pk_contract", "tenant_id", "id"))
+                .addUniqueConstraint(UniqueConstraint.named("uk_contract_id", "id"))
+                .addForeignKey(ForeignKeyConstraint.named(
+                        "fk_contract_parent", List.of("tenant_id"), "tenant", List.of("id"), ForeignKeyAction.CASCADE))
+                .addIndex(active);
+
+        MigrationResult result = new SchemaManager(operations).ensureTable(table, MigrationOptions.dryRun());
+
+        assertTrue(result.getStatements().stream().anyMatch(sql -> sql.contains("\"id\" uuid")));
+        assertTrue(result.getStatements().stream().anyMatch(sql -> sql.contains("timestamp with time zone")));
+        assertTrue(result.getStatements().stream().anyMatch(sql -> sql.contains("double precision")));
+        assertTrue(result.getStatements().stream().anyMatch(sql -> sql.contains("primary key (\"tenant_id\", \"id\")")));
+        assertTrue(result.getStatements().stream().anyMatch(sql -> sql.contains("constraint \"uk_contract_id\" unique")));
+        assertTrue(result.getStatements().stream().anyMatch(sql -> sql.contains("on delete CASCADE")));
+        assertTrue(result.getStatements().stream().anyMatch(sql ->
+                sql.contains("\"tenant_id\" ASC,\"created_at\" DESC") && sql.contains(" where status in ('ACTIVE')")));
+    }
+
+    @Test
+    void shouldExecuteExactlyThePlannedStatements() {
+        FakeOperations operations = new FakeOperations(new DBInfo("POSTGRESQL"));
+        TableWrapper table = TableWrapper.withName("contract")
+                .setPrimaryKey(Column.of("id").setType(ColumnType.UUID).setPrimaryKey());
+
+        MigrationResult result = new SchemaManager(operations).ensureTable(table, MigrationOptions.execute());
+
+        assertEquals(result.getStatements(), operations.executedSql);
+        assertTrue(result.getChanges().stream().anyMatch(change -> change.getType() == MigrationChange.Type.ADD_PRIMARY_KEY));
+    }
+
+    @Test
+    void shouldRebuildIndexWhenColumnDirectionDiffers() {
+        FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("POSTGRESQL"));
+        existingInfo(loader);
+        loader.columns.get("public.contract").put("created_at", aliasedColumn("created_at", "timestamp", null));
+        DBIndex actual = new DBIndex().setName("ix_contract_created");
+        actual.addColumn("created_at", IndexSortDirection.ASC, 1);
+        loader.indexes.put("public.contract", List.of(actual));
+        FakeOperations operations = new FakeOperations(loader);
+        TableWrapper table = TableWrapper.withName("contract")
+                .setPrimaryKey(Column.of("id").setType(ColumnType.VARCHAR).setLength(32).setPrimaryKey())
+                .addColumn(Column.of("created_at").setType(ColumnType.TIMESTAMP))
+                .addIndex(Index.of(List.of(IndexColumn.desc("created_at")), false).named("ix_contract_created"));
+
+        MigrationResult result = new SchemaManager(operations).ensureTable(table, MigrationOptions.dryRun());
+
+        assertTrue(result.getChanges().stream().anyMatch(change -> change.getType() == MigrationChange.Type.DROP_INDEX));
+        assertTrue(result.getChanges().stream().anyMatch(change -> change.getType() == MigrationChange.Type.CREATE_INDEX));
+    }
+
+    @Test
+    void shouldRejectPartialIndexOnMysqlInsteadOfDowngradingIt() {
+        FakeOperations operations = new FakeOperations(new DBInfo("MYSQL"));
+        TableWrapper table = TableWrapper.withName("contract")
+                .setSchema("app")
+                .addColumn(Column.of("id").setType(ColumnType.VARCHAR))
+                .addIndex(new Index("id", true).named("ux_contract_active").predicate("id is not null"));
+
+        assertThrows(OrmException.class,
+                () -> new SchemaManager(operations).ensureTable(table, MigrationOptions.dryRun()));
+    }
 
     @Test
     void shouldPlanTableWrapperMigrationWithoutExecutingDryRun() {

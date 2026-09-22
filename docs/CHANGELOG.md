@@ -7,11 +7,19 @@
 ### 新增
 
 - `Criteria` / `CriteriaGroup` 新增 `likeIgnoreCase` 与 `orLikeIgnoreCase`，统一提供 PostgreSQL/MySQL 大小写无关模糊匹配；编译器继续负责逻辑字段到物理列解析和参数绑定。
+- 新增 programmatic schema 的原生 `UUID`、`TIMESTAMP_WITH_TIME_ZONE` 和 `DOUBLE` 类型。
+- 新增复合主键、命名唯一约束、单列/复合外键及 `ON DELETE` 行为描述。
+- 索引模型新增有序列、`ASC/DESC` 和 PostgreSQL predicate；非 PostgreSQL 数据库不再静默降级条件索引。
+- Spring Boot starter 新增 `MuYunSchemaContributor + ManagedTable` 技术表注册入口，支持显式依赖、外键依赖推导、拓扑排序，以及默认事务感知配置下的 PostgreSQL 多实例迁移锁。
+- `MigrationChange` 新增风险等级：安全增量、需要数据校验、破坏性变更。
 - 新增运行态单表聚合能力：`AggregateQuery` 支持 `COUNT/SUM/AVG/MIN/MAX` 与 `GROUP BY`，`AggregateResult/AggregateRow` 提供带投影定义的结构化结果，`AggregateQuery.builder()` 提供 fluent 构造方式。
 - 聚合能力矩阵按 `TableMeta` 校验字段类型，并在 PostgreSQL/MySQL 实际数据库中验证数值、空集、日期、时间戳、布尔分组与自定义 codec 语义。
 
 ### 变更
 
+- `SchemaManager` 现在直接执行已生成的 `MigrationPlan`，dry-run、strict 判断、审计结果与实际执行 SQL 使用同一事实源。
+- 索引差异比较改为保留列顺序、排序方向、唯一性、名称和 predicate，不再使用无序列集合比较。
+- PostgreSQL 元数据加载补齐主键、唯一约束、外键、索引方向与条件索引 predicate。
 - 聚合执行现在强制要求 `RuntimeTableGateway + TableMeta`，不再允许旧单向 `CriteriaColumnResolver` 路径绕过字段类型、codec 与方言能力治理。
 - `aggregateResult` 成为正式聚合入口；Map 返回的 `aggregate` 已标记为废弃。`COUNT` 归一为 `Long`，`SUM/AVG` 归一为 `BigDecimal`。
 
