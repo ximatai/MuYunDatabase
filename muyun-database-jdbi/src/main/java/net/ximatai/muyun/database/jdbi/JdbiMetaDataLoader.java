@@ -151,6 +151,7 @@ public class JdbiMetaDataLoader implements IMetaDataLoader {
                 } else {
                     schemaPattern = schema;
                 }
+                Set<String> constraintOwnedIndexes = loadConstraintOwnedIndexNames(handle, schema, table);
 
                 // 获取索引信息
                 try (ResultSet rs = metaData.getIndexInfo(catalog, schemaPattern, table, false, false)) {
@@ -159,8 +160,7 @@ public class JdbiMetaDataLoader implements IMetaDataLoader {
                         if (indexName == null) {
                             continue;
                         }
-                        // 跳过主键索引
-                        if (indexName.endsWith("_pkey") || indexName.equalsIgnoreCase("PRIMARY")) {
+                        if (constraintOwnedIndexes.contains(indexName)) {
                             continue;
                         }
 
@@ -208,6 +208,41 @@ public class JdbiMetaDataLoader implements IMetaDataLoader {
             }
         });
         return List.copyOf(indexesByName.values());
+    }
+
+    private Set<String> loadConstraintOwnedIndexNames(Handle handle, String schema, String table) {
+        if (info.getDatabaseType() == DBInfo.Type.MYSQL) {
+            // MySQL does not distinguish a UNIQUE constraint from its UNIQUE index.
+            // PRIMARY is the only index that is always owned by a table constraint.
+            return new HashSet<>(handle.createQuery("""
+                            select constraint_name
+                            from information_schema.table_constraints
+                            where table_schema = :schema
+                              and table_name = :table
+                              and constraint_type = 'PRIMARY KEY'
+                            """)
+                    .bind("schema", schema)
+                    .bind("table", table)
+                    .mapTo(String.class)
+                    .list());
+        }
+        if ("PostgreSQL".equalsIgnoreCase(info.getTypeName())) {
+            return new HashSet<>(handle.createQuery("""
+                            select idx.relname
+                            from pg_constraint constraint_def
+                            join pg_class tbl on tbl.oid = constraint_def.conrelid
+                            join pg_namespace ns on ns.oid = tbl.relnamespace
+                            join pg_class idx on idx.oid = constraint_def.conindid
+                            where ns.nspname = :schema
+                              and tbl.relname = :table
+                              and constraint_def.contype in ('p', 'u', 'x')
+                            """)
+                    .bind("schema", schema)
+                    .bind("table", table)
+                    .mapTo(String.class)
+                    .list());
+        }
+        return Set.of();
     }
 
     @Override
@@ -311,6 +346,7 @@ public class JdbiMetaDataLoader implements IMetaDataLoader {
         return switch (rule) {
             case DatabaseMetaData.importedKeyCascade -> ForeignKeyAction.CASCADE;
             case DatabaseMetaData.importedKeySetNull -> ForeignKeyAction.SET_NULL;
+            case DatabaseMetaData.importedKeySetDefault -> ForeignKeyAction.SET_DEFAULT;
             case DatabaseMetaData.importedKeyRestrict -> ForeignKeyAction.RESTRICT;
             default -> ForeignKeyAction.NO_ACTION;
         };

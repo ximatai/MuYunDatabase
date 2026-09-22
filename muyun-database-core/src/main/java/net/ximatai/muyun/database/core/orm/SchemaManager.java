@@ -36,10 +36,27 @@ public class SchemaManager {
         if (safeOptions.isDryRun()) {
             return new MigrationResult(true, true, plan.getChanges());
         }
-        for (MigrationChange change : plan.getChanges()) {
-            operations.execute(change.getSql());
+        Throwable executionFailure = null;
+        try {
+            for (MigrationChange change : plan.getChanges()) {
+                operations.execute(change.getSql());
+            }
+        } catch (RuntimeException | Error failure) {
+            executionFailure = failure;
+            throw failure;
+        } finally {
+            // Some databases auto-commit DDL. If a later statement fails, the
+            // metadata snapshot must still be discarded before a retry plans
+            // against the partially-applied schema.
+            try {
+                operations.getMetaDataLoader().resetInfo();
+            } catch (RuntimeException | Error resetFailure) {
+                if (executionFailure == null) {
+                    throw resetFailure;
+                }
+                executionFailure.addSuppressed(resetFailure);
+            }
         }
-        operations.getMetaDataLoader().resetInfo();
         return new MigrationResult(true, false, plan.getChanges());
     }
 

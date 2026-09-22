@@ -142,11 +142,11 @@ public class MuYunDatabaseAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public MuYunSchemaMigrationCoordinator muYunSchemaMigrationCoordinator(
-            IDatabaseOperations<?> operations,
+            DataSource dataSource,
             TransactionTemplate transactionTemplate,
             MuYunDatabaseProperties properties) {
         return new MuYunSchemaMigrationCoordinator(
-                operations,
+                dataSource,
                 transactionTemplate,
                 properties.isTransactionAwareDataSource()
         );
@@ -156,8 +156,9 @@ public class MuYunDatabaseAutoConfiguration {
     @ConditionalOnMissingBean
     public MuYunSchemaManager muYunSchemaManager(SimpleEntityManager entityManager,
                                                  MigrationOptions migrationOptions,
-                                                 IDatabaseOperations<?> operations) {
-        return new MuYunSchemaManager(entityManager, migrationOptions, operations);
+                                                 IDatabaseOperations<?> operations,
+                                                 EntityMetaResolver entityMetaResolver) {
+        return new MuYunSchemaManager(entityManager, migrationOptions, operations, entityMetaResolver);
     }
 
     @Bean

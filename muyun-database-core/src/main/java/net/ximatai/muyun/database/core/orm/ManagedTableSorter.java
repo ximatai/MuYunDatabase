@@ -18,7 +18,12 @@ public final class ManagedTableSorter {
     }
 
     public static List<ManagedTable> sort(Collection<ManagedTable> tables) {
+        return sort(tables, "");
+    }
+
+    public static List<ManagedTable> sort(Collection<ManagedTable> tables, String defaultSchema) {
         Objects.requireNonNull(tables, "managed tables must not be null");
+        String normalizedDefaultSchema = defaultSchema == null ? "" : defaultSchema;
         LinkedHashMap<String, ManagedTable> byId = new LinkedHashMap<>();
         Map<String, String> idByQualifiedTable = new HashMap<>();
         for (ManagedTable table : tables) {
@@ -26,7 +31,7 @@ public final class ManagedTableSorter {
             if (byId.putIfAbsent(table.id(), table) != null) {
                 throw new OrmException(OrmException.Code.INVALID_MAPPING, "duplicate managed table id: " + table.id());
             }
-            String schema = table.table().getSchema() == null ? "" : table.table().getSchema();
+            String schema = effectiveSchema(table.table().getSchema(), normalizedDefaultSchema);
             String qualifiedTable = schema + "." + table.table().getName();
             String existingId = idByQualifiedTable.putIfAbsent(qualifiedTable, table.id());
             if (existingId != null) {
@@ -38,9 +43,9 @@ public final class ManagedTableSorter {
         Map<String, Set<String>> dependencies = new LinkedHashMap<>();
         for (ManagedTable table : tables) {
             LinkedHashSet<String> resolved = new LinkedHashSet<>(table.dependsOn());
-            String localSchema = table.table().getSchema() == null ? "" : table.table().getSchema();
+            String localSchema = effectiveSchema(table.table().getSchema(), normalizedDefaultSchema);
             for (ForeignKeyConstraint foreignKey : table.table().getForeignKeys()) {
-                String referencedSchema = foreignKey.referencedSchema() == null ? localSchema : foreignKey.referencedSchema();
+                String referencedSchema = effectiveSchema(foreignKey.referencedSchema(), localSchema);
                 String dependency = idByQualifiedTable.get(referencedSchema + "." + foreignKey.referencedTable());
                 if (dependency != null && !dependency.equals(table.id())) {
                     resolved.add(dependency);
@@ -62,6 +67,10 @@ public final class ManagedTableSorter {
             visit(id, byId, dependencies, visiting, visited, ordered);
         }
         return List.copyOf(ordered);
+    }
+
+    private static String effectiveSchema(String schema, String fallback) {
+        return schema == null || schema.isBlank() ? fallback : schema;
     }
 
     private static void visit(String id,

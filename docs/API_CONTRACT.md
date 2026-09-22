@@ -77,7 +77,7 @@ int upsert(T entity);
 1. 非实体技术表可由 Spring Bean 实现 `MuYunSchemaContributor` 注册，不要求声明 `EntityDao` Repository。
 2. contributor 返回 `ManagedTable`，以稳定 ID 和 `dependsOn` 声明显式依赖；同一批表之间的外键依赖会自动推导。
 3. 重复 ID、重复物理表声明、未知依赖和循环依赖会在执行 DDL 前失败。
-4. contributor 与 Repository 表结构使用相同的 `MigrationOptions`。启用默认的 `transaction-aware-data-source` 时，PostgreSQL APPLY 模式会在同一事务内持有 advisory transaction lock，避免多实例同时规划和执行；显式关闭该配置即表示放弃事务协调与该锁保证。
+4. contributor 与 Repository 表结构会合并为同一批 `ManagedTable`，统一进行物理表查重、依赖排序和迁移，并使用相同的 `MigrationOptions`。PostgreSQL APPLY 模式通过独立 JDBC 会话持有 session advisory lock，覆盖完整的规划和执行过程；启用默认的 `transaction-aware-data-source` 时，实际迁移动作还会由 Spring 事务包裹。显式关闭该配置只放弃事务包裹，不影响多实例互斥锁。由于锁会话和迁移会话相互独立，PostgreSQL 连接池必须至少允许同时使用两个连接。
 5. programmatic schema 支持显式 `UUID`、`TIMESTAMP_WITH_TIME_ZONE`、`DOUBLE`、复合主键、命名唯一约束、单列/复合外键、索引排序方向和 PostgreSQL 条件索引。
 6. PostgreSQL 专有条件索引在其他数据库上必须明确失败，不做语义降级。
 7. 为保持兼容，本版本不会改变 `UUID`、`Instant`、`Double` 的实体字段默认类型推断；需要原生物理类型时必须显式声明 `ColumnType`。

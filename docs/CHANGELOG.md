@@ -20,6 +20,8 @@
 - `SchemaManager` 现在直接执行已生成的 `MigrationPlan`，dry-run、strict 判断、审计结果与实际执行 SQL 使用同一事实源。
 - 索引差异比较改为保留列顺序、排序方向、唯一性、名称和 predicate，不再使用无序列集合比较。
 - PostgreSQL 元数据加载补齐主键、唯一约束、外键、索引方向与条件索引 predicate。
+- Spring 启动结构拉齐将 contributor 与 Repository 表纳入统一依赖图；PostgreSQL 多实例迁移由独立会话持有 advisory lock，迁移失败后也会可靠释放。
+- 索引迁移按确定性名称识别，并排除 PostgreSQL 约束拥有的 backing index；名称冲突与不支持的语义改为明确失败，不再静默跳过或随机替换同列索引。
 - 聚合执行现在强制要求 `RuntimeTableGateway + TableMeta`，不再允许旧单向 `CriteriaColumnResolver` 路径绕过字段类型、codec 与方言能力治理。
 - `aggregateResult` 成为正式聚合入口；Map 返回的 `aggregate` 已标记为废弃。`COUNT` 归一为 `Long`，`SUM/AVG` 归一为 `BigDecimal`。
 

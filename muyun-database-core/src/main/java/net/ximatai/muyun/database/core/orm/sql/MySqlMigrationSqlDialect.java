@@ -16,7 +16,7 @@ public class MySqlMigrationSqlDialect implements MigrationSqlDialect {
 
     @Override
     public String setTableComment(String schemaDotTable, String comment) {
-        return "alter table " + schemaDotTable + " comment '" + comment + "'";
+        return "alter table " + schemaDotTable + " comment " + MigrationSqlDialect.stringLiteral(comment);
     }
 
     @Override
@@ -46,7 +46,8 @@ public class MySqlMigrationSqlDialect implements MigrationSqlDialect {
 
     @Override
     public String setColumnComment(String schemaDotTable, String columnName, String comment, String columnDefinition) {
-        return "alter table " + schemaDotTable + " modify column " + columnDefinition + " COMMENT '" + comment + "'";
+        return "alter table " + schemaDotTable + " modify column " + columnDefinition + " COMMENT "
+                + MigrationSqlDialect.stringLiteral(comment);
     }
 
     @Override

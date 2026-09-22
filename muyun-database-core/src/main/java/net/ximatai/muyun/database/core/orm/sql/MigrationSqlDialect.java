@@ -42,13 +42,25 @@ public interface MigrationSqlDialect {
         return createIndex(schemaDotTable, indexName, columns, unique);
     }
 
-    String addConstraint(String schemaDotTable, String constraintName, String definition);
+    default String addConstraint(String schemaDotTable, String constraintName, String definition) {
+        throw new UnsupportedOperationException("constraints are not supported by this database dialect");
+    }
 
-    String dropPrimaryKey(String schemaDotTable, String constraintName);
+    default String dropPrimaryKey(String schemaDotTable, String constraintName) {
+        throw new UnsupportedOperationException("primary-key migration is not supported by this database dialect");
+    }
 
-    String dropUniqueConstraint(String schemaDotTable, String constraintName);
+    default String dropUniqueConstraint(String schemaDotTable, String constraintName) {
+        throw new UnsupportedOperationException("unique-constraint migration is not supported by this database dialect");
+    }
 
-    String dropForeignKey(String schemaDotTable, String constraintName);
+    default String dropForeignKey(String schemaDotTable, String constraintName) {
+        throw new UnsupportedOperationException("foreign-key migration is not supported by this database dialect");
+    }
+
+    static String stringLiteral(String value) {
+        return "'" + value.replace("'", "''") + "'";
+    }
 
     String dropTempColumn(String schemaDotTable);
 }

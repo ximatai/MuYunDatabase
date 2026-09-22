@@ -9,6 +9,8 @@ import net.ximatai.muyun.database.core.orm.sql.MySqlMigrationSqlDialect;
 import net.ximatai.muyun.database.core.orm.sql.PostgresMigrationSqlDialect;
 
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 class SchemaMigrationPlanner {
 
@@ -54,6 +56,9 @@ class SchemaMigrationPlanner {
 
     private void planForNewTable(String schema, String table, TableWrapper wrapper, PlanBuilder builder) {
         String schemaDotTable = SchemaBuildRules.qualifiedName(schema, table, getDatabaseType());
+        Set<String> inheritedColumns = getDatabaseType() == DBInfo.Type.POSTGRESQL
+                ? inheritedColumnNames(wrapper, schema)
+                : Set.of();
         builder.addAdditive(MigrationChange.Type.CREATE_TABLE, schemaDotTable,
                 dialect.createTableWithTempColumn(schemaDotTable, inheritanceClause(wrapper, schema)));
 
@@ -61,7 +66,7 @@ class SchemaMigrationPlanner {
             builder.addAdditive(MigrationChange.Type.SET_TABLE_COMMENT, schemaDotTable, dialect.setTableComment(schemaDotTable, wrapper.getComment()));
         }
 
-        if (wrapper.getPrimaryKey() != null) {
+        if (wrapper.getPrimaryKey() != null && !inheritedColumns.contains(wrapper.getPrimaryKey().getName())) {
             String type = resolveColumnType(wrapper.getPrimaryKey());
             builder.addAdditive(MigrationChange.Type.ADD_COLUMN, wrapper.getPrimaryKey().getName(), dialect.addColumn(schemaDotTable, buildColumnString(wrapper.getPrimaryKey(), type)));
             planNewColumnComment(schemaDotTable, wrapper.getPrimaryKey(), type, builder);
@@ -72,6 +77,7 @@ class SchemaMigrationPlanner {
         }
 
         for (Column column : wrapper.getColumns()) {
+            if (inheritedColumns.contains(column.getName())) continue;
             String type = resolveColumnType(column);
             builder.addAdditive(MigrationChange.Type.ADD_COLUMN, column.getName(), dialect.addColumn(schemaDotTable, buildColumnString(column, type)));
             planNewColumnComment(schemaDotTable, column, type, builder);
@@ -134,36 +140,10 @@ class SchemaMigrationPlanner {
             checkAndPlanDropIndex(table, index, builder);
         }
 
-        planObsoleteUniqueIndexes(table, wrapper, builder);
-
         for (Index index : wrapper.getIndexes()) {
             checkAndPlanIndex(table, index, builder);
         }
         planMissingInheritance(table, wrapper, builder);
-    }
-
-    private void planObsoleteUniqueIndexes(DBTable table, TableWrapper wrapper, PlanBuilder builder) {
-        List<List<String>> targetUniqueColumnSets = wrapper.getIndexes().stream()
-                .filter(Index::isUnique)
-                .map(Index::getColumns)
-                .toList();
-        for (DBIndex dbIndex : table.getIndexList()) {
-            if (!dbIndex.isUnique()) {
-                continue;
-            }
-            List<String> existingColumns = dbIndex.getColumns();
-            boolean stillTargeted = targetUniqueColumnSets.stream().anyMatch(existingColumns::equals);
-            boolean replacedByWiderUnique = targetUniqueColumnSets.stream()
-                    .anyMatch(targetColumns -> targetColumns.size() > existingColumns.size()
-                            && targetColumns.subList(targetColumns.size() - existingColumns.size(), targetColumns.size()).equals(existingColumns));
-            if (!stillTargeted && replacedByWiderUnique) {
-                builder.addNonAdditive(MigrationChange.Type.DROP_INDEX, dbIndex.getName(), dialect.dropIndex(
-                        SchemaBuildRules.quoteIdentifier(table.getSchema(), getDatabaseType()),
-                        SchemaBuildRules.qualifiedName(table.getSchema(), table.getName(), getDatabaseType()),
-                        SchemaBuildRules.quoteIdentifier(dbIndex.getName(), getDatabaseType())
-                ));
-            }
-        }
     }
 
     private void checkAndPlanDropColumn(DBTable table, String columnName, PlanBuilder builder) {
@@ -178,10 +158,10 @@ class SchemaMigrationPlanner {
     }
 
     private void checkAndPlanDropIndex(DBTable table, Index index, PlanBuilder builder) {
-        List<String> targetColumns = index.getColumns();
-        targetColumns.forEach(name -> assertValidIdentifier(name, "index column"));
+        index.getColumns().forEach(name -> assertValidIdentifier(name, "index column"));
+        String expectedName = SchemaBuildRules.indexName(table.getName(), index);
         table.getIndexList().stream()
-                .filter(i -> i.getColumns().equals(targetColumns))
+                .filter(i -> expectedName.equalsIgnoreCase(i.getName()))
                 .findFirst()
                 .ifPresent(dbIndex -> builder.addNonAdditive(MigrationChange.Type.DROP_INDEX, dbIndex.getName(), dialect.dropIndex(
                         SchemaBuildRules.quoteIdentifier(table.getSchema(), getDatabaseType()),
@@ -240,10 +220,14 @@ class SchemaMigrationPlanner {
         targetColumns.forEach(name -> assertValidIdentifier(name, "index column"));
         String expectedName = SchemaBuildRules.indexName(table.getName(), index);
         Optional<DBIndex> hit = table.getIndexList().stream()
-                .filter(i -> index.getName() != null
-                        ? expectedName.equalsIgnoreCase(i.getName())
-                        : i.getColumns().equals(targetColumns))
+                .filter(i -> expectedName.equalsIgnoreCase(i.getName()))
                 .findFirst();
+        if (hit.isEmpty() && index.getName() == null) {
+            String previousGeneratedName = autoGeneratedCounterpartName(table.getName(), index);
+            hit = table.getIndexList().stream()
+                    .filter(i -> previousGeneratedName.equalsIgnoreCase(i.getName()))
+                    .findFirst();
+        }
 
         if (hit.isPresent()) {
             DBIndex dbIndex = hit.get();
@@ -307,37 +291,193 @@ class SchemaMigrationPlanner {
         return normalizePredicate(actual.getPredicate()).equals(normalizePredicate(expected.getPredicate()));
     }
 
+    private static final String SQL_IDENTIFIER = "(?:\"(?:\"\"|[^\"])+\"|[A-Za-z_][A-Za-z0-9_]*)";
+    private static final Pattern SIMPLE_IN_PREDICATE = Pattern.compile(
+            "^(" + SQL_IDENTIFIER + ")\\s+in\\s*\\((.*)\\)$", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    private static final Pattern SIMPLE_ANY_PREDICATE = Pattern.compile(
+            "^\\(?(" + SQL_IDENTIFIER + ")\\)?(?:\\s*::\\s*[A-Za-z_][A-Za-z0-9_ ]*)?\\s*=\\s*any\\s*\\((.*)\\)$",
+            Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    private static final Pattern ARRAY_EXPRESSION = Pattern.compile(
+            "^\\(?\\s*array\\s*\\[(.*?)]\\s*\\)?(?:\\s*::\\s*[A-Za-z_][A-Za-z0-9_ ]*\\[\\])?$",
+            Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    private static final Pattern POSTGRES_TYPE_CAST = Pattern.compile(
+            "^::\\s*(?:character varying|timestamp (?:with|without) time zone|double precision|[a-z_][a-z0-9_]*)(?:\\[\\])?",
+            Pattern.CASE_INSENSITIVE);
+
     private String normalizePredicate(String predicate) {
         if (predicate == null || predicate.isBlank()) {
             return "";
         }
-        String normalized = predicate.trim().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
-        if (normalized.contains(" in ") || normalized.contains("= any")) {
-            java.util.regex.Matcher fieldMatcher = java.util.regex.Pattern
-                    .compile("[a-z_][a-z0-9_]*")
-                    .matcher(normalized);
-            java.util.regex.Matcher literalMatcher = java.util.regex.Pattern
-                    .compile("'((?:''|[^'])*)'")
-                    .matcher(normalized);
-            if (fieldMatcher.find()) {
-                List<String> literals = new ArrayList<>();
-                while (literalMatcher.find()) {
-                    literals.add(literalMatcher.group(1));
-                }
-                if (!literals.isEmpty()) {
-                    return fieldMatcher.group() + " in (" + String.join(",", literals) + ")";
-                }
+        String normalized = stripOuterParentheses(removePostgresTypeCasts(normalizeSqlOutsideLiterals(predicate)));
+        Matcher inMatcher = SIMPLE_IN_PREDICATE.matcher(normalized);
+        if (inMatcher.matches()) {
+            List<String> literals = parseStringLiteralList(inMatcher.group(2));
+            if (literals != null) {
+                return canonicalIdentifier(inMatcher.group(1)) + " in (" + String.join(",", literals) + ")";
             }
         }
-        normalized = normalized.replaceAll("::[a-z ]+(?:\\[\\])?", "");
-        while (normalized.startsWith("(") && normalized.endsWith(")")) {
-            normalized = normalized.substring(1, normalized.length() - 1).trim();
+        Matcher anyMatcher = SIMPLE_ANY_PREDICATE.matcher(normalized);
+        if (anyMatcher.matches()) {
+            Matcher arrayMatcher = ARRAY_EXPRESSION.matcher(anyMatcher.group(2).trim());
+            if (arrayMatcher.matches()) {
+                List<String> literals = parseStringLiteralList(arrayMatcher.group(1));
+                if (literals != null) {
+                    return canonicalIdentifier(anyMatcher.group(1)) + " in (" + String.join(",", literals) + ")";
+                }
+            }
         }
         return normalized;
     }
 
+    private String normalizeSqlOutsideLiterals(String sql) {
+        StringBuilder result = new StringBuilder(sql.length());
+        boolean singleQuoted = false;
+        boolean doubleQuoted = false;
+        boolean pendingWhitespace = false;
+        for (int i = 0; i < sql.length(); i++) {
+            char ch = sql.charAt(i);
+            if (singleQuoted) {
+                result.append(ch);
+                if (ch == '\'' && i + 1 < sql.length() && sql.charAt(i + 1) == '\'') {
+                    result.append(sql.charAt(++i));
+                } else if (ch == '\'') {
+                    singleQuoted = false;
+                }
+                continue;
+            }
+            if (doubleQuoted) {
+                result.append(ch);
+                if (ch == '"' && i + 1 < sql.length() && sql.charAt(i + 1) == '"') {
+                    result.append(sql.charAt(++i));
+                } else if (ch == '"') {
+                    doubleQuoted = false;
+                }
+                continue;
+            }
+            if (Character.isWhitespace(ch)) {
+                pendingWhitespace = result.length() > 0;
+                continue;
+            }
+            if (pendingWhitespace) {
+                result.append(' ');
+                pendingWhitespace = false;
+            }
+            if (ch == '\'') {
+                singleQuoted = true;
+                result.append(ch);
+            } else if (ch == '"') {
+                doubleQuoted = true;
+                result.append(ch);
+            } else {
+                result.append(Character.toLowerCase(ch));
+            }
+        }
+        return result.toString().trim();
+    }
+
+    private String stripOuterParentheses(String expression) {
+        String result = expression.trim();
+        while (result.startsWith("(") && result.endsWith(")") && enclosesWholeExpression(result)) {
+            result = result.substring(1, result.length() - 1).trim();
+        }
+        return result;
+    }
+
+    private String removePostgresTypeCasts(String expression) {
+        StringBuilder result = new StringBuilder(expression.length());
+        boolean quoted = false;
+        for (int i = 0; i < expression.length(); ) {
+            char ch = expression.charAt(i);
+            if (ch == '\'') {
+                result.append(ch);
+                if (quoted && i + 1 < expression.length() && expression.charAt(i + 1) == '\'') {
+                    result.append(expression.charAt(i + 1));
+                    i += 2;
+                    continue;
+                }
+                quoted = !quoted;
+                i++;
+                continue;
+            }
+            if (!quoted && ch == ':' && i + 1 < expression.length() && expression.charAt(i + 1) == ':') {
+                Matcher cast = POSTGRES_TYPE_CAST.matcher(expression.substring(i));
+                if (cast.find()) {
+                    i += cast.end();
+                    continue;
+                }
+            }
+            result.append(ch);
+            i++;
+        }
+        return result.toString().trim();
+    }
+
+    private boolean enclosesWholeExpression(String expression) {
+        int depth = 0;
+        boolean quoted = false;
+        for (int i = 0; i < expression.length(); i++) {
+            char ch = expression.charAt(i);
+            if (ch == '\'') {
+                if (quoted && i + 1 < expression.length() && expression.charAt(i + 1) == '\'') {
+                    i++;
+                    continue;
+                }
+                quoted = !quoted;
+            } else if (!quoted && ch == '(') {
+                depth++;
+            } else if (!quoted && ch == ')' && --depth == 0 && i < expression.length() - 1) {
+                return false;
+            }
+        }
+        return depth == 0 && !quoted;
+    }
+
+    private List<String> parseStringLiteralList(String expression) {
+        List<String> literals = new ArrayList<>();
+        int position = 0;
+        while (position < expression.length()) {
+            while (position < expression.length() && Character.isWhitespace(expression.charAt(position))) position++;
+            if (position >= expression.length() || expression.charAt(position) != '\'') return null;
+            int start = position++;
+            boolean closed = false;
+            while (position < expression.length()) {
+                if (expression.charAt(position) == '\'') {
+                    if (position + 1 < expression.length() && expression.charAt(position + 1) == '\'') {
+                        position += 2;
+                    } else {
+                        position++;
+                        closed = true;
+                        break;
+                    }
+                } else {
+                    position++;
+                }
+            }
+            if (!closed) return null;
+            literals.add(expression.substring(start, position));
+            while (position < expression.length() && Character.isWhitespace(expression.charAt(position))) position++;
+            if (position + 1 < expression.length() && expression.startsWith("::", position)) {
+                position += 2;
+                while (position < expression.length() && expression.charAt(position) != ',') position++;
+            }
+            while (position < expression.length() && Character.isWhitespace(expression.charAt(position))) position++;
+            if (position == expression.length()) break;
+            if (expression.charAt(position++) != ',') return null;
+        }
+        return literals.isEmpty() ? null : literals;
+    }
+
+    private String canonicalIdentifier(String identifier) {
+        return identifier.startsWith("\"") ? identifier : identifier.toLowerCase(Locale.ROOT);
+    }
+
     private String indexTarget(String tableName, Index index) {
         return SchemaBuildRules.indexName(tableName, index);
+    }
+
+    private String autoGeneratedCounterpartName(String tableName, Index index) {
+        return tableName + "_" + String.join("_", index.getColumns())
+                + (index.isUnique() ? "_index" : "_uindex");
     }
 
     private String inheritanceClause(TableWrapper wrapper, String defaultSchema) {
@@ -483,7 +623,7 @@ class SchemaMigrationPlanner {
                         && Objects.equals(actual.referencedSchema(), referencedSchema)
                         && actual.referencedTable().equalsIgnoreCase(expected.referencedTable())
                         && actual.referencedColumns().equals(expected.referencedColumns())
-                        && actual.onDelete() == expected.onDelete()).isPresent();
+                        && sameForeignKeyAction(actual.onDelete(), expected.onDelete())).isPresent();
         if (aligned) {
             return;
         }
@@ -530,13 +670,17 @@ class SchemaMigrationPlanner {
 
     private void validateModel(TableWrapper wrapper, String defaultSchema) {
         LinkedHashSet<String> columns = new LinkedHashSet<>();
+        columns.addAll(inheritedColumnNames(wrapper, defaultSchema));
+        LinkedHashSet<String> declaredColumns = new LinkedHashSet<>();
         if (wrapper.getPrimaryKey() != null) {
+            declaredColumns.add(wrapper.getPrimaryKey().getName());
             columns.add(wrapper.getPrimaryKey().getName());
         }
         wrapper.getColumns().forEach(column -> {
-            if (!columns.add(column.getName())) {
+            if (!declaredColumns.add(column.getName())) {
                 throw new OrmException(OrmException.Code.INVALID_MAPPING, "duplicate column: " + column.getName());
             }
+            columns.add(column.getName());
             validateColumnCapability(column);
         });
         if (wrapper.getPrimaryKey() != null) {
@@ -570,6 +714,34 @@ class SchemaMigrationPlanner {
                 }
             }
         }
+    }
+
+    private Set<String> inheritedColumnNames(TableWrapper wrapper, String defaultSchema) {
+        if (wrapper.getInherits().isEmpty()) {
+            return Set.of();
+        }
+        LinkedHashSet<String> inheritedColumns = new LinkedHashSet<>();
+        for (TableBase parent : wrapper.getInherits()) {
+            String schemaName = parent.getSchema() == null || parent.getSchema().isBlank()
+                    ? defaultSchema
+                    : parent.getSchema();
+            DBSchema schema = info.getSchema(schemaName);
+            if (schema == null || !schema.containsTable(parent.getName())) {
+                throw new OrmException(OrmException.Code.INVALID_MAPPING,
+                        "inherited table does not exist: " + schemaName + "." + parent.getName());
+            }
+            inheritedColumns.addAll(schema.getTable(parent.getName()).getColumnMap().keySet());
+        }
+        return inheritedColumns;
+    }
+
+    private boolean sameForeignKeyAction(ForeignKeyAction actual, ForeignKeyAction expected) {
+        if (actual == expected) {
+            return true;
+        }
+        return getDatabaseType() == DBInfo.Type.MYSQL
+                && EnumSet.of(ForeignKeyAction.NO_ACTION, ForeignKeyAction.RESTRICT).contains(actual)
+                && EnumSet.of(ForeignKeyAction.NO_ACTION, ForeignKeyAction.RESTRICT).contains(expected);
     }
 
     private void validateColumnCapability(Column column) {

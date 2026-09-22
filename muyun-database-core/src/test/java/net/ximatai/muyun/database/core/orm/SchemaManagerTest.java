@@ -5,6 +5,7 @@ import net.ximatai.muyun.database.core.IMetaDataLoader;
 import net.ximatai.muyun.database.core.builder.Column;
 import net.ximatai.muyun.database.core.builder.ColumnType;
 import net.ximatai.muyun.database.core.builder.TableWrapper;
+import net.ximatai.muyun.database.core.builder.TableBase;
 import net.ximatai.muyun.database.core.builder.ForeignKeyAction;
 import net.ximatai.muyun.database.core.builder.ForeignKeyConstraint;
 import net.ximatai.muyun.database.core.builder.Index;
@@ -13,6 +14,7 @@ import net.ximatai.muyun.database.core.builder.IndexSortDirection;
 import net.ximatai.muyun.database.core.builder.PrimaryKeyConstraint;
 import net.ximatai.muyun.database.core.builder.UniqueConstraint;
 import net.ximatai.muyun.database.core.metadata.DBColumn;
+import net.ximatai.muyun.database.core.metadata.DBForeignKey;
 import net.ximatai.muyun.database.core.metadata.DBIndex;
 import net.ximatai.muyun.database.core.metadata.DBInfo;
 import net.ximatai.muyun.database.core.metadata.DBSchema;
@@ -73,6 +75,20 @@ class SchemaManagerTest {
 
         assertEquals(result.getStatements(), operations.executedSql);
         assertTrue(result.getChanges().stream().anyMatch(change -> change.getType() == MigrationChange.Type.ADD_PRIMARY_KEY));
+    }
+
+    @Test
+    void shouldResetMetadataWhenDdlExecutionFails() {
+        FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("POSTGRESQL"));
+        FakeOperations operations = new FakeOperations(loader);
+        operations.failOnExecute = true;
+        TableWrapper table = TableWrapper.withName("contract")
+                .setPrimaryKey(Column.of("id").setType(ColumnType.UUID).setPrimaryKey());
+
+        assertThrows(RuntimeException.class,
+                () -> new SchemaManager(operations).ensureTable(table, MigrationOptions.execute()));
+
+        assertEquals(1, loader.resetCount);
     }
 
     @Test
@@ -146,7 +162,7 @@ class SchemaManagerTest {
     }
 
     @Test
-    void shouldPlanAndExecuteObsoleteUniqueIndexDropWhenReplacedByWiderUniqueIndex() {
+    void shouldNotImplicitlyDropAUniqueIndexWhenAddingAWiderOne() {
         FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("POSTGRESQL"));
         existingInfo(loader);
         loader.columns.get("public.contract").put("tenant_id", varcharColumn("tenant_id", 64));
@@ -161,14 +177,138 @@ class SchemaManagerTest {
 
         MigrationResult dryRun = new SchemaManager(operations).ensureTable(table, MigrationOptions.dryRun());
 
-        assertTrue(dryRun.hasNonAdditiveChanges());
-        assertTrue(dryRun.getStatements().stream().anyMatch(sql -> sql.contains("drop index")));
+        assertFalse(dryRun.getStatements().stream().anyMatch(sql -> sql.contains("drop index")));
         assertTrue(dryRun.getStatements().stream().anyMatch(sql -> sql.contains("create unique index")));
 
         new SchemaManager(operations).ensureTable(table, MigrationOptions.execute());
 
-        assertTrue(operations.executedSql.stream().anyMatch(sql -> sql.contains("drop index")));
+        assertFalse(operations.executedSql.stream().anyMatch(sql -> sql.contains("drop index")));
         assertTrue(operations.executedSql.stream().anyMatch(sql -> sql.contains("create unique index")));
+    }
+
+    @Test
+    void shouldPreservePredicateLiteralCaseWhenComparingPartialIndexes() {
+        FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("POSTGRESQL"));
+        existingInfo(loader);
+        loader.columns.get("public.contract").put("status", varcharColumn("status", 32));
+        DBIndex actual = index("ux_contract_status", true, "status")
+                .setPredicate("status = 'active'");
+        loader.indexes.put("public.contract", List.of(actual));
+        TableWrapper table = TableWrapper.withName("contract")
+                .setPrimaryKey(Column.of("id").setType(ColumnType.VARCHAR).setLength(32).setPrimaryKey())
+                .addColumn(Column.of("status").setType(ColumnType.VARCHAR).setLength(32))
+                .addIndex(new Index("status", true).named("ux_contract_status").predicate("status = 'ACTIVE'"));
+
+        MigrationResult result = new SchemaManager(new FakeOperations(loader))
+                .ensureTable(table, MigrationOptions.dryRun());
+
+        assertTrue(result.getChanges().stream().anyMatch(change -> change.getType() == MigrationChange.Type.DROP_INDEX));
+        assertTrue(result.getChanges().stream().anyMatch(change -> change.getType() == MigrationChange.Type.CREATE_INDEX));
+    }
+
+    @Test
+    void shouldIgnorePostgresTypeCastsWithoutChangingLiteralCase() {
+        FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("POSTGRESQL"));
+        existingInfo(loader);
+        loader.columns.get("public.contract").put("status", varcharColumn("status", 32));
+        DBIndex actual = index("ux_contract_status", true, "status")
+                .setPredicate("(status = 'ACTIVE'::character varying)");
+        loader.indexes.put("public.contract", List.of(actual));
+        TableWrapper table = TableWrapper.withName("contract")
+                .setPrimaryKey(Column.of("id").setType(ColumnType.VARCHAR).setLength(32).setPrimaryKey())
+                .addColumn(Column.of("status").setType(ColumnType.VARCHAR).setLength(32))
+                .addIndex(new Index("status", true).named("ux_contract_status").predicate("status = 'ACTIVE'"));
+
+        MigrationResult result = new SchemaManager(new FakeOperations(loader))
+                .ensureTable(table, MigrationOptions.dryRun());
+
+        assertFalse(result.getChanges().stream().anyMatch(change ->
+                change.getType() == MigrationChange.Type.DROP_INDEX
+                        || change.getType() == MigrationChange.Type.CREATE_INDEX));
+    }
+
+    @Test
+    void shouldMatchOnlyTheDeterministicIndexNameWhenColumnsOverlap() {
+        FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("POSTGRESQL"));
+        existingInfo(loader);
+        loader.columns.get("public.contract").put("code", varcharColumn("code", 64));
+        loader.indexes.put("public.contract", List.of(
+                index("another_code_index", true, "code"),
+                index("contract_code_index", false, "code")
+        ));
+        TableWrapper table = TableWrapper.withName("contract")
+                .setPrimaryKey(Column.of("id").setType(ColumnType.VARCHAR).setLength(32).setPrimaryKey())
+                .addColumn(Column.of("code").setType(ColumnType.VARCHAR).setLength(64))
+                .addIndex(new Index("code", false));
+
+        MigrationResult result = new SchemaManager(new FakeOperations(loader))
+                .ensureTable(table, MigrationOptions.dryRun());
+
+        assertFalse(result.getChanges().stream().anyMatch(change -> change.getType() == MigrationChange.Type.DROP_INDEX));
+        assertFalse(result.getChanges().stream().anyMatch(change -> change.getType() == MigrationChange.Type.CREATE_INDEX));
+    }
+
+    @Test
+    void shouldEscapeCommentsAsSqlLiterals() {
+        FakeOperations operations = new FakeOperations(new DBInfo("POSTGRESQL"));
+        TableWrapper table = TableWrapper.withName("commented")
+                .setComment("owner's records")
+                .addColumn(Column.of("owner_id").setType(ColumnType.VARCHAR).setComment("owner's id"));
+
+        MigrationResult result = new SchemaManager(operations).ensureTable(table, MigrationOptions.dryRun());
+
+        assertTrue(result.getStatements().stream().anyMatch(sql -> sql.contains("owner''s records")));
+        assertTrue(result.getStatements().stream().anyMatch(sql -> sql.contains("owner''s id")));
+    }
+
+    @Test
+    void shouldUseInheritedColumnsWithoutAddingThemAgain() {
+        FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("POSTGRESQL"));
+        DBInfo info = loader.getDBInfo();
+        DBSchema schema = new DBSchema("public");
+        schema.addTable(new DBTable(loader).setSchema("public").setName("parent_record"));
+        info.addSchema(schema);
+        loader.columns.put("public.parent_record", Map.of("tenant_id", varcharColumn("tenant_id", 64)));
+        TableWrapper child = TableWrapper.withName("child_record")
+                .setInherit(new TableBase("public", "parent_record"))
+                .addColumn(Column.of("tenant_id").setType(ColumnType.VARCHAR).setLength(64))
+                .addIndex(new Index("tenant_id", false));
+
+        MigrationResult result = new SchemaManager(new FakeOperations(loader))
+                .ensureTable(child, MigrationOptions.dryRun());
+
+        assertTrue(result.getStatements().stream().anyMatch(sql -> sql.contains("inherits")));
+        assertFalse(result.getStatements().stream().anyMatch(sql -> sql.contains("add \"tenant_id\"")));
+        assertTrue(result.getStatements().stream().anyMatch(sql -> sql.contains("on \"public\".\"child_record\"(\"tenant_id\" ASC)")));
+    }
+
+    @Test
+    void shouldTreatMysqlNoActionAndRestrictAsEquivalent() {
+        FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("MYSQL"));
+        DBSchema schema = new DBSchema("app");
+        schema.addTable(new DBTable(loader).setSchema("app").setName("contract"));
+        loader.getDBInfo().addSchema(schema);
+        loader.columns.put("app.contract", new HashMap<>(Map.of(
+                "id", varcharColumn("id", 32),
+                "parent_id", varcharColumn("parent_id", 32)
+        )));
+        loader.foreignKeys.put("app.contract", List.of(new DBForeignKey(
+                "fk_contract_parent", List.of("parent_id"), "app", "parent_record", List.of("id"),
+                ForeignKeyAction.RESTRICT)));
+        TableWrapper table = TableWrapper.withName("contract")
+                .setSchema("app")
+                .addColumn(Column.of("id").setType(ColumnType.VARCHAR).setLength(32))
+                .addColumn(Column.of("parent_id").setType(ColumnType.VARCHAR).setLength(32))
+                .addForeignKey(ForeignKeyConstraint.named(
+                        "fk_contract_parent", List.of("parent_id"), "parent_record", List.of("id"),
+                        ForeignKeyAction.NO_ACTION));
+
+        MigrationResult result = new SchemaManager(new FakeOperations(loader))
+                .ensureTable(table, MigrationOptions.dryRun());
+
+        assertFalse(result.getChanges().stream().anyMatch(change ->
+                change.getType() == MigrationChange.Type.DROP_FOREIGN_KEY
+                        || change.getType() == MigrationChange.Type.ADD_FOREIGN_KEY));
     }
 
     @Test
@@ -580,6 +720,8 @@ class SchemaManagerTest {
         private final DBInfo info;
         private final Map<String, Map<String, DBColumn>> columns = new HashMap<>();
         private final Map<String, List<DBIndex>> indexes = new HashMap<>();
+        private final Map<String, List<DBForeignKey>> foreignKeys = new HashMap<>();
+        private int resetCount;
 
         private FakeMetaDataLoader(DBInfo info) {
             this.info = info;
@@ -592,6 +734,7 @@ class SchemaManagerTest {
 
         @Override
         public void resetInfo() {
+            resetCount++;
         }
 
         @Override
@@ -603,11 +746,17 @@ class SchemaManagerTest {
         public Map<String, DBColumn> getColumnMap(String schema, String table) {
             return columns.getOrDefault(schema + "." + table, Map.of());
         }
+
+        @Override
+        public List<DBForeignKey> getForeignKeys(String schema, String table) {
+            return foreignKeys.getOrDefault(schema + "." + table, List.of());
+        }
     }
 
     private static class FakeOperations implements IDatabaseOperations<Object> {
         private final FakeMetaDataLoader loader;
         private final List<String> executedSql = new ArrayList<>();
+        private boolean failOnExecute;
 
         private FakeOperations(DBInfo info) {
             this(new FakeMetaDataLoader(info));
@@ -675,6 +824,9 @@ class SchemaManagerTest {
         @Override
         public int execute(String sql) {
             executedSql.add(sql);
+            if (failOnExecute) {
+                throw new RuntimeException("simulated DDL failure");
+            }
             return 1;
         }
 

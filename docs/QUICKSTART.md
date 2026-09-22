@@ -403,7 +403,7 @@ MuYunSchemaContributor gatewaySchema() {
 }
 ```
 
-Starter 会在应用可服务前完成拓扑排序和结构拉齐，并尊重全局 `migration-mode`。启用默认的 `transaction-aware-data-source` 时，PostgreSQL APPLY 模式还会持有事务级 advisory lock，避免多个实例同时迁移；关闭该配置会同时放弃这项锁保证。条件索引仅在 PostgreSQL 上受支持，其他数据库会在规划阶段明确失败。
+Starter 会在应用可服务前将 contributor 与需要拉齐的 Repository 实体合并，统一完成物理表查重、拓扑排序和结构拉齐，并尊重全局 `migration-mode`。PostgreSQL APPLY 模式会使用独立 JDBC 会话持有 session advisory lock，避免多个实例同时迁移；启用默认的 `transaction-aware-data-source` 时，实际迁移动作还会由 Spring 事务包裹，关闭该配置只放弃事务包裹。锁会话与迁移会话相互独立，因此 PostgreSQL 连接池至少需要允许同时使用两个连接。条件索引仅在 PostgreSQL 上受支持，其他数据库会在规划阶段明确失败。
 
 ## 3. 进阶示例
 

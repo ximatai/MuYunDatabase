@@ -45,4 +45,26 @@ class ManagedTableSorterTest {
 
         assertThrows(OrmException.class, () -> ManagedTableSorter.sort(List.of(first, second)));
     }
+
+    @Test
+    void shouldResolveImplicitSchemaAgainstDefaultSchemaForForeignKeys() {
+        ManagedTable child = ManagedTable.of("child", TableWrapper.withName("child")
+                .addColumn(Column.of("parent_id").setType(ColumnType.UUID))
+                .addForeignKey(ForeignKeyConstraint.named(
+                        "fk_child_parent", List.of("parent_id"), "parent", List.of("id"), ForeignKeyAction.CASCADE)));
+        ManagedTable parent = ManagedTable.of("parent", TableWrapper.withName("parent")
+                .setSchema("public")
+                .addColumn(Column.of("id").setType(ColumnType.UUID)));
+
+        assertEquals(List.of(parent, child), ManagedTableSorter.sort(List.of(child, parent), "public"));
+    }
+
+    @Test
+    void shouldRejectImplicitAndExplicitDefaultSchemaAsDuplicatePhysicalTable() {
+        ManagedTable implicit = ManagedTable.of("implicit", TableWrapper.withName("shared"));
+        ManagedTable explicit = ManagedTable.of("explicit", TableWrapper.withName("shared").setSchema("public"));
+
+        assertThrows(OrmException.class,
+                () -> ManagedTableSorter.sort(List.of(implicit, explicit), "public"));
+    }
 }

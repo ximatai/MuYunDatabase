@@ -21,7 +21,7 @@ public class PostgresMigrationSqlDialect implements MigrationSqlDialect {
 
     @Override
     public String setTableComment(String schemaDotTable, String comment) {
-        return "comment on table " + schemaDotTable + " is '" + comment + "'";
+        return "comment on table " + schemaDotTable + " is " + MigrationSqlDialect.stringLiteral(comment);
     }
 
     @Override
@@ -64,7 +64,8 @@ public class PostgresMigrationSqlDialect implements MigrationSqlDialect {
 
     @Override
     public String setColumnComment(String schemaDotTable, String columnName, String comment, String columnDefinition) {
-        return "comment on column " + schemaDotTable + "." + columnName + " is '" + comment + "'";
+        return "comment on column " + schemaDotTable + "." + columnName + " is "
+                + MigrationSqlDialect.stringLiteral(comment);
     }
 
     @Override
@@ -86,7 +87,7 @@ public class PostgresMigrationSqlDialect implements MigrationSqlDialect {
     public String createIndex(String schemaDotTable, String indexName, List<String> columns, boolean unique, String predicate) {
         String uniqueString = unique ? "unique " : "";
         String where = predicate == null ? "" : " where " + predicate;
-        return "create " + uniqueString + "index if not exists " + indexName + " on " + schemaDotTable + "(" + String.join(",", columns) + ")" + where + ";";
+        return "create " + uniqueString + "index " + indexName + " on " + schemaDotTable + "(" + String.join(",", columns) + ")" + where + ";";
     }
 
     @Override

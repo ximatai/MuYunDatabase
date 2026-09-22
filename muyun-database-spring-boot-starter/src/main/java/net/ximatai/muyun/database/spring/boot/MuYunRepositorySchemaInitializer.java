@@ -11,6 +11,7 @@ import org.springframework.beans.factory.SmartInitializingSingleton;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 public class MuYunRepositorySchemaInitializer implements SmartInitializingSingleton {
@@ -23,6 +24,7 @@ public class MuYunRepositorySchemaInitializer implements SmartInitializingSingle
     private final ClassLoader classLoader;
     private final List<MuYunSchemaContributor> contributors;
     private final MuYunSchemaMigrationCoordinator coordinator;
+    private final boolean aggregateRepositoryTables;
 
     public MuYunRepositorySchemaInitializer(List<MuYunRepositoryCatalog> catalogs,
                                             MuYunSchemaManager schemaManager,
@@ -34,6 +36,7 @@ public class MuYunRepositorySchemaInitializer implements SmartInitializingSingle
         this.classLoader = classLoader;
         this.contributors = List.of();
         this.coordinator = null;
+        this.aggregateRepositoryTables = false;
     }
 
     public MuYunRepositorySchemaInitializer(List<MuYunRepositoryCatalog> catalogs,
@@ -48,22 +51,35 @@ public class MuYunRepositorySchemaInitializer implements SmartInitializingSingle
         this.classLoader = classLoader;
         this.contributors = contributors;
         this.coordinator = coordinator;
+        this.aggregateRepositoryTables = true;
     }
 
     @Override
     public void afterSingletonsInstantiated() {
         List<ManagedTable> managedTables = new ArrayList<>();
         for (MuYunSchemaContributor contributor : contributors) {
-            managedTables.addAll(contributor.tables());
+            managedTables.addAll(Objects.requireNonNull(
+                    contributor.tables(),
+                    () -> "Schema contributor returned null tables: " + contributor.getClass().getName()
+            ));
         }
         Set<RepositoryEntityBinding> bindings = new LinkedHashSet<>();
         for (MuYunRepositoryCatalog catalog : catalogs) {
             bindings.addAll(catalog.resolveEntityBindings(classLoader));
         }
-        if (managedTables.isEmpty() && bindings.stream().noneMatch(binding -> shouldAlign(binding.alignTable()))) {
+        List<RepositoryEntityBinding> alignedBindings = bindings.stream()
+                .filter(binding -> shouldAlign(binding.alignTable()))
+                .toList();
+        if (managedTables.isEmpty() && alignedBindings.isEmpty()) {
             return;
         }
-        Runnable initialization = () -> initializeSchemas(managedTables, bindings);
+        if (aggregateRepositoryTables) {
+            alignedBindings.stream()
+                    .map(RepositoryEntityBinding::entityClass)
+                    .map(schemaManager::managedTableFor)
+                    .forEach(managedTables::add);
+        }
+        Runnable initialization = () -> initializeSchemas(managedTables, alignedBindings);
         if (coordinator != null && !schemaManager.isDryRun()) {
             coordinator.runMigration(initialization);
         } else {
@@ -71,16 +87,16 @@ public class MuYunRepositorySchemaInitializer implements SmartInitializingSingle
         }
     }
 
-    private void initializeSchemas(List<ManagedTable> managedTables, Set<RepositoryEntityBinding> bindings) {
+    private void initializeSchemas(List<ManagedTable> managedTables, List<RepositoryEntityBinding> bindings) {
         if (!managedTables.isEmpty()) {
             schemaManager.ensureTables(managedTables);
-            log.info("MuYun managed schema ensured for {} contributed tables", managedTables.size());
+            log.info("MuYun managed schema ensured for {} tables", managedTables.size());
         }
 
+        if (aggregateRepositoryTables) {
+            return;
+        }
         for (RepositoryEntityBinding binding : bindings) {
-            if (!shouldAlign(binding.alignTable())) {
-                continue;
-            }
             Class<?> entityClass = binding.entityClass();
             schemaManager.ensureTable(entityClass);
             log.info("MuYun repository schema ensured for entity {}", entityClass.getName());

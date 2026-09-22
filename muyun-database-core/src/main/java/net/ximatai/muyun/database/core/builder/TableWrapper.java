@@ -45,18 +45,24 @@ public class TableWrapper extends TableBase {
     }
 
     public TableWrapper setPrimaryKey(String name) {
+        requireNoCompositePrimaryKey();
         primaryKey = Column.of(name).setPrimaryKey().setType(ColumnType.VARCHAR).setNullable(false);
         return this;
     }
 
     public TableWrapper setPrimaryKey(Column column) {
+        requireNoCompositePrimaryKey();
         column.setPrimaryKey();
         primaryKey = column;
         return this;
     }
 
     public TableWrapper setPrimaryKey(PrimaryKeyConstraint primaryKeyConstraint) {
-        this.primaryKeyConstraint = Objects.requireNonNull(primaryKeyConstraint);
+        Objects.requireNonNull(primaryKeyConstraint, "primary key constraint must not be null");
+        if (primaryKey != null) {
+            throw new IllegalStateException("single-column and composite primary key declarations cannot be combined");
+        }
+        this.primaryKeyConstraint = primaryKeyConstraint;
         columns.stream()
                 .filter(column -> primaryKeyConstraint.columns().contains(column.getName()))
                 .forEach(column -> column.setNullable(false));
@@ -65,6 +71,12 @@ public class TableWrapper extends TableBase {
 
     public TableWrapper setPrimaryKey(List<String> columns) {
         return setPrimaryKey(new PrimaryKeyConstraint(null, columns));
+    }
+
+    private void requireNoCompositePrimaryKey() {
+        if (primaryKeyConstraint != null) {
+            throw new IllegalStateException("single-column and composite primary key declarations cannot be combined");
+        }
     }
 
     public TableWrapper addUniqueConstraint(UniqueConstraint constraint) {

@@ -4,6 +4,7 @@ public enum ForeignKeyAction {
     NO_ACTION("NO ACTION"),
     CASCADE("CASCADE"),
     SET_NULL("SET NULL"),
+    SET_DEFAULT("SET DEFAULT"),
     RESTRICT("RESTRICT");
 
     private final String sql;

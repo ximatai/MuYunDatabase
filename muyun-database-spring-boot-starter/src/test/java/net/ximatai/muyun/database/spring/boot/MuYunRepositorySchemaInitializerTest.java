@@ -10,6 +10,8 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.*;
 
 class MuYunRepositorySchemaInitializerTest {
@@ -28,6 +30,42 @@ class MuYunRepositorySchemaInitializerTest {
 
         verify(schemaManager).ensureTables(List.of(managedTable));
         verify(schemaManager, never()).ensureTable(org.mockito.ArgumentMatchers.<Class<Object>>any());
+    }
+
+    @Test
+    void shouldAggregateContributedAndRepositoryTablesBeforeMigration() {
+        MuYunSchemaManager schemaManager = mock(MuYunSchemaManager.class);
+        MuYunDatabaseProperties properties = new MuYunDatabaseProperties();
+        ManagedTable contributed = ManagedTable.of("technical", TableWrapper.withName("technical"));
+        ManagedTable repository = ManagedTable.of("repository:" + DemoEntity.class.getName(),
+                TableWrapper.withName("demo"));
+        when(schemaManager.managedTableFor(DemoEntity.class)).thenReturn(repository);
+        MuYunRepositoryCatalog catalog = new MuYunRepositoryCatalog(Set.of(DemoRepository.class.getName()));
+        MuYunRepositorySchemaInitializer initializer = new MuYunRepositorySchemaInitializer(
+                List.of(catalog), schemaManager, properties, getClass().getClassLoader(),
+                List.of(() -> List.of(contributed)), null
+        );
+
+        initializer.afterSingletonsInstantiated();
+
+        verify(schemaManager).ensureTables(List.of(contributed, repository));
+        verify(schemaManager, never()).ensureTable(DemoEntity.class);
+    }
+
+    @Test
+    void shouldReportContributorReturningNullTables() {
+        MuYunSchemaManager schemaManager = mock(MuYunSchemaManager.class);
+        MuYunRepositorySchemaInitializer initializer = new MuYunRepositorySchemaInitializer(
+                List.of(), schemaManager, new MuYunDatabaseProperties(), getClass().getClassLoader(),
+                List.of(() -> null), null
+        );
+
+        NullPointerException failure = assertThrows(
+                NullPointerException.class,
+                initializer::afterSingletonsInstantiated
+        );
+
+        assertTrue(failure.getMessage().contains("Schema contributor returned null tables"));
     }
 
     @Test
