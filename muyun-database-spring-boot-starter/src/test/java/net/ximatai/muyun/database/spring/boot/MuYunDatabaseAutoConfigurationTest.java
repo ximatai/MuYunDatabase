@@ -1,7 +1,13 @@
 package net.ximatai.muyun.database.spring.boot;
 
 import net.ximatai.muyun.database.core.IDatabaseOperations;
+import net.ximatai.muyun.database.core.annotation.Column;
+import net.ximatai.muyun.database.core.annotation.Id;
+import net.ximatai.muyun.database.core.annotation.Table;
+import net.ximatai.muyun.database.core.builder.Index;
+import net.ximatai.muyun.database.core.orm.EntityMetaResolver;
 import net.ximatai.muyun.database.core.orm.MigrationOptions;
+import net.ximatai.muyun.database.core.orm.MuYunEntitySchemaCustomizer;
 import net.ximatai.muyun.database.core.orm.SimpleEntityManager;
 import net.ximatai.muyun.database.jdbi.JdbiDatabaseOperations;
 import net.ximatai.muyun.database.jdbi.JdbiMetaDataLoader;
@@ -88,6 +94,24 @@ class MuYunDatabaseAutoConfigurationTest {
                 });
     }
 
+    @Test
+    void shouldApplyEntitySchemaCustomizerBeans() {
+        contextRunner
+                .withUserConfiguration(EntitySchemaCustomizerConfig.class)
+                .run(context -> {
+                    EntityMetaResolver resolver = context.getBean(EntityMetaResolver.class);
+
+                    assertEquals(
+                            "idx_auto_configured_status",
+                            resolver.resolve(CustomizedEntity.class)
+                                    .getTableWrapper()
+                                    .getIndexes()
+                                    .getFirst()
+                                    .getName()
+                    );
+                });
+    }
+
     @Configuration(proxyBeanMethods = false)
     static class MockDataSourceConfig {
         @Bean
@@ -115,5 +139,27 @@ class MuYunDatabaseAutoConfigurationTest {
         PlatformTransactionManager customTxManager() {
             return Mockito.mock(PlatformTransactionManager.class);
         }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class EntitySchemaCustomizerConfig {
+        @Bean
+        MuYunEntitySchemaCustomizer<CustomizedEntity> customizedEntitySchema() {
+            return MuYunEntitySchemaCustomizer.forEntity(
+                    CustomizedEntity.class,
+                    table -> table.addIndex(
+                            new Index("status", false).named("idx_auto_configured_status"))
+            );
+        }
+    }
+
+    @Table(name = "customized_entity")
+    static class CustomizedEntity {
+        @Id
+        @Column
+        String id;
+
+        @Column
+        String status;
     }
 }

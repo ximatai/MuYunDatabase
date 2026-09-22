@@ -6,6 +6,7 @@ import net.ximatai.muyun.database.core.builder.TableWrapper;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -16,13 +17,25 @@ public class EntityMetaResolver {
 
     private final Map<Class<?>, EntityMeta> cache = new ConcurrentHashMap<>();
     private final Function<Class<?>, TableWrapper> tableResolver;
+    private final List<MuYunEntitySchemaCustomizer<?>> schemaCustomizers;
 
     public EntityMetaResolver() {
-        this(AnnotationProcessor::fromEntityClass);
+        this(AnnotationProcessor::fromEntityClass, List.of());
     }
 
     public EntityMetaResolver(Function<Class<?>, TableWrapper> tableResolver) {
+        this(tableResolver, List.of());
+    }
+
+    public EntityMetaResolver(Collection<MuYunEntitySchemaCustomizer<?>> schemaCustomizers) {
+        this(AnnotationProcessor::fromEntityClass, schemaCustomizers);
+    }
+
+    public EntityMetaResolver(Function<Class<?>, TableWrapper> tableResolver,
+                              Collection<MuYunEntitySchemaCustomizer<?>> schemaCustomizers) {
         this.tableResolver = Objects.requireNonNull(tableResolver, "tableResolver must not be null");
+        this.schemaCustomizers = List.copyOf(
+                Objects.requireNonNull(schemaCustomizers, "schemaCustomizers must not be null"));
     }
 
     public EntityMeta resolve(Class<?> entityClass) {
@@ -36,6 +49,11 @@ public class EntityMetaResolver {
         TableWrapper wrapper;
         try {
             wrapper = tableResolver.apply(entityClass);
+            if (wrapper != null) {
+                schemaCustomizers.stream()
+                        .filter(customizer -> customizer.entityClass().equals(entityClass))
+                        .forEach(customizer -> customizer.customize(wrapper));
+            }
         } catch (RuntimeException e) {
             throw new OrmException(OrmException.Code.INVALID_MAPPING, "Failed to parse entity annotations: " + entityClass.getName(), e);
         }

@@ -5,6 +5,8 @@ import net.ximatai.muyun.database.core.orm.DatabaseValueConverter;
 import net.ximatai.muyun.database.core.orm.DefaultSimpleEntityManager;
 import net.ximatai.muyun.database.core.orm.EntityMetaResolver;
 import net.ximatai.muyun.database.core.orm.MigrationOptions;
+import net.ximatai.muyun.database.core.orm.MuYunEntitySchemaCustomizer;
+import net.ximatai.muyun.database.core.orm.MuYunSchemaContributor;
 import net.ximatai.muyun.database.core.orm.SimpleEntityManager;
 import net.ximatai.muyun.database.jdbi.JdbiMetaDataLoader;
 import net.ximatai.muyun.database.jdbi.JdbiRecommendedPlugins;
@@ -80,8 +82,9 @@ public class MuYunDatabaseAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public EntityMetaResolver entityMetaResolver() {
-        return new EntityMetaResolver();
+    public EntityMetaResolver entityMetaResolver(
+            ObjectProvider<MuYunEntitySchemaCustomizer<?>> schemaCustomizersProvider) {
+        return new EntityMetaResolver(schemaCustomizersProvider.orderedStream().toList());
     }
 
     @Bean
@@ -140,8 +143,24 @@ public class MuYunDatabaseAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public MuYunSchemaManager muYunSchemaManager(SimpleEntityManager entityManager, MigrationOptions migrationOptions) {
-        return new MuYunSchemaManager(entityManager, migrationOptions);
+    public MuYunSchemaMigrationCoordinator muYunSchemaMigrationCoordinator(
+            DataSource dataSource,
+            TransactionTemplate transactionTemplate,
+            MuYunDatabaseProperties properties) {
+        return new MuYunSchemaMigrationCoordinator(
+                dataSource,
+                transactionTemplate,
+                properties.isTransactionAwareDataSource()
+        );
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public MuYunSchemaManager muYunSchemaManager(SimpleEntityManager entityManager,
+                                                 MigrationOptions migrationOptions,
+                                                 IDatabaseOperations<?> operations,
+                                                 EntityMetaResolver entityMetaResolver) {
+        return new MuYunSchemaManager(entityManager, migrationOptions, operations, entityMetaResolver);
     }
 
     @Bean
@@ -157,15 +176,19 @@ public class MuYunDatabaseAutoConfiguration {
     @ConditionalOnMissingBean
     public MuYunRepositorySchemaInitializer muYunRepositorySchemaInitializer(
             ObjectProvider<MuYunRepositoryCatalog> catalogsProvider,
+            ObjectProvider<MuYunSchemaContributor> contributorsProvider,
             MuYunSchemaManager muYunSchemaManager,
-            MuYunDatabaseProperties properties
+            MuYunDatabaseProperties properties,
+            MuYunSchemaMigrationCoordinator coordinator
     ) {
         List<MuYunRepositoryCatalog> catalogs = catalogsProvider.orderedStream().toList();
         return new MuYunRepositorySchemaInitializer(
                 catalogs,
                 muYunSchemaManager,
                 properties,
-                getClass().getClassLoader()
+                getClass().getClassLoader(),
+                contributorsProvider.orderedStream().toList(),
+                coordinator
         );
     }
 }

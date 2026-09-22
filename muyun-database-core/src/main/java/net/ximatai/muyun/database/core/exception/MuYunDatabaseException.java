@@ -37,6 +37,11 @@ public class MuYunDatabaseException extends RuntimeException {
         this.type = type;
     }
 
+    public MuYunDatabaseException(String message, Type type, Throwable cause) {
+        super(message, cause);
+        this.type = type;
+    }
+
     public Type getType() {
         return type;
     }

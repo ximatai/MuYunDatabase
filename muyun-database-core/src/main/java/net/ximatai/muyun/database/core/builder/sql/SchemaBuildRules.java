@@ -130,6 +130,16 @@ public final class SchemaBuildRules {
         return length;
     }
 
+    public static String columnLength(Column column, DBInfo.Type dbType) {
+        String configuredLength = columnLength(column);
+        if (configuredLength.isEmpty()
+                && dbType == DBInfo.Type.MYSQL
+                && column.getType() == ColumnType.VARCHAR) {
+            return "(255)";
+        }
+        return configuredLength;
+    }
+
     public static boolean ignoresColumnLength(Column column) {
         return column.getType().equals(ColumnType.TEXT)
                 || column.getType().equals(ColumnType.LONGTEXT)
@@ -150,7 +160,7 @@ public final class SchemaBuildRules {
         return quoteIdentifier(column.getName(), dbType)
                 + " "
                 + mappedType
-                + columnLength(column)
+                + columnLength(column, dbType)
                 + (column.isNullable() ? " null " : " not null ")
                 + defaultValueString
                 + primaryKeyString;
@@ -180,8 +190,11 @@ public final class SchemaBuildRules {
             case BIGINT -> "bigint";
             case BOOLEAN -> "boolean";
             case TIMESTAMP -> "timestamp";
+            case TIMESTAMP_WITH_TIME_ZONE -> "timestamp with time zone";
             case DATE -> "date";
             case NUMERIC -> "numeric";
+            case UUID -> "uuid";
+            case DOUBLE -> "double precision";
             default -> throw new IllegalArgumentException("Unsupported ARRAY element type: " + elementType);
         };
     }
@@ -207,7 +220,10 @@ public final class SchemaBuildRules {
             case "bigint", "int8" -> "bigint";
             case "boolean", "bool" -> "bool";
             case "timestamp without time zone", "timestamp" -> "timestamp";
+            case "timestamp with time zone", "timestamptz" -> "timestamp with time zone";
             case "decimal", "dec", "numeric" -> "numeric";
+            case "double", "double precision", "float8" -> "double precision";
+            case "uuid" -> "uuid";
             default -> type;
         };
     }

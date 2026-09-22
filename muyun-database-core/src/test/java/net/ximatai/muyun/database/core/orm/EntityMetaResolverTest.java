@@ -4,12 +4,14 @@ import net.ximatai.muyun.database.core.annotation.Column;
 import net.ximatai.muyun.database.core.annotation.Id;
 import net.ximatai.muyun.database.core.annotation.Table;
 import net.ximatai.muyun.database.core.builder.ColumnType;
+import net.ximatai.muyun.database.core.builder.Index;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 class EntityMetaResolverTest {
     @Test
@@ -34,6 +36,23 @@ class EntityMetaResolverTest {
         assertEquals(ColumnType.INT, meta.findByFieldName("scores").getElementColumnType());
     }
 
+    @Test
+    void shouldApplyEntitySchemaCustomizersOnceToTheCachedModel() {
+        MuYunEntitySchemaCustomizer<CustomizedEntity> customizer =
+                MuYunEntitySchemaCustomizer.forEntity(
+                        CustomizedEntity.class,
+                        table -> table.addIndex(new Index("status", false).named("idx_customized_status"))
+                );
+        EntityMetaResolver resolver = new EntityMetaResolver(List.of(customizer));
+
+        EntityMeta first = resolver.resolve(CustomizedEntity.class);
+        EntityMeta second = resolver.resolve(CustomizedEntity.class);
+
+        assertSame(first, second);
+        assertEquals(1, first.getTableWrapper().getIndexes().size());
+        assertEquals("idx_customized_status", first.getTableWrapper().getIndexes().getFirst().getName());
+    }
+
     private static class DemoEntity {
     }
 
@@ -48,5 +67,15 @@ class EntityMetaResolverTest {
 
         @Column(type = ColumnType.ARRAY)
         private List<Integer> scores;
+    }
+
+    @Table(name = "customized_entity")
+    private static class CustomizedEntity {
+        @Id
+        @Column
+        private String id;
+
+        @Column
+        private String status;
     }
 }

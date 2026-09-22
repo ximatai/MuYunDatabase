@@ -4,6 +4,9 @@ public interface IColumnTypeTransform {
 
     IColumnTypeTransform DEFAULT = type -> switch (type) {
         case SET, JSON_SET -> "text";
+        case UUID -> "uuid";
+        case TIMESTAMP_WITH_TIME_ZONE -> "timestamp with time zone";
+        case DOUBLE -> "double precision";
         default -> type.name();
     };
 
@@ -19,6 +22,12 @@ public interface IColumnTypeTransform {
             case JSON_SET:
             case LONGTEXT:
                 return "text";
+            case UUID:
+                return "uuid";
+            case TIMESTAMP_WITH_TIME_ZONE:
+                return "timestamp with time zone";
+            case DOUBLE:
+                return "double precision";
             default:
                 return type.name();
         }

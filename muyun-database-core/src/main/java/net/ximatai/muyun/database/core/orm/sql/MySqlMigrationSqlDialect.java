@@ -16,7 +16,7 @@ public class MySqlMigrationSqlDialect implements MigrationSqlDialect {
 
     @Override
     public String setTableComment(String schemaDotTable, String comment) {
-        return "alter table " + schemaDotTable + " comment '" + comment + "'";
+        return "alter table " + schemaDotTable + " comment " + MigrationSqlDialect.stringLiteral(comment);
     }
 
     @Override
@@ -46,7 +46,8 @@ public class MySqlMigrationSqlDialect implements MigrationSqlDialect {
 
     @Override
     public String setColumnComment(String schemaDotTable, String columnName, String comment, String columnDefinition) {
-        return "alter table " + schemaDotTable + " modify column " + columnDefinition + " COMMENT '" + comment + "'";
+        return "alter table " + schemaDotTable + " modify column " + columnDefinition + " COMMENT "
+                + MigrationSqlDialect.stringLiteral(comment);
     }
 
     @Override
@@ -63,6 +64,26 @@ public class MySqlMigrationSqlDialect implements MigrationSqlDialect {
     public String createIndex(String schemaDotTable, String indexName, List<String> columns, boolean unique) {
         String uniqueString = unique ? "unique " : "";
         return "create " + uniqueString + "index " + indexName + " on " + schemaDotTable + "(" + String.join(",", columns) + ");";
+    }
+
+    @Override
+    public String addConstraint(String schemaDotTable, String constraintName, String definition) {
+        return "alter table " + schemaDotTable + " add constraint " + constraintName + " " + definition;
+    }
+
+    @Override
+    public String dropPrimaryKey(String schemaDotTable, String constraintName) {
+        return "alter table " + schemaDotTable + " drop primary key";
+    }
+
+    @Override
+    public String dropUniqueConstraint(String schemaDotTable, String constraintName) {
+        return "alter table " + schemaDotTable + " drop index " + constraintName;
+    }
+
+    @Override
+    public String dropForeignKey(String schemaDotTable, String constraintName) {
+        return "alter table " + schemaDotTable + " drop foreign key " + constraintName;
     }
 
     @Override

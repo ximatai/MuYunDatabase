@@ -33,7 +33,7 @@ class TableBuilderMetadataCacheTest {
     }
 
     @Test
-    void refreshesColumnMetadataAfterAddingColumnBeforeContinuingChecks() {
+    void executesSinglePlanWithoutReReadingMetadataBetweenStatements() {
         FakeMetaDataLoader loader = new FakeMetaDataLoader("app", "demo")
                 .withColumn(column("id", "VARCHAR", false, true));
         FakeDatabaseOperations db = new FakeDatabaseOperations(loader);
@@ -51,7 +51,7 @@ class TableBuilderMetadataCacheTest {
 
         new TableBuilder(db).build(wrapper);
 
-        assertEquals(2, loader.columnMapLoadCount(), "DDL must invalidate column metadata before reading added column");
+        assertEquals(1, loader.columnMapLoadCount(), "planning should use one consistent metadata snapshot");
         assertEquals(1, db.executedSql().stream()
                 .filter(sql -> isAddColumnSql(sql.toLowerCase(Locale.ROOT)))
                 .count());

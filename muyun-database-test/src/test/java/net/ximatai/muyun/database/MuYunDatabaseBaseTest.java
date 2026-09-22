@@ -1050,6 +1050,7 @@ public abstract class MuYunDatabaseBaseTest {
         assertTrue(table.contains("name"));
         assertTrue(table.contains("age"));
         assertTrue(table.contains("price"));
+        assertTrue(table.contains("unique_token"));
 
         assertTrue(table.getColumn("id").isPrimaryKey());
 
@@ -1074,7 +1075,16 @@ public abstract class MuYunDatabaseBaseTest {
         );
 
         assertTrue(indexList.stream()
-                .anyMatch(i -> i.getColumns().size() == 1 && i.getColumns().contains("code") && i.isUnique())
+                .anyMatch(i -> "uk_test_entity_code".equals(i.getName())
+                        && i.getColumns().size() == 1
+                        && i.getColumns().contains("code")
+                        && i.isUnique())
+        );
+
+        assertTrue(indexList.stream()
+                .anyMatch(i -> i.getColumns().size() == 1
+                        && i.getColumns().contains("unique_token")
+                        && i.isUnique())
         );
 
         String id = db.insertItem("test_entity", Map.of("code", 10));

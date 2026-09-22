@@ -3,7 +3,10 @@ package net.ximatai.muyun.database.spring.boot;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import net.ximatai.muyun.database.core.IDatabaseOperations;
+import net.ximatai.muyun.database.core.builder.Index;
+import net.ximatai.muyun.database.core.orm.MuYunEntitySchemaCustomizer;
 import net.ximatai.muyun.database.core.orm.SimpleEntityManager;
+import net.ximatai.muyun.database.jdbi.JdbiMetaDataLoader;
 import net.ximatai.muyun.database.spring.boot.txprobe.TxProbeBeanEntity;
 import net.ximatai.muyun.database.spring.boot.txprobe.TxProbeBeanRepository;
 import net.ximatai.muyun.database.spring.boot.txprobe.TxProbeOrmEntity;
@@ -24,10 +27,17 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import javax.sql.DataSource;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Tag("db")
 @Testcontainers(disabledWithoutDocker = true)
@@ -72,6 +82,76 @@ class MuYunDatabaseStarterTransactionalIntegrationTest {
         });
     }
 
+    @Test
+    void shouldSerializeConcurrentSchemaMigrationsWithPostgresSessionLock() {
+        contextRunner.run(context -> {
+            MuYunSchemaMigrationCoordinator coordinator = context.getBean(MuYunSchemaMigrationCoordinator.class);
+            CountDownLatch firstEntered = new CountDownLatch(1);
+            CountDownLatch releaseFirst = new CountDownLatch(1);
+            CountDownLatch secondStarted = new CountDownLatch(1);
+            CountDownLatch secondEntered = new CountDownLatch(1);
+
+            try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+                Future<?> first = executor.submit(() -> coordinator.runMigration(() -> {
+                    firstEntered.countDown();
+                    await(releaseFirst);
+                }));
+                assertTrue(awaitWithin(firstEntered, 5, TimeUnit.SECONDS));
+
+                Future<?> second = executor.submit(() -> {
+                    secondStarted.countDown();
+                    coordinator.runMigration(secondEntered::countDown);
+                });
+                assertTrue(awaitWithin(secondStarted, 5, TimeUnit.SECONDS));
+                assertFalse(awaitWithin(secondEntered, 500, TimeUnit.MILLISECONDS));
+
+                releaseFirst.countDown();
+                awaitFuture(first);
+                assertTrue(awaitWithin(secondEntered, 5, TimeUnit.SECONDS));
+                awaitFuture(second);
+            }
+        });
+    }
+
+    @Test
+    void shouldApplyAdvancedSchemaCustomizationToAnOrmEntity() {
+        contextRunner.run(context -> {
+            JdbiMetaDataLoader loader = context.getBean(JdbiMetaDataLoader.class);
+
+            assertTrue(loader.getIndexList("public", "tx_probe_orm").stream()
+                    .anyMatch(index -> "idx_tx_probe_named_rows".equals(index.getName())
+                            && index.getPredicate() != null));
+        });
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            if (!latch.await(5, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("Timed out waiting for migration test latch");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while waiting for migration test latch", e);
+        }
+    }
+
+    private static boolean awaitWithin(CountDownLatch latch, long timeout, TimeUnit unit) {
+        try {
+            return latch.await(timeout, unit);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while waiting for migration test latch", e);
+        }
+    }
+
+    private static void awaitFuture(Future<?> future) {
+        try {
+            future.get(5, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            throw new IllegalStateException("Concurrent migration failed", e);
+        }
+    }
+
     @Configuration(proxyBeanMethods = false)
     static class PostgresDataSourceConfig {
         @Bean(destroyMethod = "close")
@@ -89,6 +169,17 @@ class MuYunDatabaseStarterTransactionalIntegrationTest {
     @EnableTransactionManagement
     @EnableMuYunRepositories(basePackageClasses = TxProbeRepository.class)
     static class TxIntegrationConfig {
+
+        @Bean
+        MuYunEntitySchemaCustomizer<TxProbeOrmEntity> txProbeOrmSchema() {
+            return MuYunEntitySchemaCustomizer.forEntity(
+                    TxProbeOrmEntity.class,
+                    table -> table.addIndex(
+                            new Index("v_name", false)
+                                    .named("idx_tx_probe_named_rows")
+                                    .predicate("v_name is not null"))
+            );
+        }
 
         @Bean
         TxProbeService txProbeService(IDatabaseOperations<?> operations,

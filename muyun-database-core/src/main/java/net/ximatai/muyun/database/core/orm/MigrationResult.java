@@ -1,7 +1,5 @@
 package net.ximatai.muyun.database.core.orm;
 
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
@@ -13,13 +11,9 @@ public class MigrationResult {
     private final List<MigrationChange> changes;
 
     public MigrationResult(boolean changed, boolean dryRun, boolean hasNonAdditiveChanges, List<String> statements) {
-        this.changed = changed;
-        this.dryRun = dryRun;
-        this.hasNonAdditiveChanges = hasNonAdditiveChanges;
-        this.statements = new ArrayList<>(statements);
-        this.changes = statements.stream()
+        this(changed, dryRun, statements.stream()
                 .map(sql -> new MigrationChange(MigrationChange.Type.RAW_SQL, null, sql, hasNonAdditiveChanges))
-                .toList();
+                .toList());
     }
 
     public MigrationResult(boolean changed,
@@ -27,17 +21,19 @@ public class MigrationResult {
                            boolean hasNonAdditiveChanges,
                            List<String> statements,
                            List<MigrationChange> changes) {
+        this(changed, dryRun, validatedChanges(hasNonAdditiveChanges, statements, changes));
+    }
+
+    public MigrationResult(boolean changed, boolean dryRun, List<MigrationChange> changes) {
         this.changed = changed;
         this.dryRun = dryRun;
-        this.hasNonAdditiveChanges = hasNonAdditiveChanges;
-        this.statements = new ArrayList<>(statements);
-        this.changes = new ArrayList<>(changes);
-        requireStatementsMatchChanges(this.statements, this.changes);
-        requireNonAdditiveMatchesChanges(hasNonAdditiveChanges, this.changes);
+        this.changes = List.copyOf(changes);
+        this.statements = this.changes.stream().map(MigrationChange::getSql).toList();
+        this.hasNonAdditiveChanges = this.changes.stream().anyMatch(MigrationChange::isNonAdditive);
     }
 
     public static MigrationResult empty(MigrationOptions options) {
-        return new MigrationResult(false, options.isDryRun(), false, List.of());
+        return new MigrationResult(false, options.isDryRun(), List.of());
     }
 
     public boolean isChanged() {
@@ -53,26 +49,26 @@ public class MigrationResult {
     }
 
     public List<String> getStatements() {
-        return Collections.unmodifiableList(statements);
+        return statements;
     }
 
     public List<MigrationChange> getChanges() {
-        return Collections.unmodifiableList(changes);
+        return changes;
     }
 
-    private static void requireStatementsMatchChanges(List<String> statements, List<MigrationChange> changes) {
+    private static List<MigrationChange> validatedChanges(boolean hasNonAdditiveChanges,
+                                                          List<String> statements,
+                                                          List<MigrationChange> changes) {
         Objects.requireNonNull(statements, "statements must not be null");
         Objects.requireNonNull(changes, "changes must not be null");
         List<String> changeStatements = changes.stream().map(MigrationChange::getSql).toList();
         if (!statements.equals(changeStatements)) {
             throw new IllegalArgumentException("migration statements must match change SQL order");
         }
-    }
-
-    private static void requireNonAdditiveMatchesChanges(boolean hasNonAdditiveChanges, List<MigrationChange> changes) {
         boolean actual = changes.stream().anyMatch(MigrationChange::isNonAdditive);
         if (hasNonAdditiveChanges != actual) {
             throw new IllegalArgumentException("migration non-additive flag must match change details");
         }
+        return changes;
     }
 }

@@ -1,13 +1,24 @@
 package net.ximatai.muyun.database.core.builder.sql;
 
+import net.ximatai.muyun.database.core.builder.Column;
+import net.ximatai.muyun.database.core.builder.ColumnType;
 import org.junit.jupiter.api.Test;
 
 import static net.ximatai.muyun.database.core.metadata.DBInfo.Type.MYSQL;
 import static net.ximatai.muyun.database.core.metadata.DBInfo.Type.POSTGRESQL;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SchemaBuildRulesTest {
+
+    @Test
+    void shouldUseMysqlDefaultVarcharLengthWithoutConstrainingPostgres() {
+        Column column = Column.of("value").setType(ColumnType.VARCHAR);
+
+        assertEquals("(255)", SchemaBuildRules.columnLength(column, MYSQL));
+        assertEquals("", SchemaBuildRules.columnLength(column, POSTGRESQL));
+    }
 
     @Test
     void shouldTreatMysqlDecimalAsNumeric() {

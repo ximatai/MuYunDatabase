@@ -47,6 +47,9 @@ public enum ColumnType {
      */
     BIGINT,
 
+    /** Native UUID value. PostgreSQL maps this to {@code uuid}. */
+    UUID,
+
     /**
      * 布尔类型
      * 适用于：是否标志、开关状态、真假值
@@ -62,6 +65,13 @@ public enum ColumnType {
     TIMESTAMP,
 
     /**
+     * Timestamp representing an absolute instant. PostgreSQL maps this to
+     * {@code timestamp with time zone}; databases without a distinct type may
+     * reject it during capability validation.
+     */
+    TIMESTAMP_WITH_TIME_ZONE,
+
+    /**
      * 日期类型（不含时间）
      * 适用于：生日、开始日期、结束日期等纯日期
      * 对应数据库：DATE
@@ -74,6 +84,9 @@ public enum ColumnType {
      * 对应数据库：DECIMAL, NUMERIC
      */
     NUMERIC,
+
+    /** IEEE-754 double precision floating point value. */
+    DOUBLE,
 
     /**
      * JSON数据类型

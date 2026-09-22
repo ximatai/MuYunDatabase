@@ -69,6 +69,21 @@ int upsert(T entity);
 6. `MigrationResult.getChanges()` 提供结构化迁移变化，包含变化类型、目标、SQL 和是否 non-additive，供 dry-run、治理和审计使用。
 7. `MigrationResult.hasNonAdditiveChanges()` 必须与 `getChanges()` 明细一致；使用结构化构造器时聚合标记和逐条 `MigrationChange.isNonAdditive()` 不一致会直接拒绝。
 8. 旧构造器生成的 `RAW_SQL` change 是兼容降级结果，只表达整体 SQL 和聚合 non-additive 标记；`SchemaManager` 规划出的 changes 才提供逐条分类。
+9. `SchemaManager` 执行的 SQL 与返回的 `MigrationResult.getStatements()` 来自同一个迁移计划；不允许执行期再次独立推导结构变化。
+10. `MigrationChange.getRisk()` 区分 `SAFE_ADDITIVE`、`DATA_VALIDATION_REQUIRED` 和 `DESTRUCTIVE`；后两者都属于 strict 模式拒绝的 non-additive change。
+
+### 5.1 通用技术表
+
+1. 非实体技术表可由 Spring Bean 实现 `MuYunSchemaContributor` 注册，不要求声明 `EntityDao` Repository。
+2. contributor 返回 `ManagedTable`，以稳定 ID 和 `dependsOn` 声明显式依赖；同一批表之间的外键依赖会自动推导。
+3. 重复 ID、重复物理表声明、未知依赖和循环依赖会在执行 DDL 前失败。
+4. contributor 与 Repository 表结构会合并为同一批 `ManagedTable`，统一进行物理表查重、依赖排序和迁移，并使用相同的 `MigrationOptions`。PostgreSQL APPLY 模式通过独立 JDBC 会话持有 session advisory lock，覆盖完整的规划和执行过程；启用默认的 `transaction-aware-data-source` 时，实际迁移动作还会由 Spring 事务包裹。显式关闭该配置只放弃事务包裹，不影响多实例互斥锁。由于锁会话和迁移会话相互独立，PostgreSQL 连接池必须至少允许同时使用两个连接。
+5. programmatic schema 支持显式 `UUID`、`TIMESTAMP_WITH_TIME_ZONE`、`DOUBLE`、复合主键、命名唯一约束、单列/复合外键、索引排序方向和 PostgreSQL 条件索引。
+6. PostgreSQL 专有条件索引在其他数据库上必须明确失败，不做语义降级。
+7. 为保持兼容，本版本不会改变 `UUID`、`Instant`、`Double` 的实体字段默认类型推断；需要原生物理类型时必须显式声明 `ColumnType`。
+8. ORM 实体需要补充注解暂未表达的外键、有序索引或条件索引时，使用 `MuYunEntitySchemaCustomizer.forEntity(...)` 增量修改实体解析出的 `TableWrapper`；不得再通过 contributor 重复声明同一物理表。
+9. 同一实体的 customizer 按注入顺序累计应用，并在该实体元数据首次解析时只执行一次。Customizer 只负责补充表级约束、索引等 Schema 细节，不允许改名或重定义 ORM 映射字段，也不允许执行 DDL 或数据回填；定制后的表模型进入该实体的 Schema 迁移。
+10. 非主键字段的 `@Column(unique = true)` 必须生成单列唯一索引；`@Indexed(name = "...")` 的显式名称必须进入最终索引模型。字段可单独使用 `@Id`，此时类型仍遵循兼容性的 Java 类型推断规则。
 
 ## 6. Criteria 组合契约（稳定）
 

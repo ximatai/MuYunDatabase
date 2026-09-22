@@ -369,6 +369,71 @@ interface AuditLogRepository extends EntityDao<AuditLogEntity, String> {
 
 `IDatabaseOperations` 与底层 SQL 仍可用，但建议仅用于特殊场景（例如历史 SQL 复用、极端性能调优或跨表手工 SQL），常规业务默认优先 `@MuYunRepository + EntityDao`。
 
+### 2.7 注册非实体技术表
+
+租约、outbox、幂等记录等技术表无需创建伪实体 Repository，可以直接贡献结构模型：
+
+```java
+@Bean
+MuYunSchemaContributor gatewaySchema() {
+    TableWrapper sessions = TableWrapper.withName("gateway_sessions")
+            .addColumn(Column.of("tenant_id").setType(ColumnType.VARCHAR).setLength(128))
+            .addColumn(Column.of("session_id").setType(ColumnType.UUID))
+            .addColumn(Column.of("created_at").setType(ColumnType.TIMESTAMP_WITH_TIME_ZONE))
+            .setPrimaryKey(PrimaryKeyConstraint.named(
+                    "pk_gateway_sessions", "tenant_id", "session_id"));
+
+    TableWrapper participants = TableWrapper.withName("gateway_participants")
+            .addColumn(Column.of("tenant_id").setType(ColumnType.VARCHAR).setLength(128))
+            .addColumn(Column.of("session_id").setType(ColumnType.UUID))
+            .addColumn(Column.of("participant_id").setType(ColumnType.VARCHAR).setLength(128))
+            .setPrimaryKey(PrimaryKeyConstraint.named(
+                    "pk_gateway_participants", "tenant_id", "session_id", "participant_id"))
+            .addForeignKey(ForeignKeyConstraint.named(
+                    "fk_gateway_participants_session",
+                    List.of("tenant_id", "session_id"),
+                    "gateway_sessions",
+                    List.of("tenant_id", "session_id"),
+                    ForeignKeyAction.CASCADE));
+
+    return () -> List.of(
+            ManagedTable.of("sessions", sessions),
+            new ManagedTable("participants", participants, Set.of("sessions"))
+    );
+}
+```
+
+Starter 会在应用可服务前将 contributor 与需要拉齐的 Repository 实体合并，统一完成物理表查重、拓扑排序和结构拉齐，并尊重全局 `migration-mode`。PostgreSQL APPLY 模式会使用独立 JDBC 会话持有 session advisory lock，避免多个实例同时迁移；启用默认的 `transaction-aware-data-source` 时，实际迁移动作还会由 Spring 事务包裹，关闭该配置只放弃事务包裹。锁会话与迁移会话相互独立，因此 PostgreSQL 连接池至少需要允许同时使用两个连接。条件索引仅在 PostgreSQL 上受支持，其他数据库会在规划阶段明确失败。
+
+### 2.8 为 ORM 实体补充高级 Schema
+
+实体仍然是表结构的唯一基础定义；需要命名外键、有序索引或 PostgreSQL 条件索引时，使用 `MuYunEntitySchemaCustomizer` 增量补充，不要通过 contributor 重复声明同一张物理表，也不需要关闭 Repository 拉齐：
+
+```java
+@Bean
+MuYunEntitySchemaCustomizer<OrderEntity> orderEntitySchema() {
+    return MuYunEntitySchemaCustomizer.forEntity(
+            OrderEntity.class,
+            table -> table
+                    .addForeignKey(ForeignKeyConstraint.named(
+                            "fk_order_tenant",
+                            List.of("tenant_id"),
+                            "tenant",
+                            List.of("id"),
+                            ForeignKeyAction.CASCADE))
+                    .addIndex(Index.of(List.of(
+                                    IndexColumn.asc("tenant_id"),
+                                    IndexColumn.desc("created_at")), false)
+                            .named("idx_order_tenant_created"))
+                    .addIndex(new Index("created_at", false)
+                            .named("idx_order_pending_created")
+                            .predicate("status = 'PENDING'"))
+    );
+}
+```
+
+Customizer 按 Spring `@Order` 顺序执行，并且只在该实体元数据首次解析时应用一次。它只能补充表级约束、索引等声明式结构，不应改名或重定义 ORM 映射字段，也不应执行 SQL、访问数据库或承担数据回填。定制后的 `TableWrapper` 直接进入该实体的结构迁移。
+
 ## 3. 进阶示例
 
 ### 3.1 分页结果

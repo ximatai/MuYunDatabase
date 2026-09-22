@@ -15,6 +15,10 @@ public class DBTable extends TableBase {
     private Map<String, DBColumn> columnMap;
 
     private List<DBIndex> indexList;
+    private DBPrimaryKey primaryKey;
+    private boolean primaryKeyLoaded;
+    private List<DBUniqueConstraint> uniqueConstraints;
+    private List<DBForeignKey> foreignKeys;
 
     public DBTable(IMetaDataLoader iMetaDataLoader) {
         this.iMetaDataLoader = iMetaDataLoader;
@@ -71,5 +75,27 @@ public class DBTable extends TableBase {
 
     public void resetIndexes() {
         this.indexList = null;
+    }
+
+    public DBPrimaryKey getPrimaryKey() {
+        if (!primaryKeyLoaded) {
+            primaryKey = iMetaDataLoader.getPrimaryKey(schema, name);
+            primaryKeyLoaded = true;
+        }
+        return primaryKey;
+    }
+
+    public List<DBUniqueConstraint> getUniqueConstraints() {
+        if (uniqueConstraints == null) {
+            uniqueConstraints = iMetaDataLoader.getUniqueConstraints(schema, name);
+        }
+        return uniqueConstraints;
+    }
+
+    public List<DBForeignKey> getForeignKeys() {
+        if (foreignKeys == null) {
+            foreignKeys = iMetaDataLoader.getForeignKeys(schema, name);
+        }
+        return foreignKeys;
     }
 }

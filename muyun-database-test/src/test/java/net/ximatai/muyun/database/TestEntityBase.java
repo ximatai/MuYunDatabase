@@ -12,9 +12,12 @@ public class TestEntityBase {
     @Column(length = 20, comment = "名称", defaultVal = @Default(varchar = "test_name"))
     public String name;
 
-    @Indexed(unique = true)
+    @Indexed(name = "uk_test_entity_code", unique = true)
     @Column(comment = "学号")
     public int code;
+
+    @Column(name = "unique_token", unique = true)
+    public String uniqueToken;
 
     @Column(comment = "年龄", defaultVal = @Default(number = 12))
     public int age;

@@ -1,7 +1,6 @@
 package net.ximatai.muyun.database.core.orm;
 
 import net.ximatai.muyun.database.core.IDatabaseOperations;
-import net.ximatai.muyun.database.core.builder.TableBuilder;
 import net.ximatai.muyun.database.core.builder.TableWrapper;
 
 import java.util.Objects;
@@ -14,7 +13,7 @@ public class SchemaManager {
     }
 
     public boolean ensureTable(TableWrapper table) {
-        return new TableBuilder(operations).build(table);
+        return ensureTable(table, MigrationOptions.execute()).isChanged();
     }
 
     public MigrationResult ensureTable(TableWrapper table, MigrationOptions options) {
@@ -27,14 +26,38 @@ public class SchemaManager {
         if (safeOptions.isStrict() && plan.hasNonAdditive()) {
             throw new OrmException(
                     OrmException.Code.STRICT_MIGRATION_REJECTED,
-                    "Strict migration rejected non-additive changes for table " + tableName(table)
+                    "Strict migration rejected non-additive changes for table " + tableName(table) + ": "
+                            + plan.getChanges().stream()
+                            .filter(MigrationChange::isNonAdditive)
+                            .map(change -> change.getType() + "(" + change.getTarget() + ", " + change.getRisk() + ")")
+                            .toList()
             );
         }
         if (safeOptions.isDryRun()) {
-            return new MigrationResult(true, true, plan.hasNonAdditive(), plan.getStatements(), plan.getChanges());
+            return new MigrationResult(true, true, plan.getChanges());
         }
-        ensureTable(table);
-        return new MigrationResult(true, false, plan.hasNonAdditive(), plan.getStatements(), plan.getChanges());
+        Throwable executionFailure = null;
+        try {
+            for (MigrationChange change : plan.getChanges()) {
+                operations.execute(change.getSql());
+            }
+        } catch (RuntimeException | Error failure) {
+            executionFailure = failure;
+            throw failure;
+        } finally {
+            // Some databases auto-commit DDL. If a later statement fails, the
+            // metadata snapshot must still be discarded before a retry plans
+            // against the partially-applied schema.
+            try {
+                operations.getMetaDataLoader().resetInfo();
+            } catch (RuntimeException | Error resetFailure) {
+                if (executionFailure == null) {
+                    throw resetFailure;
+                }
+                executionFailure.addSuppressed(resetFailure);
+            }
+        }
+        return new MigrationResult(true, false, plan.getChanges());
     }
 
     private String tableName(TableWrapper table) {

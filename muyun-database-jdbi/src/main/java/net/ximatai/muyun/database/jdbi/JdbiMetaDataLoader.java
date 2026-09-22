@@ -5,6 +5,8 @@ import net.ximatai.muyun.database.core.exception.MuYunDatabaseException;
 import net.ximatai.muyun.database.core.metadata.*;
 import org.jdbi.v3.core.Handle;
 import org.jdbi.v3.core.Jdbi;
+import net.ximatai.muyun.database.core.builder.ForeignKeyAction;
+import net.ximatai.muyun.database.core.builder.IndexSortDirection;
 
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
@@ -103,8 +105,7 @@ public class JdbiMetaDataLoader implements IMetaDataLoader {
 
                 return info;
             } catch (Exception e) {
-                e.printStackTrace();
-                throw new MuYunDatabaseException(e.getMessage(), READ_METADATA_ERROR);
+                throw new MuYunDatabaseException(e.getMessage(), READ_METADATA_ERROR, e);
             }
         });
     }
@@ -136,7 +137,7 @@ public class JdbiMetaDataLoader implements IMetaDataLoader {
 
     @Override
     public List<DBIndex> getIndexList(String schema, String table) {
-        List<DBIndex> indexList = new ArrayList<>();
+        Map<String, DBIndex> indexesByName = new LinkedHashMap<>();
         jdbi.useHandle(handle -> {
             Connection connection = handle.getConnection();
             try {
@@ -150,41 +151,231 @@ public class JdbiMetaDataLoader implements IMetaDataLoader {
                 } else {
                     schemaPattern = schema;
                 }
+                Set<String> constraintOwnedIndexes = loadConstraintOwnedIndexNames(handle, schema, table);
 
                 // 获取索引信息
                 try (ResultSet rs = metaData.getIndexInfo(catalog, schemaPattern, table, false, false)) {
                     while (rs.next()) {
                         String indexName = rs.getString("INDEX_NAME");
-                        // 跳过主键索引
-                        if (indexName.endsWith("_pkey") || indexName.equalsIgnoreCase("PRIMARY")) {
+                        if (indexName == null) {
+                            continue;
+                        }
+                        if (constraintOwnedIndexes.contains(indexName)) {
                             continue;
                         }
 
                         String columnName = rs.getString("COLUMN_NAME");
-                        // 查找或创建索引对象
-                        Optional<DBIndex> hitIndex = indexList.stream()
-                                .filter(i -> i.getName().equals(indexName))
-                                .findFirst();
-
-                        if (hitIndex.isPresent()) {
-                            hitIndex.get().addColumn(columnName);
-                        } else {
-                            DBIndex index = new DBIndex();
-                            index.setName(indexName);
-                            index.addColumn(columnName);
-                            // 设置唯一性约束
-                            if (!rs.getBoolean("NON_UNIQUE")) {
-                                index.setUnique(true);
-                            }
-                            indexList.add(index);
+                        if (columnName == null) {
+                            continue;
                         }
+                        String ascOrDesc = rs.getString("ASC_OR_DESC");
+                        IndexSortDirection direction = "D".equalsIgnoreCase(ascOrDesc)
+                                ? IndexSortDirection.DESC
+                                : IndexSortDirection.ASC;
+                        int ordinal = rs.getInt("ORDINAL_POSITION");
+                        String predicate = null;
+                        try {
+                            predicate = rs.getString("FILTER_CONDITION");
+                        } catch (SQLException ignored) {
+                            // Optional JDBC metadata column.
+                        }
+                        DBIndex index = indexesByName.computeIfAbsent(indexName,
+                                name -> new DBIndex().setName(name));
+                        index.addColumn(columnName, direction, ordinal).setPredicate(predicate);
+                        index.setUnique(!rs.getBoolean("NON_UNIQUE"));
                     }
+                }
+                if ("PostgreSQL".equalsIgnoreCase(info.getTypeName())) {
+                    Map<String, String> predicates = handle.createQuery("""
+                                    select idx.relname as index_name,
+                                           pg_get_expr(i.indpred, i.indrelid) as predicate
+                                    from pg_index i
+                                    join pg_class tbl on tbl.oid = i.indrelid
+                                    join pg_class idx on idx.oid = i.indexrelid
+                                    join pg_namespace ns on ns.oid = tbl.relnamespace
+                                    where ns.nspname = :schema and tbl.relname = :table
+                                    """)
+                            .bind("schema", schema)
+                            .bind("table", table)
+                            .reduceRows(new HashMap<>(), (map, row) -> {
+                                map.put(row.getColumn("index_name", String.class), row.getColumn("predicate", String.class));
+                                return map;
+                            });
+                    indexesByName.values().forEach(index -> index.setPredicate(predicates.get(index.getName())));
                 }
             } catch (SQLException e) {
                 throw new RuntimeException(e);
             }
         });
-        return indexList;
+        return List.copyOf(indexesByName.values());
+    }
+
+    private Set<String> loadConstraintOwnedIndexNames(Handle handle, String schema, String table) {
+        if (info.getDatabaseType() == DBInfo.Type.MYSQL) {
+            // MySQL does not distinguish a UNIQUE constraint from its UNIQUE index.
+            // PRIMARY is the only index that is always owned by a table constraint.
+            return new HashSet<>(handle.createQuery("""
+                            select constraint_name
+                            from information_schema.table_constraints
+                            where table_schema = :schema
+                              and table_name = :table
+                              and constraint_type = 'PRIMARY KEY'
+                            """)
+                    .bind("schema", schema)
+                    .bind("table", table)
+                    .mapTo(String.class)
+                    .list());
+        }
+        if ("PostgreSQL".equalsIgnoreCase(info.getTypeName())) {
+            return new HashSet<>(handle.createQuery("""
+                            select idx.relname
+                            from pg_constraint constraint_def
+                            join pg_class tbl on tbl.oid = constraint_def.conrelid
+                            join pg_namespace ns on ns.oid = tbl.relnamespace
+                            join pg_class idx on idx.oid = constraint_def.conindid
+                            where ns.nspname = :schema
+                              and tbl.relname = :table
+                              and constraint_def.contype in ('p', 'u', 'x')
+                            """)
+                    .bind("schema", schema)
+                    .bind("table", table)
+                    .mapTo(String.class)
+                    .list());
+        }
+        return Set.of();
+    }
+
+    @Override
+    public DBPrimaryKey getPrimaryKey(String schema, String table) {
+        return jdbi.withHandle(handle -> {
+            try {
+                DatabaseMetaData metaData = handle.getConnection().getMetaData();
+                String catalog = info.getDatabaseType().equals(DBInfo.Type.MYSQL) ? schema : null;
+                String schemaPattern = info.getDatabaseType().equals(DBInfo.Type.MYSQL) ? null : schema;
+                String name = null;
+                TreeMap<Integer, String> columns = new TreeMap<>();
+                try (ResultSet rs = metaData.getPrimaryKeys(catalog, schemaPattern, table)) {
+                    while (rs.next()) {
+                        name = rs.getString("PK_NAME");
+                        columns.put(rs.getInt("KEY_SEQ"), rs.getString("COLUMN_NAME"));
+                    }
+                }
+                return columns.isEmpty() ? null : new DBPrimaryKey(name, new ArrayList<>(columns.values()));
+            } catch (SQLException e) {
+                throw new MuYunDatabaseException(e.getMessage(), READ_METADATA_ERROR, e);
+            }
+        });
+    }
+
+    @Override
+    public List<DBUniqueConstraint> getUniqueConstraints(String schema, String table) {
+        return jdbi.withHandle(handle -> handle.createQuery("""
+                        select tc.constraint_name, kcu.column_name, kcu.ordinal_position
+                        from information_schema.table_constraints tc
+                        join information_schema.key_column_usage kcu
+                          on tc.constraint_catalog = kcu.constraint_catalog
+                         and tc.constraint_schema = kcu.constraint_schema
+                         and tc.constraint_name = kcu.constraint_name
+                         and tc.table_schema = kcu.table_schema
+                         and tc.table_name = kcu.table_name
+                        where tc.constraint_type = 'UNIQUE'
+                          and tc.table_schema = :schema
+                          and tc.table_name = :table
+                        order by tc.constraint_name, kcu.ordinal_position
+                        """)
+                .bind("schema", schema)
+                .bind("table", table)
+                .reduceRows(new LinkedHashMap<String, List<String>>(), (constraints, row) -> {
+                    constraints.computeIfAbsent(row.getColumn("constraint_name", String.class), ignored -> new ArrayList<>())
+                            .add(row.getColumn("column_name", String.class));
+                    return constraints;
+                }).entrySet().stream()
+                .map(entry -> new DBUniqueConstraint(entry.getKey(), entry.getValue()))
+                .toList());
+    }
+
+    @Override
+    public List<DBForeignKey> getForeignKeys(String schema, String table) {
+        return jdbi.withHandle(handle -> {
+            try {
+                DatabaseMetaData metaData = handle.getConnection().getMetaData();
+                String catalog = info.getDatabaseType().equals(DBInfo.Type.MYSQL) ? schema : null;
+                String schemaPattern = info.getDatabaseType().equals(DBInfo.Type.MYSQL) ? null : schema;
+                Map<String, ForeignKeyAccumulator> foreignKeys = new LinkedHashMap<>();
+                try (ResultSet rs = metaData.getImportedKeys(catalog, schemaPattern, table)) {
+                    while (rs.next()) {
+                        String name = rs.getString("FK_NAME");
+                        ForeignKeyAccumulator accumulator = foreignKeys.computeIfAbsent(name, ignored ->
+                                new ForeignKeyAccumulator(
+                                        name,
+                                        firstNonBlank(rsString(rs, "PKTABLE_SCHEM"), rsString(rs, "PKTABLE_CAT")),
+                                        rsString(rs, "PKTABLE_NAME"),
+                                        foreignKeyAction(rsShort(rs, "DELETE_RULE"))
+                                ));
+                        accumulator.add(rs.getInt("KEY_SEQ"), rs.getString("FKCOLUMN_NAME"), rs.getString("PKCOLUMN_NAME"));
+                    }
+                }
+                return foreignKeys.values().stream().map(ForeignKeyAccumulator::build).toList();
+            } catch (SQLException e) {
+                throw new MuYunDatabaseException(e.getMessage(), READ_METADATA_ERROR, e);
+            }
+        });
+    }
+
+    private static String rsString(ResultSet rs, String column) {
+        try {
+            return rs.getString(column);
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private static short rsShort(ResultSet rs, String column) {
+        try {
+            return rs.getShort(column);
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private static String firstNonBlank(String first, String second) {
+        return first == null || first.isBlank() ? second : first;
+    }
+
+    private static ForeignKeyAction foreignKeyAction(short rule) {
+        return switch (rule) {
+            case DatabaseMetaData.importedKeyCascade -> ForeignKeyAction.CASCADE;
+            case DatabaseMetaData.importedKeySetNull -> ForeignKeyAction.SET_NULL;
+            case DatabaseMetaData.importedKeySetDefault -> ForeignKeyAction.SET_DEFAULT;
+            case DatabaseMetaData.importedKeyRestrict -> ForeignKeyAction.RESTRICT;
+            default -> ForeignKeyAction.NO_ACTION;
+        };
+    }
+
+    private static final class ForeignKeyAccumulator {
+        private final String name;
+        private final String referencedSchema;
+        private final String referencedTable;
+        private final ForeignKeyAction onDelete;
+        private final TreeMap<Integer, String> columns = new TreeMap<>();
+        private final TreeMap<Integer, String> referencedColumns = new TreeMap<>();
+
+        private ForeignKeyAccumulator(String name, String referencedSchema, String referencedTable, ForeignKeyAction onDelete) {
+            this.name = name;
+            this.referencedSchema = referencedSchema;
+            this.referencedTable = referencedTable;
+            this.onDelete = onDelete;
+        }
+
+        private void add(int sequence, String column, String referencedColumn) {
+            columns.put(sequence, column);
+            referencedColumns.put(sequence, referencedColumn);
+        }
+
+        private DBForeignKey build() {
+            return new DBForeignKey(name, new ArrayList<>(columns.values()), referencedSchema, referencedTable,
+                    new ArrayList<>(referencedColumns.values()), onDelete);
+        }
     }
 
     @Override

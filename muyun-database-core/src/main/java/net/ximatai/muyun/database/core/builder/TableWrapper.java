@@ -13,8 +13,11 @@ public class TableWrapper extends TableBase {
     private List<Index> indexes = new ArrayList<>();
     private List<Index> droppedIndexes = new ArrayList<>();
     private List<String> droppedColumns = new ArrayList<>();
+    private List<UniqueConstraint> uniqueConstraints = new ArrayList<>();
+    private List<ForeignKeyConstraint> foreignKeys = new ArrayList<>();
 
     private Column primaryKey;
+    private PrimaryKeyConstraint primaryKeyConstraint;
 
     public static TableWrapper withName(String name) {
         return new TableWrapper(name);
@@ -42,13 +45,47 @@ public class TableWrapper extends TableBase {
     }
 
     public TableWrapper setPrimaryKey(String name) {
+        requireNoCompositePrimaryKey();
         primaryKey = Column.of(name).setPrimaryKey().setType(ColumnType.VARCHAR).setNullable(false);
         return this;
     }
 
     public TableWrapper setPrimaryKey(Column column) {
+        requireNoCompositePrimaryKey();
         column.setPrimaryKey();
         primaryKey = column;
+        return this;
+    }
+
+    public TableWrapper setPrimaryKey(PrimaryKeyConstraint primaryKeyConstraint) {
+        Objects.requireNonNull(primaryKeyConstraint, "primary key constraint must not be null");
+        if (primaryKey != null) {
+            throw new IllegalStateException("single-column and composite primary key declarations cannot be combined");
+        }
+        this.primaryKeyConstraint = primaryKeyConstraint;
+        columns.stream()
+                .filter(column -> primaryKeyConstraint.columns().contains(column.getName()))
+                .forEach(column -> column.setNullable(false));
+        return this;
+    }
+
+    public TableWrapper setPrimaryKey(List<String> columns) {
+        return setPrimaryKey(new PrimaryKeyConstraint(null, columns));
+    }
+
+    private void requireNoCompositePrimaryKey() {
+        if (primaryKeyConstraint != null) {
+            throw new IllegalStateException("single-column and composite primary key declarations cannot be combined");
+        }
+    }
+
+    public TableWrapper addUniqueConstraint(UniqueConstraint constraint) {
+        uniqueConstraints.add(Objects.requireNonNull(constraint));
+        return this;
+    }
+
+    public TableWrapper addForeignKey(ForeignKeyConstraint constraint) {
+        foreignKeys.add(Objects.requireNonNull(constraint));
         return this;
     }
 
@@ -123,12 +160,23 @@ public class TableWrapper extends TableBase {
             throw new IllegalArgumentException("Primary key already exists");
         }
 
+        if (primaryKeyConstraint != null && primaryKeyConstraint.columns().contains(column.getName())) {
+            column.setNullable(false);
+        }
         columns.add(column);
 
         if (column.isUnique()) {
-            addIndex(column.getName(), true);
+            Index index = new Index(column.getName(), true);
+            if (column.getIndexName() != null) {
+                index.named(column.getIndexName());
+            }
+            addIndex(index);
         } else if (column.isIndexed()) {
-            addIndex(column.getName());
+            Index index = new Index(column.getName(), false);
+            if (column.getIndexName() != null) {
+                index.named(column.getIndexName());
+            }
+            addIndex(index);
         }
 
         return this;
@@ -160,6 +208,21 @@ public class TableWrapper extends TableBase {
 
     public Column getPrimaryKey() {
         return primaryKey;
+    }
+
+    public PrimaryKeyConstraint getPrimaryKeyConstraint() {
+        if (primaryKeyConstraint != null) {
+            return primaryKeyConstraint;
+        }
+        return primaryKey == null ? null : PrimaryKeyConstraint.of(primaryKey.getName());
+    }
+
+    public List<UniqueConstraint> getUniqueConstraints() {
+        return List.copyOf(uniqueConstraints);
+    }
+
+    public List<ForeignKeyConstraint> getForeignKeys() {
+        return List.copyOf(foreignKeys);
     }
 
     public TableWrapper(String name) {
