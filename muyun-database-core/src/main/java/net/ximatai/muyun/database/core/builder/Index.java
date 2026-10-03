@@ -61,7 +61,8 @@ public class Index {
     }
 
     public void setName(String name) {
-        this.name = Objects.requireNonNull(name, "index name must not be null");
+        Objects.requireNonNull(name, "index name must not be null");
+        this.name = name.isBlank() ? null : name;
     }
 
     private static String normalizePredicate(String predicate) {

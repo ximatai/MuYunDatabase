@@ -162,6 +162,49 @@ class SchemaManagerTest {
     }
 
     @Test
+    void shouldDropUniqueIndexThroughLegacyColumnEntryPoint() {
+        FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("POSTGRESQL"));
+        existingInfo(loader);
+        loader.columns.get("public.contract").put("code", varcharColumn("code", 64));
+        loader.indexes.put("public.contract", List.of(index("legacy_code_unique", true, "code")));
+        FakeOperations operations = new FakeOperations(loader);
+        TableWrapper table = TableWrapper.withName("contract")
+                .dropIndex(List.of("code"));
+        SchemaManager manager = new SchemaManager(operations);
+
+        MigrationResult preview = manager.ensureTable(table, MigrationOptions.dryRun());
+
+        assertTrue(preview.hasNonAdditiveChanges());
+        assertEquals(List.of("drop index \"public\".\"legacy_code_unique\";"), preview.getStatements());
+        assertEquals(List.of(), operations.executedSql);
+        assertThrows(OrmException.class, () -> manager.ensureTable(table, MigrationOptions.strict()));
+        assertEquals(List.of(), operations.executedSql);
+        manager.ensureTable(table, MigrationOptions.execute());
+        assertEquals(preview.getStatements(), operations.executedSql);
+    }
+
+    @Test
+    void shouldRequireNameWhenMultipleIndexesMatchColumns() {
+        FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("POSTGRESQL"));
+        existingInfo(loader);
+        loader.columns.get("public.contract").put("code", varcharColumn("code", 64));
+        loader.indexes.put("public.contract", List.of(
+                index("legacy_code_unique", true, "code"), index("LEGACY_CODE_UNIQUE", false, "code")));
+        FakeOperations operations = new FakeOperations(loader);
+        SchemaManager manager = new SchemaManager(operations);
+
+        OrmException error = assertThrows(OrmException.class, () -> manager.ensureTable(
+                TableWrapper.withName("contract").dropIndex(List.of("code")), MigrationOptions.execute()));
+        assertEquals(OrmException.Code.INVALID_MAPPING, error.getCode());
+        assertEquals(List.of(), operations.executedSql);
+
+        MigrationResult preview = manager.ensureTable(TableWrapper.withName("contract")
+                .dropIndex(new Index("code", true).named("legacy_code_unique")), MigrationOptions.dryRun());
+        assertEquals(1, preview.getChanges().size());
+        assertEquals("legacy_code_unique", preview.getChanges().get(0).getTarget());
+    }
+
+    @Test
     void shouldNotImplicitlyDropAUniqueIndexWhenAddingAWiderOne() {
         FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("POSTGRESQL"));
         existingInfo(loader);

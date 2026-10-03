@@ -7,6 +7,8 @@ import net.ximatai.muyun.database.core.builder.Index;
 import net.ximatai.muyun.database.core.metadata.DBInfo;
 
 import java.util.regex.Pattern;
+import java.nio.charset.StandardCharsets;
+import java.util.UUID;
 
 import static net.ximatai.muyun.database.core.metadata.DBInfo.Type.POSTGRESQL;
 
@@ -172,6 +174,27 @@ public final class SchemaBuildRules {
         }
         String suffix = index.isUnique() ? "_uindex" : "_index";
         return tableName + "_" + String.join("_", index.getColumns()) + suffix;
+    }
+
+    public static String indexName(String tableName, Index index, DBInfo.Type dbType) {
+        String name = indexName(tableName, index);
+        if (dbType != POSTGRESQL || name.getBytes(StandardCharsets.UTF_8).length <= 63) {
+            return name;
+        }
+        if (index.getName() != null) {
+            throw new IllegalArgumentException("PostgreSQL index name exceeds 63 UTF-8 bytes: " + name);
+        }
+        String suffix = "_" + UUID.nameUUIDFromBytes(
+                name.getBytes(StandardCharsets.UTF_8)).toString().replace("-", "").substring(0, 12);
+        return postgresIdentifierPrefix(name, 63 - suffix.length()) + suffix;
+    }
+
+    public static String postgresIdentifierPrefix(String name, int maxBytes) {
+        int end = name.length();
+        while (name.substring(0, end).getBytes(StandardCharsets.UTF_8).length > maxBytes) {
+            end = name.offsetByCodePoints(end, -1);
+        }
+        return name.substring(0, end);
     }
 
     private static String postgresArrayType(Column column) {

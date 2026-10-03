@@ -13,6 +13,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class SchemaBuildRulesTest {
 
     @Test
+    void shouldBoundGeneratedPostgresNamesWithoutSplittingUnicode() {
+        var index = new net.ximatai.muyun.database.core.builder.Index("关联字段".repeat(8), false).named("");
+        String name = SchemaBuildRules.indexName("业务对象".repeat(8), index, POSTGRESQL);
+        assertTrue(name.getBytes(java.nio.charset.StandardCharsets.UTF_8).length <= 63);
+        assertFalse(name.contains("\uFFFD"));
+        assertEquals(name, SchemaBuildRules.indexName("业务对象".repeat(8), index, POSTGRESQL));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> SchemaBuildRules.indexName("table", index.named("x".repeat(64)), POSTGRESQL));
+    }
+
+    @Test
     void shouldUseMysqlDefaultVarcharLengthWithoutConstrainingPostgres() {
         Column column = Column.of("value").setType(ColumnType.VARCHAR);
 

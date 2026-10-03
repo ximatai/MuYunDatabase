@@ -72,6 +72,10 @@ int upsert(T entity);
 9. `SchemaManager` 执行的 SQL 与返回的 `MigrationResult.getStatements()` 来自同一个迁移计划；不允许执行期再次独立推导结构变化。
 10. `MigrationChange.getRisk()` 区分 `SAFE_ADDITIVE`、`DATA_VALIDATION_REQUIRED` 和 `DESTRUCTIVE`；后两者都属于 strict 模式拒绝的 non-additive change。
 
+`ensureTable()` 的 boolean 返回值表示是否发生结构变更；已有表新增字段、索引或同步注释也返回 `true`，不能据此判断是否新建表。新增更宽的唯一索引不会隐式删除已有唯一索引。
+
+显式删除索引时，`TableWrapper.dropIndex(List<String>)` 按列集合定位唯一匹配的普通或唯一索引；同列存在多个索引时明确拒绝歧义。需要精确选择时使用 `dropIndex(new Index(columns, unique).named(name))`。删除进入统一迁移计划，dry-run 不执行，strict 拒绝，execute 按计划执行。
+
 ### 5.1 通用技术表
 
 1. 非实体技术表可由 Spring Bean 实现 `MuYunSchemaContributor` 注册，不要求声明 `EntityDao` Repository。
