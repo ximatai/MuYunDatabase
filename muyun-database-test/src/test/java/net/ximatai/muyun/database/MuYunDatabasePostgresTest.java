@@ -33,6 +33,8 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @Tag("db")
 @Testcontainers
@@ -63,6 +65,71 @@ public class MuYunDatabasePostgresTest extends MuYunDatabaseUsageExamplesTestBas
     @Override
     Class<?> getEntityClass() {
         return TestEntityForPG.class;
+    }
+
+    @Test
+    void longGeneratedIndexNamesShouldBeIdempotentAndDistinct() {
+        String tableName = "long_index_" + "x".repeat(34);
+        String prefix = "relation_" + "y".repeat(12);
+        String first = prefix + "_first_id";
+        String second = prefix + "_second_id";
+        TableWrapper table = TableWrapper.withName(tableName)
+                .addColumn(Column.of(first).setType(ColumnType.VARCHAR).setLength(64))
+                .addColumn(Column.of(second).setType(ColumnType.VARCHAR).setLength(64))
+                .addIndex(List.of(first), false)
+                .addIndex(List.of(second), false);
+        SchemaManager manager = new SchemaManager(db);
+        manager.ensureTable(table);
+        assertFalse(manager.ensureTable(table, MigrationOptions.dryRun()).isChanged());
+        assertFalse(manager.ensureTable(table));
+        var indexes = db.getDBInfo().getSchema("public").getTable(tableName).getIndexList();
+        assertEquals(2, indexes.size());
+        assertEquals(2, indexes.stream().map(index -> index.getName()).distinct().count());
+        assertTrue(indexes.stream().allMatch(index -> index.getName().getBytes(java.nio.charset.StandardCharsets.UTF_8).length <= 63));
+    }
+
+    @Test
+    void shouldRecognizeExistingPostgresTruncatedIndexName() {
+        String tableName = "legacy_index_" + "x".repeat(32);
+        String columnName = "relation_" + "y".repeat(20);
+        db.execute("create table " + tableName + "(" + columnName + " varchar(64))");
+        String rawName = tableName + "_" + columnName + "_index";
+        db.execute("create index " + rawName + " on " + tableName + "(" + columnName + ")");
+        db.resetDBInfo();
+        TableWrapper table = TableWrapper.withName(tableName)
+                .addColumn(Column.of(columnName).setType(ColumnType.VARCHAR).setLength(64))
+                .addIndex(List.of(columnName), false);
+        assertFalse(new SchemaManager(db).ensureTable(table, MigrationOptions.dryRun()).isChanged());
+    }
+
+    @Test
+    void explicitIndexDropShouldPreserveOtherIndexesOnTheSameColumn() {
+        String tableName = "explicit_index_drop";
+        TableWrapper table = TableWrapper.withName(tableName)
+                .addColumn(Column.of("code").setType(ColumnType.VARCHAR).setLength(64))
+                .addIndex(new Index("code", true).named("legacy_unique_code"))
+                .addIndex(new Index("code", false).named("other_code_lookup"));
+        SchemaManager manager = new SchemaManager(db);
+        manager.ensureTable(table);
+        db.execute("insert into explicit_index_drop(code) values ('SAME')");
+        assertThrows(RuntimeException.class,
+                () -> db.execute("insert into explicit_index_drop(code) values ('SAME')"));
+
+        table.getIndexes().removeIf(Index::isUnique);
+        table.dropIndex(new Index("code", true).named("legacy_unique_code"));
+        MigrationResult preview = manager.ensureTable(table, MigrationOptions.dryRun());
+        assertTrue(preview.hasNonAdditiveChanges());
+        assertThrows(net.ximatai.muyun.database.core.orm.OrmException.class,
+                () -> manager.ensureTable(table, MigrationOptions.strict()));
+        assertTrue(db.getDBInfo().getSchema("public").getTable(tableName).getIndexList().stream()
+                .anyMatch(index -> "legacy_unique_code".equals(index.getName())));
+
+        MigrationResult applied = manager.ensureTable(table, MigrationOptions.execute());
+        assertEquals(preview.getStatements(), applied.getStatements());
+        assertEquals(List.of("other_code_lookup"), db.getDBInfo().getSchema("public").getTable(tableName).getIndexList().stream()
+                .map(index -> index.getName()).toList());
+        db.execute("insert into explicit_index_drop(code) values ('SAME')");
+        assertFalse(manager.ensureTable(table, MigrationOptions.dryRun()).isChanged());
     }
 
     @Test

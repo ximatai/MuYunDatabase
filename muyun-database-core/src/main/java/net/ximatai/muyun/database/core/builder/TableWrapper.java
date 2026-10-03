@@ -130,6 +130,11 @@ public class TableWrapper extends TableBase {
         return this;
     }
 
+    public TableWrapper dropIndex(Index index) {
+        droppedIndexes.add(Objects.requireNonNull(index, "index must not be null"));
+        return this;
+    }
+
     public TableWrapper dropColumn(String columnName) {
         droppedColumns.add(columnName);
         return this;
