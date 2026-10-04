@@ -17,11 +17,13 @@ class SchemaMigrationPlanner {
     private final IDatabaseOperations<?> operations;
     private final DBInfo info;
     private final MigrationSqlDialect dialect;
+    private final IndexIdentity indexIdentity;
 
     SchemaMigrationPlanner(IDatabaseOperations<?> operations) {
         this.operations = operations;
         this.info = operations.getDBInfo();
         this.dialect = createDialect(info.getDatabaseType());
+        this.indexIdentity = new IndexIdentity(info.getDatabaseType());
     }
 
     Plan plan(TableWrapper wrapper) {
@@ -132,16 +134,11 @@ class SchemaMigrationPlanner {
             checkAndPlanForeignKey(table, constraint, builder);
         }
 
+        // A column drop can implicitly remove its indexes. Finish explicit index
+        // drops/replacements first so the later column DDL cannot invalidate them.
+        planIndexes(table, wrapper, builder);
         for (String columnName : wrapper.getDroppedColumns()) {
             checkAndPlanDropColumn(table, columnName, builder);
-        }
-
-        for (Index index : wrapper.getDroppedIndexes()) {
-            checkAndPlanDropIndex(table, index, builder);
-        }
-
-        for (Index index : wrapper.getIndexes()) {
-            checkAndPlanIndex(table, index, builder);
         }
         planMissingInheritance(table, wrapper, builder);
     }
@@ -157,31 +154,35 @@ class SchemaMigrationPlanner {
         ));
     }
 
-    private void checkAndPlanDropIndex(DBTable table, Index index, PlanBuilder builder) {
-        index.getColumns().forEach(name -> assertValidIdentifier(name, "index column"));
-        List<DBIndex> matches;
-        if (index.getName() != null) {
-            assertValidIdentifier(index.getName(), "index");
-            matches = table.getIndexList().stream()
-                    .filter(existing -> getDatabaseType() == DBInfo.Type.POSTGRESQL
-                            ? index.getName().equals(existing.getName())
-                            : index.getName().equalsIgnoreCase(existing.getName()))
-                    .toList();
-        } else {
-            Set<String> columns = new LinkedHashSet<>(index.getColumns());
-            matches = table.getIndexList().stream()
-                    .filter(existing -> columns.equals(new LinkedHashSet<>(existing.getColumns())))
+    private void planIndexes(DBTable table, TableWrapper wrapper, PlanBuilder builder) {
+        Map<String, DBIndex> drops = new TreeMap<>(indexIdentity.comparator());
+        for (IndexDrop selector : wrapper.getDroppedIndexes()) {
+            List<DBIndex> matches = table.getIndexList().stream()
+                    .filter(existing -> selector.name() != null
+                            ? indexIdentity.sameIdentifier(selector.name(), existing.getName())
+                            : indexIdentity.sameColumnSet(selector.columns(), existing.getColumns()))
                     .toList();
             if (matches.size() > 1) {
                 throw new OrmException(OrmException.Code.INVALID_MAPPING,
-                        "Ambiguous index drop for columns " + index.getColumns() + "; specify an index name");
+                        "Ambiguous index drop: " + selector + "; specify an index name");
+            }
+            matches.forEach(index -> drops.put(index.getName(), index));
+        }
+        for (IndexTarget target : physicalIndexTargets(wrapper)) {
+            if (drops.containsKey(target.name())) {
+                throw indexConflict(target.name());
             }
         }
-        matches.forEach(dbIndex -> builder.addNonAdditive(MigrationChange.Type.DROP_INDEX, dbIndex.getName(), dialect.dropIndex(
+        // Resolve all selectors and reject conflicts before emitting any index DDL.
+        // Overlapping selectors must never schedule a second DROP of the same object.
+        drops.values().forEach(dbIndex -> builder.addNonAdditive(MigrationChange.Type.DROP_INDEX, dbIndex.getName(), dialect.dropIndex(
                 SchemaBuildRules.quoteIdentifier(table.getSchema(), getDatabaseType()),
                 SchemaBuildRules.qualifiedName(table.getSchema(), table.getName(), getDatabaseType()),
                 SchemaBuildRules.quoteIdentifier(dbIndex.getName(), getDatabaseType())
         )));
+        for (Index index : wrapper.getIndexes()) {
+            checkAndPlanIndex(table, index, builder);
+        }
     }
 
     private void checkAndPlanColumn(DBTable table, Column column, PlanBuilder builder) {
@@ -238,22 +239,8 @@ class SchemaMigrationPlanner {
         targetColumns.forEach(name -> assertValidIdentifier(name, "index column"));
         String expectedName = SchemaBuildRules.indexName(table.getName(), index, getDatabaseType());
         Optional<DBIndex> hit = table.getIndexList().stream()
-                .filter(i -> expectedName.equalsIgnoreCase(i.getName()))
+                .filter(i -> indexIdentity.sameIdentifier(expectedName, i.getName()))
                 .findFirst();
-        if (hit.isEmpty() && index.getName() == null && getDatabaseType() == DBInfo.Type.POSTGRESQL) {
-            String legacyName = SchemaBuildRules.postgresIdentifierPrefix(
-                    SchemaBuildRules.indexName(table.getName(), index), 63);
-            hit = table.getIndexList().stream()
-                    .filter(existing -> legacyName.equalsIgnoreCase(existing.getName()))
-                    .filter(existing -> existing.getColumns().equals(targetColumns))
-                    .findFirst();
-        }
-        if (hit.isEmpty() && index.getName() == null) {
-            String previousGeneratedName = autoGeneratedCounterpartName(table.getName(), index);
-            hit = table.getIndexList().stream()
-                    .filter(i -> previousGeneratedName.equalsIgnoreCase(i.getName()))
-                    .findFirst();
-        }
 
         if (hit.isPresent()) {
             DBIndex dbIndex = hit.get();
@@ -268,11 +255,16 @@ class SchemaMigrationPlanner {
             ));
         }
 
-        builder.addAdditive(MigrationChange.Type.CREATE_INDEX, indexTarget(table.getName(), index), buildCreateIndexSql(
+        String sql = buildCreateIndexSql(
                 SchemaBuildRules.qualifiedName(table.getSchema(), table.getName(), getDatabaseType()),
                 table.getName(),
                 index
-        ));
+        );
+        if (index.isUnique()) {
+            builder.addValidationRequired(MigrationChange.Type.CREATE_INDEX, expectedName, sql);
+        } else {
+            builder.addAdditive(MigrationChange.Type.CREATE_INDEX, expectedName, sql);
+        }
     }
 
     private String buildCreateIndexSql(String schemaDotTable, String tableName, Index index) {
@@ -300,7 +292,7 @@ class SchemaMigrationPlanner {
         }
         List<DBIndexColumn> actualColumns = actual.getIndexColumns();
         if (actualColumns.isEmpty()) {
-            if (!actual.getColumns().equals(expected.getColumns())) {
+            if (!indexIdentity.sameColumns(actual.getColumns(), expected.getColumns())) {
                 return false;
             }
         } else if (actualColumns.size() != expected.getIndexColumns().size()) {
@@ -309,7 +301,7 @@ class SchemaMigrationPlanner {
             for (int i = 0; i < actualColumns.size(); i++) {
                 DBIndexColumn left = actualColumns.get(i);
                 IndexColumn right = expected.getIndexColumns().get(i);
-                if (!left.name().equalsIgnoreCase(right.name()) || left.direction() != right.direction()) {
+                if (!indexIdentity.sameIdentifier(left.name(), right.name()) || left.direction() != right.direction()) {
                     return false;
                 }
             }
@@ -499,10 +491,6 @@ class SchemaMigrationPlanner {
 
     private String indexTarget(String tableName, Index index) {
         return SchemaBuildRules.indexName(tableName, index, getDatabaseType());
-    }
-
-    private String autoGeneratedCounterpartName(String tableName, Index index) {
-        return SchemaBuildRules.indexName(tableName, new Index(index.getColumns(), !index.isUnique()), getDatabaseType());
     }
 
     private String inheritanceClause(TableWrapper wrapper, String defaultSchema) {
@@ -727,8 +715,26 @@ class SchemaMigrationPlanner {
             assertValidIdentifier(constraint.referencedSchema() == null ? defaultSchema : constraint.referencedSchema(), "referenced schema");
             constraint.referencedColumns().forEach(column -> assertValidIdentifier(column, "referenced column"));
         }
+        List<IndexTarget> indexTargets = physicalIndexTargets(wrapper);
+        Set<String> indexNames = new TreeSet<>(indexIdentity.comparator());
+        for (IndexTarget target : indexTargets) {
+            assertValidIdentifier(target.name(), "index");
+            if (!indexNames.add(target.name())) {
+                throw new OrmException(OrmException.Code.INVALID_MAPPING, "duplicate physical index target: " + target.name());
+            }
+            for (String column : target.columns()) {
+                if (wrapper.getDroppedColumns().stream().anyMatch(dropped -> indexIdentity.sameIdentifier(dropped, column))) {
+                    throw new OrmException(OrmException.Code.INVALID_MAPPING, "index references dropped column: " + column);
+                }
+            }
+        }
         for (Index index : wrapper.getIndexes()) {
-            validateLocalColumns(columns, index.getColumns(), "index");
+            for (String column : index.getColumns()) {
+                assertValidIdentifier(column, "index column");
+                if (columns.stream().noneMatch(available -> indexIdentity.sameIdentifier(available, column))) {
+                    throw new OrmException(OrmException.Code.INVALID_MAPPING, "index references unknown column: " + column);
+                }
+            }
             if (index.getPredicate() != null) {
                 if (getDatabaseType() != DBInfo.Type.POSTGRESQL) {
                     throw new OrmException(OrmException.Code.INVALID_MAPPING,
@@ -739,6 +745,40 @@ class SchemaMigrationPlanner {
                 }
             }
         }
+        for (IndexDrop selector : wrapper.getDroppedIndexes()) {
+            if (selector.name() != null) {
+                assertValidIdentifier(selector.name(), "index");
+                if (indexNames.contains(selector.name())) throw indexConflict(selector.name());
+            } else {
+                selector.columns().forEach(column -> assertValidIdentifier(column, "index column"));
+                if (indexTargets.stream().anyMatch(target ->
+                        indexIdentity.sameColumnSet(selector.columns(), target.columns()))) {
+                    throw indexConflict(selector.columns().toString());
+                }
+            }
+        }
+    }
+
+    private record IndexTarget(String name, List<String> columns) {}
+
+    private List<IndexTarget> physicalIndexTargets(TableWrapper wrapper) {
+        List<IndexTarget> targets = new ArrayList<>();
+        wrapper.getIndexes().forEach(index -> targets.add(
+                new IndexTarget(indexTarget(wrapper.getName(), index), index.getColumns())));
+        // MySQL exposes UNIQUE constraints and their indexes as the same physical
+        // object. Protect both declaration views with the same identity rules.
+        // PostgreSQL constraint-owned indexes are excluded from index metadata.
+        if (getDatabaseType() == DBInfo.Type.MYSQL) {
+            wrapper.getUniqueConstraints().forEach(constraint -> targets.add(
+                    new IndexTarget(constraint.name(), constraint.columns())));
+        }
+        return targets;
+    }
+
+    private OrmException indexConflict(String target) {
+        return new OrmException(OrmException.Code.INVALID_MAPPING,
+                "Index cannot be both dropped and declared: " + target
+                        + "; declare its desired definition to replace it, or drop a different index by name");
     }
 
     private Set<String> inheritedColumnNames(TableWrapper wrapper, String defaultSchema) {

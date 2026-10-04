@@ -15,7 +15,9 @@ import net.ximatai.muyun.database.core.builder.PrimaryKeyConstraint;
 import net.ximatai.muyun.database.core.builder.UniqueConstraint;
 import net.ximatai.muyun.database.core.orm.Criteria;
 import net.ximatai.muyun.database.core.orm.MigrationOptions;
+import net.ximatai.muyun.database.core.orm.MigrationChange;
 import net.ximatai.muyun.database.core.orm.MigrationResult;
+import net.ximatai.muyun.database.core.orm.OrmException;
 import net.ximatai.muyun.database.core.orm.PageRequest;
 import net.ximatai.muyun.database.core.orm.RuntimeTableGateway;
 import net.ximatai.muyun.database.core.orm.TableMeta;
@@ -89,7 +91,7 @@ public class MuYunDatabasePostgresTest extends MuYunDatabaseUsageExamplesTestBas
     }
 
     @Test
-    void shouldRecognizeExistingPostgresTruncatedIndexName() {
+    void shouldRequireExplicitDeletionOfOldPostgresTruncatedIndexName() {
         String tableName = "legacy_index_" + "x".repeat(32);
         String columnName = "relation_" + "y".repeat(20);
         db.execute("create table " + tableName + "(" + columnName + " varchar(64))");
@@ -99,7 +101,134 @@ public class MuYunDatabasePostgresTest extends MuYunDatabaseUsageExamplesTestBas
         TableWrapper table = TableWrapper.withName(tableName)
                 .addColumn(Column.of(columnName).setType(ColumnType.VARCHAR).setLength(64))
                 .addIndex(List.of(columnName), false);
-        assertFalse(new SchemaManager(db).ensureTable(table, MigrationOptions.dryRun()).isChanged());
+        SchemaManager manager = new SchemaManager(db);
+        MigrationResult initial = manager.ensureTable(table, MigrationOptions.dryRunStrict());
+        assertEquals(List.of(MigrationChange.Type.CREATE_INDEX), initial.getChanges().stream().map(MigrationChange::getType).toList());
+
+        String physicalName = rawName.substring(0, 63);
+        table.dropIndexByName(physicalName);
+        MigrationResult preview = manager.ensureTable(table, MigrationOptions.dryRun());
+        assertEquals(List.of(MigrationChange.Type.DROP_INDEX, MigrationChange.Type.CREATE_INDEX),
+                preview.getChanges().stream().map(MigrationChange::getType).toList());
+        assertThrows(OrmException.class, () -> manager.ensureTable(table, MigrationOptions.strict()));
+        assertEquals(preview.getStatements(), manager.ensureTable(table, MigrationOptions.execute()).getStatements());
+        assertFalse(manager.ensureTable(table, MigrationOptions.dryRunStrict()).isChanged());
+        var indexes = db.getDBInfo().getSchema("public").getTable(tableName).getIndexList();
+        assertEquals(1, indexes.size());
+        assertFalse(physicalName.equals(indexes.getFirst().getName()));
+    }
+
+    @Test
+    void generatedIndexShouldNotClaimCaseDistinctLegacyUniqueIndex() {
+        String tableName = "case_index_" + "x".repeat(34);
+        String columnName = "relation_" + "y".repeat(20);
+        String legacyName = (tableName + "_" + columnName + "_index").substring(0, 63).toUpperCase(java.util.Locale.ROOT);
+        db.execute("create table " + tableName + "(" + columnName + " varchar(64))");
+        db.execute("create unique index \"" + legacyName + "\" on " + tableName + "(" + columnName + ")");
+        db.resetDBInfo();
+        TableWrapper table = TableWrapper.withName(tableName)
+                .addColumn(Column.of(columnName).setType(ColumnType.VARCHAR).setLength(64)).addIndex(List.of(columnName), false);
+        SchemaManager manager = new SchemaManager(db);
+
+        MigrationResult preview = manager.ensureTable(table, MigrationOptions.dryRunStrict());
+        assertEquals(List.of(MigrationChange.Type.CREATE_INDEX), preview.getChanges().stream().map(MigrationChange::getType).toList());
+        assertEquals(preview.getStatements(), manager.ensureTable(table, MigrationOptions.strict()).getStatements());
+        assertEquals(2, db.getDBInfo().getSchema("public").getTable(tableName).getIndexList().size());
+        db.execute("insert into " + tableName + " values ('SAME')");
+        assertThrows(RuntimeException.class, () -> db.execute("insert into " + tableName + " values ('SAME')"));
+        assertFalse(manager.ensureTable(table, MigrationOptions.dryRunStrict()).isChanged());
+    }
+
+    @Test
+    void quotedIndexNamesAndColumnsShouldRemainCaseSensitive() {
+        String tableName = "quoted_index_identity";
+        TableWrapper table = TableWrapper.withName(tableName)
+                .addColumn(Column.of("code").setType(ColumnType.VARCHAR).setLength(64))
+                .addColumn(Column.of("CODE").setType(ColumnType.VARCHAR).setLength(64))
+                .addIndex(new Index("code", false).named("IX_CASE"))
+                .addIndex(new Index("code", false).named("ix_case"));
+        SchemaManager manager = new SchemaManager(db);
+        manager.ensureTable(table, MigrationOptions.strict());
+        assertEquals(2, db.getDBInfo().getSchema("public").getTable(tableName).getIndexList().size());
+        table.getIndexes().removeIf(index -> "ix_case".equals(index.getName()));
+        table.addIndex(new Index("CODE", false).named("ix_case"));
+
+        MigrationResult preview = manager.ensureTable(table, MigrationOptions.dryRun());
+        assertEquals(List.of(MigrationChange.Type.DROP_INDEX, MigrationChange.Type.CREATE_INDEX),
+                preview.getChanges().stream().map(MigrationChange::getType).toList());
+        assertEquals(preview.getStatements(), manager.ensureTable(table, MigrationOptions.execute()).getStatements());
+        var indexes = db.getDBInfo().getSchema("public").getTable(tableName).getIndexList();
+        assertEquals(List.of("CODE"), indexes.stream().filter(index -> "ix_case".equals(index.getName())).findFirst().orElseThrow().getColumns());
+        assertEquals(List.of("code"), indexes.stream().filter(index -> "IX_CASE".equals(index.getName())).findFirst().orElseThrow().getColumns());
+        assertFalse(manager.ensureTable(table, MigrationOptions.dryRunStrict()).isChanged());
+    }
+
+    @Test
+    void conflictingDropShouldFailBeforeDdlAndDesiredDefinitionShouldReplaceOnce() {
+        String tableName = "same_name_index_rebuild";
+        TableWrapper table = TableWrapper.withName(tableName)
+                .addColumn(Column.of("code").setType(ColumnType.VARCHAR).setLength(64))
+                .addIndex(new Index("code", true).named("rebuild_code_lookup"));
+        SchemaManager manager = new SchemaManager(db);
+        manager.ensureTable(table, MigrationOptions.strict());
+        db.execute("insert into " + tableName + " values ('SAME')");
+        table.dropIndexByName("rebuild_code_lookup")
+                .addColumn(Column.of("extra").setType(ColumnType.VARCHAR).setLength(64));
+
+        OrmException error = assertThrows(OrmException.class, () -> manager.ensureTable(table, MigrationOptions.execute()));
+        assertEquals(OrmException.Code.INVALID_MAPPING, error.getCode());
+        assertFalse(db.getDBInfo().getSchema("public").getTable(tableName).contains("extra"));
+        assertThrows(RuntimeException.class, () -> db.execute("insert into " + tableName + " values ('SAME')"));
+
+        table.getDroppedIndexes().clear();
+        table.getIndexes().clear();
+        table.addIndex(new Index("code", false).named("rebuild_code_lookup"));
+        MigrationResult preview = manager.ensureTable(table, MigrationOptions.dryRun());
+        assertEquals(1, preview.getChanges().stream().filter(change -> change.getType() == MigrationChange.Type.DROP_INDEX).count());
+        assertEquals(1, preview.getChanges().stream().filter(change -> change.getType() == MigrationChange.Type.CREATE_INDEX).count());
+        assertThrows(OrmException.class, () -> manager.ensureTable(table, MigrationOptions.strict()));
+        assertEquals(preview.getStatements(), manager.ensureTable(table, MigrationOptions.execute()).getStatements());
+        db.execute("insert into " + tableName + "(code) values ('SAME')");
+        assertFalse(manager.ensureTable(table, MigrationOptions.dryRunStrict()).isChanged());
+    }
+
+    @Test
+    void indexReplacementShouldPrecedeDroppingItsOldColumn() {
+        String tableName = "replace_index_drop_column";
+        SchemaManager manager = new SchemaManager(db);
+        manager.ensureTable(TableWrapper.withName(tableName)
+                .addColumn(Column.of("code").setType(ColumnType.VARCHAR).setLength(64))
+                .addColumn(Column.of("tenant_id").setType(ColumnType.VARCHAR).setLength(64))
+                .addIndex(new Index("code", false).named("replace_column_lookup")));
+        TableWrapper target = TableWrapper.withName(tableName)
+                .addColumn(Column.of("tenant_id").setType(ColumnType.VARCHAR).setLength(64))
+                .dropColumn("code").addIndex(new Index("tenant_id", false).named("replace_column_lookup"));
+
+        MigrationResult preview = manager.ensureTable(target, MigrationOptions.dryRun());
+        assertEquals(List.of(MigrationChange.Type.DROP_INDEX, MigrationChange.Type.CREATE_INDEX, MigrationChange.Type.DROP_COLUMN),
+                preview.getChanges().stream().map(MigrationChange::getType).toList());
+        assertEquals(preview.getStatements(), manager.ensureTable(target, MigrationOptions.execute()).getStatements());
+        assertFalse(manager.ensureTable(target, MigrationOptions.dryRunStrict()).isChanged());
+    }
+
+    @Test
+    void uniqueIndexOnExistingDataShouldRequireValidationAndStrictShouldNotExecute() {
+        String tableName = "validate_existing_unique_index";
+        TableWrapper table = TableWrapper.withName(tableName)
+                .addColumn(Column.of("code").setType(ColumnType.VARCHAR).setLength(64));
+        SchemaManager manager = new SchemaManager(db);
+        manager.ensureTable(table);
+        db.execute("insert into " + tableName + " values ('SAME'), ('SAME')");
+        table.addIndex(new Index("code", true).named("validate_unique_code"));
+
+        MigrationResult preview = manager.ensureTable(table, MigrationOptions.dryRun());
+        assertEquals(MigrationChange.Risk.DATA_VALIDATION_REQUIRED, preview.getChanges().getFirst().getRisk());
+        OrmException error = assertThrows(OrmException.class, () -> manager.ensureTable(table, MigrationOptions.strict()));
+        assertEquals(OrmException.Code.STRICT_MIGRATION_REJECTED, error.getCode());
+        assertThrows(OrmException.class, () -> manager.ensureTable(table, MigrationOptions.dryRunStrict()));
+        assertThrows(RuntimeException.class, () -> manager.ensureTable(table, MigrationOptions.execute()));
+        assertEquals(0, db.getDBInfo().getSchema("public").getTable(tableName).getIndexList().size());
+        assertEquals(2, db.query("select code from " + tableName, List.of()).size());
     }
 
     @Test
@@ -116,7 +245,7 @@ public class MuYunDatabasePostgresTest extends MuYunDatabaseUsageExamplesTestBas
                 () -> db.execute("insert into explicit_index_drop(code) values ('SAME')"));
 
         table.getIndexes().removeIf(Index::isUnique);
-        table.dropIndex(new Index("code", true).named("legacy_unique_code"));
+        table.dropIndexByName("legacy_unique_code");
         MigrationResult preview = manager.ensureTable(table, MigrationOptions.dryRun());
         assertTrue(preview.hasNonAdditiveChanges());
         assertThrows(net.ximatai.muyun.database.core.orm.OrmException.class,

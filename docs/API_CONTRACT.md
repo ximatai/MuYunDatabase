@@ -74,7 +74,19 @@ int upsert(T entity);
 
 `ensureTable()` 的 boolean 返回值表示是否发生结构变更；已有表新增字段、索引或同步注释也返回 `true`，不能据此判断是否新建表。新增更宽的唯一索引不会隐式删除已有唯一索引。
 
-显式删除索引时，`TableWrapper.dropIndex(List<String>)` 按列集合定位唯一匹配的普通或唯一索引；同列存在多个索引时明确拒绝歧义。需要精确选择时使用 `dropIndex(new Index(columns, unique).named(name))`。删除进入统一迁移计划，dry-run 不执行，strict 拒绝，execute 按计划执行。
+索引的物理名称是身份，列顺序、排序方向、唯一性和 predicate 是定义。PostgreSQL 的名称和列名按带引号标识符精确比较，MySQL 忽略大小写。同名定义变化才自动替换；同列不同名索引独立存在，不通过历史截断名称或普通／唯一自动名称猜测归属。
+
+所有 `addIndex` 重载只组装模型，允许先声明索引再声明列；列存在性与方言比较统一在规划阶段校验，未知列在执行任何 DDL 前拒绝。
+
+显式删除索引时，`TableWrapper.dropIndex(List<String>)` 按无序列集合定位唯一匹配的普通或唯一索引；同列存在多个索引时明确拒绝歧义。需要精确选择时使用 `dropIndexByName(name)`，无需提供列、唯一性、排序或 predicate。删除模型为不可变 `IndexDrop`，不再复用 `Index` 定义；未匹配的删除请求是幂等 no-op，多个选择器命中同一索引只生成一次删除。
+
+同一物理索引既要求删除又要求存在时，在执行任何 DDL 前拒绝，包括不存在或新建表场景。按列删除与目标索引的列集合重叠也拒绝；要替换不同名的同列旧索引，必须按旧物理名称删除。重复声明同一物理索引名同样拒绝，不按调用顺序决定优先级。
+
+MySQL 的 `UNIQUE` 约束与其唯一索引共用物理对象，因此 `UniqueConstraint` 目标也进入同一套命名／按列／解析后身份冲突保护；不能同时用同名 `Index` 与 `UniqueConstraint` 重复声明它。未再声明的旧唯一约束可显式按其索引名删除，该操作会解除相应唯一性。PostgreSQL 的 constraint-owned backing index 不进入独立索引 metadata，不通过此删除入口移除约束。
+
+目标索引的键列不得引用本次要求删除的列，包含 MySQL 的目标唯一约束。显式索引删除／替换先于列删除，避免列删除隐式清理索引后再次 DROP 失败；predicate 的任意 SQL 依赖不由平台解析。
+
+删除或同名替换包含 `DESTRUCTIVE` change。已有表新增唯一索引标为 `DATA_VALIDATION_REQUIRED`，与唯一约束一致；新建空表的唯一索引仍为 `SAFE_ADDITIVE`。这些分类不代替数据校验或回填：dry-run 只返回计划，strict 拒绝前两类风险，execute 按计划执行并由数据库校验唯一性。升级及破坏性变更见 [`UPGRADE_INDEX_MIGRATION.md`](UPGRADE_INDEX_MIGRATION.md)。
 
 ### 5.1 通用技术表
 

@@ -6,19 +6,23 @@
 
 ### 新增
 
-- 暂无。
+- 新增 `TableWrapper.dropIndexByName(String)` 和独立的 `IndexDrop` 删除选择器。
 
 ### 变更
 
-- 暂无。
+- 移除 `dropIndex(Index)`，`getDroppedIndexes()` 改为返回 `List<IndexDrop>`；不再兼容猜测历史截断名称或普通／唯一自动名称的替换关系。
+- 同名索引只通过最终定义完成替换；矛盾的删除与目标声明、重复目标名称在执行前拒绝。
+- 已有表新增唯一索引归为 `DATA_VALIDATION_REQUIRED`，strict 拒绝；新表唯一索引保持安全增量。
 
 ### 修复
 
-- 暂无。
+- 修复 PostgreSQL 忽略大小写匹配可能误删独立唯一索引，以及 MySQL 按列删除因大小写不一致静默失效的问题。
+- 重叠删除选择器只生成一次 DROP，避免重复删除导致迁移中途失败。
+- MySQL 的目标唯一约束与索引删除统一检查，避免跨 metadata 视图移除仍声明的唯一性；同名 `Index`／`UniqueConstraint` 重复声明在执行前拒绝。
 
 ### 迁移说明
 
-- 暂无。
+- 破坏性变化和调用方修改方式见 [`UPGRADE_INDEX_MIGRATION.md`](UPGRADE_INDEX_MIGRATION.md)。本次不会自动重建数据库、删除或治理数据。
 
 ## 3.26.21
 

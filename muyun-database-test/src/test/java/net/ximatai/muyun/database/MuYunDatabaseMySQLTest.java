@@ -4,6 +4,7 @@ import net.ximatai.muyun.database.core.builder.Column;
 import net.ximatai.muyun.database.core.builder.ColumnType;
 import net.ximatai.muyun.database.core.builder.ForeignKeyAction;
 import net.ximatai.muyun.database.core.builder.ForeignKeyConstraint;
+import net.ximatai.muyun.database.core.builder.Index;
 import net.ximatai.muyun.database.core.builder.PredefinedColumn;
 import net.ximatai.muyun.database.core.builder.PrimaryKeyConstraint;
 import net.ximatai.muyun.database.core.builder.TableBuilder;
@@ -11,6 +12,8 @@ import net.ximatai.muyun.database.core.builder.TableWrapper;
 import net.ximatai.muyun.database.core.builder.UniqueConstraint;
 import net.ximatai.muyun.database.core.orm.Criteria;
 import net.ximatai.muyun.database.core.orm.MigrationOptions;
+import net.ximatai.muyun.database.core.orm.MigrationChange;
+import net.ximatai.muyun.database.core.orm.OrmException;
 import net.ximatai.muyun.database.core.orm.RuntimeColumnMapper;
 import net.ximatai.muyun.database.core.orm.RuntimeTableGateway;
 import net.ximatai.muyun.database.core.orm.SchemaManager;
@@ -26,6 +29,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @Tag("db")
 @Testcontainers
@@ -56,6 +60,130 @@ public class MuYunDatabaseMySQLTest extends MuYunDatabaseUsageExamplesTestBase {
     @Override
     Class<?> getEntityClass() {
         return TestEntityForMysql.class;
+    }
+
+    @Test
+    void indexNamesAndColumnSelectorsShouldIgnoreCase() {
+        String tableName = "mysql_index_identity";
+        TableWrapper table = TableWrapper.withName(tableName)
+                .addColumn(Column.of("code").setType(ColumnType.VARCHAR).setLength(64))
+                .addIndex(new Index("code", false).named("Lookup_Code"));
+        SchemaManager manager = new SchemaManager(db);
+        manager.ensureTable(table);
+        table.getIndexes().clear();
+        table.addIndex(new Index("CODE", false).named("LOOKUP_CODE"));
+        assertFalse(manager.ensureTable(table, MigrationOptions.dryRunStrict()).isChanged());
+
+        TableWrapper drop = TableWrapper.withName(tableName).dropIndex(List.of("CODE")).dropIndexByName("LOOKUP_CODE");
+        var preview = manager.ensureTable(drop, MigrationOptions.dryRun());
+        assertEquals(1, preview.getChanges().size());
+        assertThrows(OrmException.class, () -> manager.ensureTable(drop, MigrationOptions.strict()));
+        assertEquals(preview.getStatements(), manager.ensureTable(drop, MigrationOptions.execute()).getStatements());
+        assertEquals(0, db.getDBInfo().getDefaultSchema().getTable(tableName).getIndexList().size());
+        assertFalse(manager.ensureTable(drop, MigrationOptions.dryRunStrict()).isChanged());
+    }
+
+    @Test
+    void declaredUniqueConstraintShouldRejectIndexDeletionBeforeAnyDdl() {
+        String tableName = "mysql_unique_drop_conflict";
+        String uniqueName = "guard_unique_code";
+        SchemaManager manager = new SchemaManager(db);
+        manager.ensureTable(TableWrapper.withName(tableName)
+                .addColumn(Column.of("code").setType(ColumnType.VARCHAR).setLength(64))
+                .addColumn(Column.of("tenant_id").setType(ColumnType.VARCHAR).setLength(64))
+                .addUniqueConstraint(UniqueConstraint.named(uniqueName, "code")));
+        db.execute("insert into " + tableName + " values ('SAME', 'TENANT')");
+
+        for (int scenario = 0; scenario < 3; scenario++) {
+            TableWrapper target = TableWrapper.withName(tableName)
+                    .addColumn(Column.of("code").setType(ColumnType.VARCHAR).setLength(64))
+                    .addColumn(Column.of("tenant_id").setType(ColumnType.VARCHAR).setLength(64))
+                    .addColumn(Column.of("extra").setType(ColumnType.VARCHAR).setLength(64))
+                    .addUniqueConstraint(UniqueConstraint.named(uniqueName, scenario == 2 ? "tenant_id" : "code"));
+            if (scenario == 0) target.dropIndexByName(uniqueName.toUpperCase(java.util.Locale.ROOT));
+            else target.dropIndex(List.of("CODE"));
+
+            for (MigrationOptions options : List.of(MigrationOptions.dryRun(), MigrationOptions.execute(),
+                    MigrationOptions.strict(), MigrationOptions.dryRunStrict())) {
+                OrmException error = assertThrows(OrmException.class, () -> manager.ensureTable(target, options));
+                assertEquals(OrmException.Code.INVALID_MAPPING, error.getCode());
+            }
+        }
+        var actual = db.getDBInfo().getDefaultSchema().getTable(tableName);
+        assertFalse(actual.contains("extra"));
+        assertEquals(List.of(uniqueName), actual.getUniqueConstraints().stream().map(constraint -> constraint.name()).toList());
+        assertEquals(List.of("code"), actual.getIndexList().getFirst().getColumns());
+        assertThrows(RuntimeException.class, () -> db.execute("insert into " + tableName + " values ('SAME', 'OTHER')"));
+        assertEquals(1, db.query("select code from " + tableName, List.of()).size());
+    }
+
+    @Test
+    void differentNameUniqueConstraintReplacementAndExplicitRemovalShouldWork() {
+        String tableName = "mysql_unique_rename";
+        SchemaManager manager = new SchemaManager(db);
+        manager.ensureTable(TableWrapper.withName(tableName)
+                .addColumn(Column.of("code").setType(ColumnType.VARCHAR).setLength(64))
+                .addUniqueConstraint(UniqueConstraint.named("old_unique_code", "code")));
+        db.execute("insert into " + tableName + " values ('SAME')");
+        TableWrapper target = TableWrapper.withName(tableName)
+                .addColumn(Column.of("code").setType(ColumnType.VARCHAR).setLength(64))
+                .addUniqueConstraint(UniqueConstraint.named("new_unique_code", "code"))
+                .dropIndexByName("old_unique_code");
+
+        var preview = manager.ensureTable(target, MigrationOptions.dryRun());
+        assertEquals(List.of(MigrationChange.Type.ADD_UNIQUE_CONSTRAINT, MigrationChange.Type.DROP_INDEX),
+                preview.getChanges().stream().map(MigrationChange::getType).toList());
+        assertThrows(OrmException.class, () -> manager.ensureTable(target, MigrationOptions.strict()));
+        assertEquals(preview.getStatements(), manager.ensureTable(target, MigrationOptions.execute()).getStatements());
+        assertFalse(manager.ensureTable(target, MigrationOptions.dryRunStrict()).isChanged());
+        assertEquals(List.of("new_unique_code"), db.getDBInfo().getDefaultSchema().getTable(tableName)
+                .getUniqueConstraints().stream().map(constraint -> constraint.name()).toList());
+        assertThrows(RuntimeException.class, () -> db.execute("insert into " + tableName + " values ('SAME')"));
+
+        TableWrapper drop = TableWrapper.withName(tableName).dropIndexByName("new_unique_code");
+        assertThrows(OrmException.class, () -> manager.ensureTable(drop, MigrationOptions.strict()));
+        manager.ensureTable(drop, MigrationOptions.execute());
+        assertEquals(0, db.getDBInfo().getDefaultSchema().getTable(tableName).getUniqueConstraints().size());
+        db.execute("insert into " + tableName + " values ('SAME')");
+        assertFalse(manager.ensureTable(drop, MigrationOptions.dryRunStrict()).isChanged());
+    }
+
+    @Test
+    void sameNamedIndexReplacementShouldPrecedeDroppingItsOldColumn() {
+        String tableName = "mysql_index_replace_column";
+        SchemaManager manager = new SchemaManager(db);
+        manager.ensureTable(TableWrapper.withName(tableName)
+                .addColumn(Column.of("code").setType(ColumnType.VARCHAR).setLength(64))
+                .addColumn(Column.of("tenant_id").setType(ColumnType.VARCHAR).setLength(64))
+                .addIndex(new Index("code", true).named("Lookup_Code")), MigrationOptions.strict());
+        TableWrapper target = TableWrapper.withName(tableName)
+                .addColumn(Column.of("tenant_id").setType(ColumnType.VARCHAR).setLength(64))
+                .dropColumn("code").addIndex(new Index("TENANT_ID", false).named("lookup_code"));
+
+        var preview = manager.ensureTable(target, MigrationOptions.dryRun());
+        assertEquals(List.of(MigrationChange.Type.DROP_INDEX, MigrationChange.Type.CREATE_INDEX, MigrationChange.Type.DROP_COLUMN),
+                preview.getChanges().stream().map(MigrationChange::getType).toList());
+        assertThrows(OrmException.class, () -> manager.ensureTable(target, MigrationOptions.strict()));
+        assertEquals(preview.getStatements(), manager.ensureTable(target, MigrationOptions.execute()).getStatements());
+        assertFalse(manager.ensureTable(target, MigrationOptions.dryRunStrict()).isChanged());
+    }
+
+    @Test
+    void existingTableUniqueIndexShouldRequireValidation() {
+        String tableName = "mysql_unique_index_validation";
+        TableWrapper table = TableWrapper.withName(tableName)
+                .addColumn(Column.of("code").setType(ColumnType.VARCHAR).setLength(64));
+        SchemaManager manager = new SchemaManager(db);
+        manager.ensureTable(table);
+        db.execute("insert into " + tableName + " values ('SAME'), ('SAME')");
+        table.addIndex(new Index("code", true).named("unique_code"));
+
+        var preview = manager.ensureTable(table, MigrationOptions.dryRun());
+        assertEquals(MigrationChange.Risk.DATA_VALIDATION_REQUIRED, preview.getChanges().getFirst().getRisk());
+        assertThrows(OrmException.class, () -> manager.ensureTable(table, MigrationOptions.strict()));
+        assertThrows(RuntimeException.class, () -> manager.ensureTable(table, MigrationOptions.execute()));
+        assertEquals(0, db.getDBInfo().getDefaultSchema().getTable(tableName).getIndexList().size());
+        assertEquals(2, db.query("select code from " + tableName, List.of()).size());
     }
 
     @Test
