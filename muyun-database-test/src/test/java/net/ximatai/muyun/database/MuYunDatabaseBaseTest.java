@@ -1152,6 +1152,9 @@ public abstract class MuYunDatabaseBaseTest {
 
         basic.getIndexes().clear();
 
+        // Auto-generated unique and ordinary names represent distinct indexes.
+        // Replacing the old object requires selecting its actual name explicitly.
+        basic.dropIndexByName(table.getIndexList().getFirst().getName());
         basic.addIndex("v_name", true);
 
         new TableBuilder(db).build(basic);

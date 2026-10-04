@@ -17,6 +17,7 @@
 7. Spring 声明式事务：`EntityDao` 方法与 Jdbi SQL 注解方法同边界回滚。
 8. 表结构拉齐策略：全局 `repository-schema-mode` + 仓库级 `alignTable` 覆盖。
 9. Quarkus 扩展：CDI bean、`@MuYunRepository` synthetic bean、启动期表结构拉齐、JVM/H2 native/PostgreSQL native smoke。
+10. 索引目标定义与删除选择器分离，按方言物理身份规划、拒绝冲突并统一唯一性风险；升级说明见 [`UPGRADE_INDEX_MIGRATION.md`](UPGRADE_INDEX_MIGRATION.md)。
 
 ## 近期优先级
 

@@ -19,7 +19,10 @@ import net.ximatai.muyun.database.core.metadata.DBIndex;
 import net.ximatai.muyun.database.core.metadata.DBInfo;
 import net.ximatai.muyun.database.core.metadata.DBSchema;
 import net.ximatai.muyun.database.core.metadata.DBTable;
+import net.ximatai.muyun.database.core.metadata.DBUniqueConstraint;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 import java.sql.Array;
 import java.util.ArrayList;
@@ -162,7 +165,7 @@ class SchemaManagerTest {
     }
 
     @Test
-    void shouldDropUniqueIndexThroughLegacyColumnEntryPoint() {
+    void shouldDropUniqueIndexByColumns() {
         FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("POSTGRESQL"));
         existingInfo(loader);
         loader.columns.get("public.contract").put("code", varcharColumn("code", 64));
@@ -199,9 +202,382 @@ class SchemaManagerTest {
         assertEquals(List.of(), operations.executedSql);
 
         MigrationResult preview = manager.ensureTable(TableWrapper.withName("contract")
-                .dropIndex(new Index("code", true).named("legacy_code_unique")), MigrationOptions.dryRun());
+                .dropIndexByName("legacy_code_unique"), MigrationOptions.dryRun());
         assertEquals(1, preview.getChanges().size());
         assertEquals("legacy_code_unique", preview.getChanges().get(0).getTarget());
+    }
+
+    @Test
+    void shouldMatchMysqlIndexNamesAndColumnsIgnoringCase() {
+        FakeMetaDataLoader loader = indexLoader(DBInfo.Type.MYSQL);
+        loader.indexes.put("public.contract", List.of(index("lookup_code", false, "code")));
+        SchemaManager manager = new SchemaManager(new FakeOperations(loader));
+        TableWrapper table = indexTable().addIndex(new Index("CODE", false).named("LOOKUP_CODE"));
+
+        assertFalse(manager.ensureTable(table, MigrationOptions.dryRunStrict()).isChanged());
+        assertEquals(List.of("drop index `lookup_code` on `public`.`contract`;"), manager.ensureTable(
+                TableWrapper.withName("contract").dropIndex(List.of("CODE")), MigrationOptions.dryRun()).getStatements());
+        assertEquals(List.of("drop index `lookup_code` on `public`.`contract`;"), manager.ensureTable(
+                TableWrapper.withName("contract").dropIndexByName("LOOKUP_CODE"), MigrationOptions.dryRun()).getStatements());
+    }
+
+    @Test
+    void shouldRejectMysqlUniqueConstraintAndIndexDropAcrossModelAndMetadataViews() {
+        for (boolean existingTable : List.of(false, true)) {
+            for (boolean byName : List.of(false, true)) {
+                FakeMetaDataLoader loader = existingTable ? indexLoader(DBInfo.Type.MYSQL)
+                        : new FakeMetaDataLoader(new DBInfo("MYSQL").setName("public"));
+                if (existingTable) {
+                    loader.indexes.put("public.contract", List.of(index("unique_code", true, "code")));
+                    loader.uniqueConstraints.put("public.contract", List.of(new DBUniqueConstraint("unique_code", List.of("code"))));
+                }
+                FakeOperations operations = new FakeOperations(loader);
+                TableWrapper table = indexTable().addColumn(Column.of("extra").setType(ColumnType.VARCHAR).setLength(64))
+                        .addUniqueConstraint(UniqueConstraint.named("unique_code", "code"));
+                if (byName) table.dropIndexByName("UNIQUE_CODE");
+                else table.dropIndex(List.of("CODE"));
+                SchemaManager manager = new SchemaManager(operations);
+
+                for (MigrationOptions options : List.of(MigrationOptions.dryRun(), MigrationOptions.execute(),
+                        MigrationOptions.strict(), MigrationOptions.dryRunStrict())) {
+                    OrmException error = assertThrows(OrmException.class, () -> manager.ensureTable(table, options));
+                    assertEquals(OrmException.Code.INVALID_MAPPING, error.getCode());
+                    assertEquals(List.of(), operations.executedSql);
+                }
+            }
+        }
+    }
+
+    @Test
+    void shouldRejectResolvedMysqlIndexDropWhenConstraintTargetUsesDifferentColumns() {
+        FakeMetaDataLoader loader = indexLoader(DBInfo.Type.MYSQL);
+        loader.indexes.put("public.contract", List.of(index("unique_code", true, "code")));
+        loader.uniqueConstraints.put("public.contract", List.of(new DBUniqueConstraint("unique_code", List.of("code"))));
+        FakeOperations operations = new FakeOperations(loader);
+        TableWrapper table = indexTable().addUniqueConstraint(UniqueConstraint.named("unique_code", "tenant_id"))
+                .dropIndex(List.of("CODE"));
+
+        OrmException error = assertThrows(OrmException.class,
+                () -> new SchemaManager(operations).ensureTable(table, MigrationOptions.execute()));
+        assertEquals(OrmException.Code.INVALID_MAPPING, error.getCode());
+        assertEquals(List.of(), operations.executedSql);
+    }
+
+    @Test
+    void shouldRejectMysqlIndexAndUniqueConstraintDuplicatePhysicalTargets() {
+        FakeOperations operations = new FakeOperations(new DBInfo("MYSQL").setName("public"));
+        TableWrapper table = indexTable().addUniqueConstraint(UniqueConstraint.named("unique_code", "code"))
+                .addIndex(new Index("code", true).named("UNIQUE_CODE"));
+
+        assertThrows(OrmException.class, () -> new SchemaManager(operations).ensureTable(table, MigrationOptions.execute()));
+        assertEquals(List.of(), operations.executedSql);
+    }
+
+    @Test
+    void shouldRejectMysqlUniqueConstraintReferencingDroppedColumn() {
+        FakeOperations operations = new FakeOperations(indexLoader(DBInfo.Type.MYSQL));
+        TableWrapper table = indexTable().addUniqueConstraint(UniqueConstraint.named("unique_code", "code"))
+                .dropColumn("CODE");
+
+        assertThrows(OrmException.class, () -> new SchemaManager(operations).ensureTable(table, MigrationOptions.execute()));
+        assertEquals(List.of(), operations.executedSql);
+    }
+
+    @Test
+    void shouldAllowMysqlExplicitDropWhenUniqueConstraintIsNotDeclared() {
+        FakeMetaDataLoader loader = indexLoader(DBInfo.Type.MYSQL);
+        loader.indexes.put("public.contract", List.of(index("unique_code", true, "code")));
+        loader.uniqueConstraints.put("public.contract", List.of(new DBUniqueConstraint("unique_code", List.of("code"))));
+        FakeOperations operations = new FakeOperations(loader);
+        SchemaManager manager = new SchemaManager(operations);
+        TableWrapper table = TableWrapper.withName("contract").dropIndexByName("UNIQUE_CODE");
+
+        MigrationResult preview = manager.ensureTable(table, MigrationOptions.dryRun());
+        assertEquals(List.of(MigrationChange.Type.DROP_INDEX), preview.getChanges().stream().map(MigrationChange::getType).toList());
+        assertThrows(OrmException.class, () -> manager.ensureTable(table, MigrationOptions.strict()));
+        manager.ensureTable(table, MigrationOptions.execute());
+        assertEquals(preview.getStatements(), operations.executedSql);
+    }
+
+    @Test
+    void shouldAllowMysqlDifferentNameConstraintCreationAndOldIndexDrop() {
+        FakeMetaDataLoader loader = indexLoader(DBInfo.Type.MYSQL);
+        loader.indexes.put("public.contract", List.of(index("old_unique", true, "code")));
+        loader.uniqueConstraints.put("public.contract", List.of(new DBUniqueConstraint("old_unique", List.of("code"))));
+        TableWrapper table = indexTable().addUniqueConstraint(UniqueConstraint.named("new_unique", "code"))
+                .dropIndexByName("old_unique");
+
+        MigrationResult result = new SchemaManager(new FakeOperations(loader)).ensureTable(table, MigrationOptions.dryRun());
+        assertEquals(List.of(MigrationChange.Type.ADD_UNIQUE_CONSTRAINT, MigrationChange.Type.DROP_INDEX),
+                result.getChanges().stream().map(MigrationChange::getType).toList());
+    }
+
+    @Test
+    void shouldKeepPostgresConstraintOwnedIndexOutsideIndependentIndexDeletion() {
+        FakeMetaDataLoader loader = indexLoader(DBInfo.Type.POSTGRESQL);
+        loader.uniqueConstraints.put("public.contract", List.of(new DBUniqueConstraint("unique_code", List.of("code"))));
+        TableWrapper table = indexTable().addUniqueConstraint(UniqueConstraint.named("unique_code", "code"))
+                .dropIndexByName("unique_code").addIndex(new Index("code", false).named("code_lookup"));
+
+        MigrationResult result = new SchemaManager(new FakeOperations(loader)).ensureTable(table, MigrationOptions.dryRunStrict());
+        assertEquals(List.of(MigrationChange.Type.CREATE_INDEX), result.getChanges().stream().map(MigrationChange::getType).toList());
+    }
+
+    @Test
+    void shouldKeepPostgresCaseDistinctIndexNames() {
+        FakeMetaDataLoader loader = indexLoader(DBInfo.Type.POSTGRESQL);
+        loader.indexes.put("public.contract", List.of(index("IX_CODE", true, "code")));
+        SchemaManager manager = new SchemaManager(new FakeOperations(loader));
+
+        MigrationResult result = manager.ensureTable(indexTable().addIndex(new Index("code", false).named("ix_code")),
+                MigrationOptions.dryRunStrict());
+        assertEquals(List.of(MigrationChange.Type.CREATE_INDEX), result.getChanges().stream().map(MigrationChange::getType).toList());
+        assertFalse(manager.ensureTable(TableWrapper.withName("contract").dropIndexByName("ix_code"),
+                MigrationOptions.dryRun()).isChanged());
+    }
+
+    @Test
+    void shouldComparePostgresQuotedIndexColumnsExactly() {
+        FakeMetaDataLoader loader = indexLoader(DBInfo.Type.POSTGRESQL);
+        loader.columns.get("public.contract").put("CODE", varcharColumn("CODE", 64));
+        loader.indexes.put("public.contract", List.of(index("ix_code", false, "CODE")));
+        SchemaManager manager = new SchemaManager(new FakeOperations(loader));
+        TableWrapper table = indexTable().addColumn(Column.of("CODE").setType(ColumnType.VARCHAR).setLength(64))
+                .addIndex(new Index("code", false).named("ix_code"));
+
+        assertEquals(List.of(MigrationChange.Type.DROP_INDEX, MigrationChange.Type.CREATE_INDEX),
+                manager.ensureTable(table, MigrationOptions.dryRun()).getChanges().stream().map(MigrationChange::getType).toList());
+        assertFalse(manager.ensureTable(TableWrapper.withName("contract").dropIndex(List.of("code")),
+                MigrationOptions.dryRun()).isChanged());
+    }
+
+    @Test
+    void shouldNotClaimPostgresTruncatedOrCaseFoldedLegacyNames() {
+        for (boolean uppercase : List.of(false, true)) {
+            FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("POSTGRESQL"));
+            String tableName = "long_index_" + "x".repeat(34);
+            String column = "relation_" + "y".repeat(20);
+            DBSchema schema = new DBSchema("public");
+            schema.addTable(new DBTable(loader).setSchema("public").setName(tableName));
+            loader.info.addSchema(schema);
+            loader.columns.put("public." + tableName, Map.of(column, varcharColumn(column, 64)));
+            String legacy = (tableName + "_" + column + "_index").substring(0, 63);
+            if (uppercase) legacy = legacy.toUpperCase(java.util.Locale.ROOT);
+            loader.indexes.put("public." + tableName, List.of(index(legacy, true, column)));
+            TableWrapper table = TableWrapper.withName(tableName)
+                    .addColumn(Column.of(column).setType(ColumnType.VARCHAR).setLength(64)).addIndex(List.of(column), false);
+
+            MigrationResult result = new SchemaManager(new FakeOperations(loader)).ensureTable(table, MigrationOptions.dryRunStrict());
+            assertEquals(List.of(MigrationChange.Type.CREATE_INDEX), result.getChanges().stream().map(MigrationChange::getType).toList());
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(DBInfo.Type.class)
+    void shouldValidateAllIndexEntryPointsAfterModelAssembly(DBInfo.Type databaseType) {
+        FakeMetaDataLoader loader = indexLoader(databaseType);
+        loader.indexes.put("public.contract", List.of(index("contract_code_index", false, "code")));
+        FakeOperations operations = new FakeOperations(loader);
+        SchemaManager manager = new SchemaManager(operations);
+        String column = databaseType == DBInfo.Type.MYSQL ? "CODE" : "code";
+        for (TableWrapper table : List.of(
+                TableWrapper.withName("contract").addIndex(column),
+                TableWrapper.withName("contract").addIndex(column, false),
+                TableWrapper.withName("contract").addIndex(List.of(column)),
+                TableWrapper.withName("contract").addIndex(List.of(column), false))) {
+            table.addColumn(Column.of("code").setType(ColumnType.VARCHAR).setLength(64));
+            assertFalse(manager.ensureTable(table, MigrationOptions.dryRunStrict()).isChanged());
+        }
+        for (TableWrapper table : List.of(
+                TableWrapper.withName("contract").addIndex("missing"),
+                TableWrapper.withName("contract").addIndex("missing", false),
+                TableWrapper.withName("contract").addIndex(List.of("missing")),
+                TableWrapper.withName("contract").addIndex(List.of("missing"), false))) {
+            table.addColumn(Column.of("code").setType(ColumnType.VARCHAR).setLength(64));
+            OrmException error = assertThrows(OrmException.class, () -> manager.ensureTable(table, MigrationOptions.execute()));
+            assertEquals(OrmException.Code.INVALID_MAPPING, error.getCode());
+        }
+        assertEquals(List.of(), operations.executedSql);
+    }
+
+    @ParameterizedTest
+    @EnumSource(DBInfo.Type.class)
+    void shouldNotTreatAutoNamedUniqueAndOrdinaryIndexesAsTheSameObject(DBInfo.Type databaseType) {
+        for (boolean unique : List.of(false, true)) {
+            FakeMetaDataLoader loader = indexLoader(databaseType);
+            loader.indexes.put("public.contract", List.of(index(unique ? "contract_code_index" : "contract_code_uindex", !unique, "code")));
+
+            MigrationResult result = new SchemaManager(new FakeOperations(loader)).ensureTable(
+                    indexTable().addIndex(new Index("code", unique)), MigrationOptions.dryRun());
+            assertEquals(List.of(MigrationChange.Type.CREATE_INDEX), result.getChanges().stream().map(MigrationChange::getType).toList());
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(DBInfo.Type.class)
+    void shouldRejectNamedDropAndDeclarationBeforeAnyExecution(DBInfo.Type databaseType) {
+        for (boolean existing : List.of(false, true)) {
+            FakeMetaDataLoader loader = indexLoader(databaseType);
+            if (existing) loader.indexes.put("public.contract", List.of(index("ix_code", true, "code")));
+            FakeOperations operations = new FakeOperations(loader);
+            SchemaManager manager = new SchemaManager(operations);
+            for (boolean unique : List.of(false, true)) {
+                TableWrapper table = indexTable().dropIndexByName("ix_code").addIndex(new Index("code", unique).named("ix_code"));
+                OrmException error = assertThrows(OrmException.class, () -> manager.ensureTable(table, MigrationOptions.execute()));
+                assertEquals(OrmException.Code.INVALID_MAPPING, error.getCode());
+                assertThrows(OrmException.class, () -> manager.ensureTable(table, MigrationOptions.dryRun()));
+                assertEquals(List.of(), operations.executedSql);
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(DBInfo.Type.class)
+    void shouldRejectNamedDropAndDeclarationOnNewTable(DBInfo.Type databaseType) {
+        FakeOperations operations = new FakeOperations(new DBInfo(databaseType.name()).setName("public"));
+        TableWrapper table = indexTable().dropIndexByName(databaseType == DBInfo.Type.MYSQL ? "LOOKUP" : "lookup")
+                .addIndex(new Index("code", false).named("lookup"));
+
+        assertThrows(OrmException.class, () -> new SchemaManager(operations).ensureTable(table, MigrationOptions.execute()));
+        assertEquals(List.of(), operations.executedSql);
+    }
+
+    @ParameterizedTest
+    @EnumSource(DBInfo.Type.class)
+    void shouldRejectColumnDropOverlappingDesiredIndexesEvenWhenAbsent(DBInfo.Type databaseType) {
+        FakeOperations operations = new FakeOperations(new DBInfo(databaseType.name()).setName("public"));
+        TableWrapper table = indexTable().dropIndex(List.of("tenant_id", "code"))
+                .addIndex(new Index(List.of("code", "tenant_id"), false).named("lookup"));
+
+        assertThrows(OrmException.class, () -> new SchemaManager(operations).ensureTable(table, MigrationOptions.execute()));
+        assertEquals(List.of(), operations.executedSql);
+    }
+
+    @ParameterizedTest
+    @EnumSource(DBInfo.Type.class)
+    void shouldRejectResolvedColumnDropConflictingWithDifferentDesiredColumns(DBInfo.Type databaseType) {
+        FakeMetaDataLoader loader = indexLoader(databaseType);
+        loader.indexes.put("public.contract", List.of(index("lookup", false, "code")));
+        FakeOperations operations = new FakeOperations(loader);
+        TableWrapper table = indexTable().dropIndex(List.of("code")).addIndex(new Index("tenant_id", false).named("lookup"));
+
+        assertThrows(OrmException.class, () -> new SchemaManager(operations).ensureTable(table, MigrationOptions.execute()));
+        assertEquals(List.of(), operations.executedSql);
+    }
+
+    @ParameterizedTest
+    @EnumSource(DBInfo.Type.class)
+    void shouldDeduplicateOverlappingDrops(DBInfo.Type databaseType) {
+        FakeMetaDataLoader loader = indexLoader(databaseType);
+        loader.indexes.put("public.contract", List.of(index("lookup", false, "code")));
+        FakeOperations operations = new FakeOperations(loader);
+        SchemaManager manager = new SchemaManager(operations);
+        TableWrapper table = TableWrapper.withName("contract").dropIndexByName("lookup").dropIndex(List.of("code"))
+                .dropIndexByName("lookup");
+
+        MigrationResult preview = manager.ensureTable(table, MigrationOptions.dryRun());
+        assertEquals(1, preview.getChanges().size());
+        assertThrows(OrmException.class, () -> manager.ensureTable(table, MigrationOptions.strict()));
+        assertEquals(preview.getStatements(), manager.ensureTable(table, MigrationOptions.execute()).getStatements());
+        assertEquals(preview.getStatements(), operations.executedSql);
+    }
+
+    @ParameterizedTest
+    @EnumSource(DBInfo.Type.class)
+    void shouldDeleteIndexesBeforeDroppingTheirColumns(DBInfo.Type databaseType) {
+        FakeMetaDataLoader loader = indexLoader(databaseType);
+        loader.indexes.put("public.contract", List.of(index("lookup", false, "code")));
+        TableWrapper table = TableWrapper.withName("contract").dropColumn("code").dropIndexByName("lookup");
+
+        MigrationResult result = new SchemaManager(new FakeOperations(loader)).ensureTable(table, MigrationOptions.dryRun());
+        assertEquals(List.of(MigrationChange.Type.DROP_INDEX, MigrationChange.Type.DROP_COLUMN),
+                result.getChanges().stream().map(MigrationChange::getType).toList());
+    }
+
+    @ParameterizedTest
+    @EnumSource(DBInfo.Type.class)
+    void shouldRebuildIndexBeforeDroppingItsPreviousColumn(DBInfo.Type databaseType) {
+        FakeMetaDataLoader loader = indexLoader(databaseType);
+        loader.indexes.put("public.contract", List.of(index("lookup", false, "code")));
+        TableWrapper table = TableWrapper.withName("contract")
+                .addColumn(Column.of("tenant_id").setType(ColumnType.VARCHAR).setLength(64))
+                .dropColumn("code").addIndex(new Index("tenant_id", false).named("lookup"));
+
+        MigrationResult result = new SchemaManager(new FakeOperations(loader)).ensureTable(table, MigrationOptions.dryRun());
+        assertEquals(List.of(MigrationChange.Type.DROP_INDEX, MigrationChange.Type.CREATE_INDEX, MigrationChange.Type.DROP_COLUMN),
+                result.getChanges().stream().map(MigrationChange::getType).toList());
+    }
+
+    @ParameterizedTest
+    @EnumSource(DBInfo.Type.class)
+    void shouldRejectIndexReferencingDroppedColumnBeforeExecution(DBInfo.Type databaseType) {
+        FakeOperations operations = new FakeOperations(indexLoader(databaseType));
+        TableWrapper table = indexTable().dropColumn(databaseType == DBInfo.Type.MYSQL ? "CODE" : "code")
+                .addIndex(new Index("code", false));
+
+        assertThrows(OrmException.class, () -> new SchemaManager(operations).ensureTable(table, MigrationOptions.execute()));
+        assertEquals(List.of(), operations.executedSql);
+    }
+
+    @ParameterizedTest
+    @EnumSource(DBInfo.Type.class)
+    void shouldReplaceSameNamedIndexExactlyOnce(DBInfo.Type databaseType) {
+        FakeMetaDataLoader loader = indexLoader(databaseType);
+        loader.indexes.put("public.contract", List.of(index("lookup", true, "code")));
+        FakeOperations operations = new FakeOperations(loader);
+        SchemaManager manager = new SchemaManager(operations);
+        TableWrapper table = indexTable().addIndex(new Index("code", false).named("lookup"));
+
+        MigrationResult preview = manager.ensureTable(table, MigrationOptions.dryRun());
+        assertEquals(List.of(MigrationChange.Type.DROP_INDEX, MigrationChange.Type.CREATE_INDEX),
+                preview.getChanges().stream().map(MigrationChange::getType).toList());
+        assertThrows(OrmException.class, () -> manager.ensureTable(table, MigrationOptions.strict()));
+        manager.ensureTable(table, MigrationOptions.execute());
+        assertEquals(preview.getStatements(), operations.executedSql);
+    }
+
+    @ParameterizedTest
+    @EnumSource(DBInfo.Type.class)
+    void shouldRejectDuplicatePhysicalIndexNamesBeforeExecution(DBInfo.Type databaseType) {
+        FakeOperations operations = new FakeOperations(new DBInfo(databaseType.name()).setName("public"));
+        TableWrapper table = indexTable().addIndex(new Index("code", false).named("lookup"))
+                .addIndex(new Index("tenant_id", true).named(databaseType == DBInfo.Type.MYSQL ? "LOOKUP" : "lookup"));
+
+        assertThrows(OrmException.class, () -> new SchemaManager(operations).ensureTable(table, MigrationOptions.execute()));
+        assertEquals(List.of(), operations.executedSql);
+    }
+
+    @ParameterizedTest
+    @EnumSource(DBInfo.Type.class)
+    void shouldRequireDataValidationForUniqueIndexOnExistingTable(DBInfo.Type databaseType) {
+        FakeOperations operations = new FakeOperations(indexLoader(databaseType));
+        SchemaManager manager = new SchemaManager(operations);
+        TableWrapper table = indexTable().addIndex(new Index("code", true).named("unique_code"));
+        MigrationResult preview = manager.ensureTable(table, MigrationOptions.dryRun());
+
+        assertEquals(MigrationChange.Risk.DATA_VALIDATION_REQUIRED, preview.getChanges().get(0).getRisk());
+        assertTrue(preview.hasNonAdditiveChanges());
+        OrmException error = assertThrows(OrmException.class, () -> manager.ensureTable(table, MigrationOptions.strict()));
+        assertEquals(OrmException.Code.STRICT_MIGRATION_REJECTED, error.getCode());
+        assertThrows(OrmException.class, () -> manager.ensureTable(table, MigrationOptions.dryRunStrict()));
+        assertEquals(List.of(), operations.executedSql);
+        manager.ensureTable(table, MigrationOptions.execute());
+        assertEquals(preview.getStatements(), operations.executedSql);
+    }
+
+    @ParameterizedTest
+    @EnumSource(DBInfo.Type.class)
+    void shouldAllowStrictUniqueIndexCreationOnNewTableAndNoOpOnExistingIndex(DBInfo.Type databaseType) {
+        TableWrapper table = indexTable().addIndex(new Index("code", true).named("unique_code"));
+        SchemaManager newTableManager = new SchemaManager(new FakeOperations(new DBInfo(databaseType.name()).setName("public")));
+        MigrationResult preview = newTableManager.ensureTable(table, MigrationOptions.dryRunStrict());
+        assertFalse(preview.hasNonAdditiveChanges());
+        assertTrue(preview.getChanges().stream().filter(change -> change.getType() == MigrationChange.Type.CREATE_INDEX)
+                .allMatch(change -> change.getRisk() == MigrationChange.Risk.SAFE_ADDITIVE));
+
+        FakeMetaDataLoader loader = indexLoader(databaseType);
+        loader.indexes.put("public.contract", List.of(index("unique_code", true, "code")));
+        assertFalse(new SchemaManager(new FakeOperations(loader)).ensureTable(table, MigrationOptions.dryRunStrict()).isChanged());
     }
 
     @Test
@@ -700,6 +1076,20 @@ class SchemaManagerTest {
         assertFalse(dryRun.isChanged());
     }
 
+    private FakeMetaDataLoader indexLoader(DBInfo.Type databaseType) {
+        FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo(databaseType.name()).setName("public"));
+        existingInfo(loader);
+        loader.columns.get("public.contract").put("code", varcharColumn("code", 64));
+        loader.columns.get("public.contract").put("tenant_id", varcharColumn("tenant_id", 64));
+        return loader;
+    }
+
+    private TableWrapper indexTable() {
+        return TableWrapper.withName("contract")
+                .addColumn(Column.of("code").setType(ColumnType.VARCHAR).setLength(64))
+                .addColumn(Column.of("tenant_id").setType(ColumnType.VARCHAR).setLength(64));
+    }
+
     private DBInfo existingInfo() {
         FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("POSTGRESQL"));
         return existingInfo(loader);
@@ -763,6 +1153,7 @@ class SchemaManagerTest {
         private final DBInfo info;
         private final Map<String, Map<String, DBColumn>> columns = new HashMap<>();
         private final Map<String, List<DBIndex>> indexes = new HashMap<>();
+        private final Map<String, List<DBUniqueConstraint>> uniqueConstraints = new HashMap<>();
         private final Map<String, List<DBForeignKey>> foreignKeys = new HashMap<>();
         private int resetCount;
 
@@ -793,6 +1184,11 @@ class SchemaManagerTest {
         @Override
         public List<DBForeignKey> getForeignKeys(String schema, String table) {
             return foreignKeys.getOrDefault(schema + "." + table, List.of());
+        }
+
+        @Override
+        public List<DBUniqueConstraint> getUniqueConstraints(String schema, String table) {
+            return uniqueConstraints.getOrDefault(schema + "." + table, List.of());
         }
     }
 

@@ -11,7 +11,7 @@ public class TableWrapper extends TableBase {
     private List<TableBase> inherits = new ArrayList<>();
     private List<Column> columns = new ArrayList<>();
     private List<Index> indexes = new ArrayList<>();
-    private List<Index> droppedIndexes = new ArrayList<>();
+    private final List<IndexDrop> droppedIndexes = new ArrayList<>();
     private List<String> droppedColumns = new ArrayList<>();
     private List<UniqueConstraint> uniqueConstraints = new ArrayList<>();
     private List<ForeignKeyConstraint> foreignKeys = new ArrayList<>();
@@ -90,7 +90,7 @@ public class TableWrapper extends TableBase {
     }
 
     public TableWrapper addIndex(Index index) {
-        indexes.add(index);
+        indexes.add(Objects.requireNonNull(index, "index must not be null"));
         return this;
     }
 
@@ -100,38 +100,29 @@ public class TableWrapper extends TableBase {
     }
 
     public TableWrapper addIndex(String columnName, boolean unique) {
-        Column col = getColumns().stream().filter(column -> column.getName().equals(columnName)).findFirst().orElse(null);
-        if (col == null) {
-            throw new IllegalArgumentException("No such column: " + columnName);
-        }
-
         return addIndex(new Index(columnName, unique));
     }
 
     public TableWrapper addIndex(List<String> columns) {
-        columns.forEach(columnName -> {
-            Column col = getColumns().stream().filter(column -> column.getName().equals(columnName)).findFirst().orElse(null);
-            if (col == null) {
-                throw new IllegalArgumentException("No such column: " + columnName);
-            }
-        });
-
-        this.addIndex(columns, false);
-        return this;
+        return addIndex(columns, false);
     }
 
     public TableWrapper addIndex(List<String> columns, boolean unique) {
-        indexes.add(new Index(columns, unique));
-        return this;
+        return addIndex(new Index(columns, unique));
     }
 
+    /**
+     * Deletes the sole existing index matching this unordered column set.
+     * Ambiguous matches and overlap with a desired index are rejected during planning.
+     */
     public TableWrapper dropIndex(List<String> columns) {
-        droppedIndexes.add(new Index(columns, false));
+        droppedIndexes.add(IndexDrop.byColumns(columns));
         return this;
     }
 
-    public TableWrapper dropIndex(Index index) {
-        droppedIndexes.add(Objects.requireNonNull(index, "index must not be null"));
+    /** Deletes an existing index by its physical name; an absent index is a no-op. */
+    public TableWrapper dropIndexByName(String name) {
+        droppedIndexes.add(IndexDrop.byName(name));
         return this;
     }
 
@@ -203,7 +194,7 @@ public class TableWrapper extends TableBase {
         return indexes;
     }
 
-    public List<Index> getDroppedIndexes() {
+    public List<IndexDrop> getDroppedIndexes() {
         return droppedIndexes;
     }
 
