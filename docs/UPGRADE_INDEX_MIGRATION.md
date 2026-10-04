@@ -1,4 +1,4 @@
-# 索引迁移契约升级（未发布）
+# 索引迁移契约升级（3.26.22）
 
 本次收口 PR #12 的审查发现，并修正它暴露的存量设计问题。项目尚未上线，本次直接调整契约，不保留语义混杂的旧入口或隐式归属猜测。本文说明破坏性变化及调用方修改方式；不授权或自动执行数据库重建、数据删除、去重或回填。
 
@@ -85,4 +85,6 @@ MySQL 额外覆盖唯一约束与索引两个 metadata 视图：命名／按列�
 
 真实双库测试覆盖：计划与执行一致、重复 ensure 幂等、显式历史名称替换、PG 大小写碰撞不解除唯一性、同名替换只执行一次，以及重复数据下新增唯一索引失败且数据不被修改。
 
-2026-10-04 本地验证：`./gradlew test -Pmuyun.postgres.it.required=true` 通过，438 项测试，0 失败、0 错误、0 跳过，包含双库与 Quarkus PostgreSQL JVM 矩阵。本次未运行 native 发布门禁，也未执行发布。
+2026-10-04 本地验证：`./gradlew test -Pmuyun.postgres.it.required=true` 通过，438 项测试，0 失败、0 错误、0 跳过，包含双库与 Quarkus PostgreSQL JVM 矩阵。
+
+3.26.22 发布准备额外通过 `verifyReleaseTagVersion`、六个白名单模块的 `publishReleaseToLocalRepository`，以及 GraalVM 25 下的 H2 和独立临时 PostgreSQL native smoke。H2 模式按设计跳过 PostgreSQL 专用用例，PostgreSQL 模式的两项 native 用例均实际执行并通过。旧 GraalVM 21 无法读取当前 Jdbi 的新 reachability metadata；采用支持的工具链后无需修改代码，工具链要求见 [`QUARKUS.md`](QUARKUS.md#测试矩阵)。

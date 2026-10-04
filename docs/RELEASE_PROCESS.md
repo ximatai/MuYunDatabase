@@ -23,10 +23,11 @@ gpg --armor --export-secret-keys <KEY_ID> | base64 | tr -d '\n'
 
 ## 发布版本
 
-1. 更新根目录 `build.gradle.kts` 中的 `version`，以及所有写死公开依赖版本的文档。
+1. 更新根目录 `build.gradle.kts` 中的 `version`、Quarkus extension descriptor 的 deployment-artifact 版本，以及文档与 samples 中写死的依赖版本。
 2. 更新 [`CHANGELOG.md`](CHANGELOG.md)，记录本次发布面向使用者的功能、行为、兼容性和迁移说明。
-3. 将版本号和 changelog 更新合并到 `master`。
-4. 推送匹配的 tag：
+3. 通过 [`ROADMAP.md`](ROADMAP.md#发布门禁) 的发布门禁，包括强制 PostgreSQL JVM 矩阵、Quarkus H2/PostgreSQL native smoke 和白名单本地发布验证。native 使用当前 Quarkus 支持的 GraalVM 工具链，不能以旧工具链构建失败或跳过测试代替验收；具体命令见 [`QUARKUS.md`](QUARKUS.md#测试矩阵)。
+4. 将版本号和 changelog 更新合并到 `master`，确认 CI 通过。
+5. 推送匹配的 tag：
 
 ```bash
 releaseVersion=<new-version>

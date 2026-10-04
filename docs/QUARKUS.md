@@ -6,14 +6,14 @@
 
 ```kotlin
 dependencies {
-    implementation("net.ximatai.muyun.database:muyun-database-quarkus:3.26.20")
+    implementation("net.ximatai.muyun.database:muyun-database-quarkus:3.26.22")
 }
 ```
 
 扩展 runtime 会声明对应的 deployment artifact：
 
 ```properties
-deployment-artifact=net.ximatai.muyun.database:muyun-database-quarkus-deployment::jar:3.26.20
+deployment-artifact=net.ximatai.muyun.database:muyun-database-quarkus-deployment::jar:3.26.22
 ```
 
 ## 配置项
@@ -208,4 +208,4 @@ Quarkus artifact 发布前还应跑白名单本地发布验证。不要用根级
 ./gradlew publishReleaseToLocalRepository
 ```
 
-本机执行需要 GraalVM `native-image` 可用；也可以按 Quarkus 原生镜像工具链要求改用容器构建参数。
+本机执行需要与当前 Quarkus 兼容的 GraalVM `native-image`（当前使用 GraalVM 25）；可通过 `GRAALVM_HOME` 指向独立工具链，无需切换全局 Java 默认版本。旧 GraalVM 21 可能无法读取 Jdbi 的新 reachability metadata，导致 native 启动时报缺失代理注册；不要通过复制依赖元数据绕过工具链要求。也可以按 Quarkus 原生镜像工具链要求改用容器构建参数。
