@@ -73,7 +73,7 @@ List<String> columnNames = loader.withFreshDBInfo(handle, info ->
 
 需要 Docker。临时将 `SchemaManager` 的发现入口恢复为 `operations.getDBInfo()`，两个交错用例均会报 PostgreSQL `relation already exists`，用于确认用例确实能捕获原缺陷。
 
-2026-10-18 本地验证：完整 `test -Pmuyun.postgres.it.required=true` 通过，446 项测试，0 失败、0 错误、0 跳过，包含上述 8 项回归、PostgreSQL／MySQL 和 Quarkus PostgreSQL JVM 测试。未执行 Quarkus native 测试。
+2026-10-18 本地验证：完整 `test -Pmuyun.postgres.it.required=true` 通过，446 项测试，0 失败、0 错误、0 跳过，包含上述 8 项回归、PostgreSQL／MySQL 和 Quarkus PostgreSQL JVM 测试。另已通过 GraalVM 25.0.2 下的 H2 与独立临时 PostgreSQL native smoke：H2 模式的通用用例通过、PostgreSQL 专用用例按设计跳过；PostgreSQL 模式的 2 项用例均实际执行并通过，包含事务回滚与 JSONB 插件 round-trip。`verifyReleaseTagVersion`（v3.26.23）及六个白名单模块 `publishReleaseToLocalRepository` 均通过。
 
 ## 接入版本
 
