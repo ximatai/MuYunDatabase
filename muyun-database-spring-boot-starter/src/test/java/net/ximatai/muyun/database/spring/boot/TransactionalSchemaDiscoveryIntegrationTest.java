@@ -192,6 +192,33 @@ class TransactionalSchemaDiscoveryIntegrationTest {
     }
 
     @Test
+    void explicitUnboundHandleShouldRetainTransactionOwnershipAfterCallbackFailure() {
+        Jdbi plainJdbi = Jdbi.create(dataSource);
+        JdbiMetaDataLoader plainLoader = new JdbiMetaDataLoader(plainJdbi);
+        try (var handle = plainJdbi.open()) {
+            handle.begin();
+            handle.execute("create table " + tableName + " (id varchar primary key, code varchar(64))");
+            handle.execute("create index ix_" + tableName + " on " + tableName + "(code)");
+            assertThrows(IllegalStateException.class, () -> plainLoader.withFreshDBInfo(handle, info -> {
+                var table = info.getDefaultSchema().getTable(tableName);
+                assertEquals(2, table.getColumnMap().size());
+                assertEquals(1, table.getIndexList().size());
+                assertEquals(List.of("id"), table.getPrimaryKey().columns());
+                assertFalse(otherConnectionSeesTable());
+                throw new IllegalStateException("callback failure");
+            }));
+            assertFalse(handle.isClosed());
+            assertTrue(handle.isInTransaction());
+            assertTrue(plainLoader.<Boolean>withFreshDBInfo(handle,
+                    info -> info.getDefaultSchema().containsTable(tableName)));
+            handle.rollback();
+            assertFalse(plainLoader.<Boolean>withFreshDBInfo(handle,
+                    info -> info.getDefaultSchema().containsTable(tableName)));
+        }
+        assertFalse(otherConnectionSeesTable());
+    }
+
+    @Test
     void dryRunStrictAndFailedMigrationShouldLeaveDiscoveryUsable() {
         transactions.executeWithoutResult(status -> {
             SchemaManager schema = new SchemaManager(operations);
@@ -226,10 +253,16 @@ class TransactionalSchemaDiscoveryIntegrationTest {
     }
 
     private static <T> T onOtherThread(Callable<T> callback) {
-        try (var executor = Executors.newSingleThreadExecutor()) {
+        var executor = Executors.newSingleThreadExecutor();
+        try {
             return executor.submit(callback).get(15, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("Observer connection interrupted", e);
         } catch (Exception e) {
             throw new AssertionError("Observer connection failed", e);
+        } finally {
+            executor.shutdownNow();
         }
     }
 

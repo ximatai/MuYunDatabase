@@ -2,7 +2,9 @@
 
 本文档按版本记录面向使用者的功能、行为、兼容性和迁移说明。
 
-## 3.26.23-SNAPSHOT（未发布）
+## 3.26.23
+
+发布日期：2026-10-18
 
 - 修复事务内结构迁移使用共享元数据快照导致重复建表的问题。Jdbi 下每次 `SchemaManager.ensureTable` 独立发现结构，表、列、索引及约束的读取绑定同一 Handle；不会把该快照写入共享缓存。
 - 新增 `IDatabaseOperations.withFreshDBInfo`、`IMetaDataLoader.withFreshDBInfo` 和 Jdbi 的显式 Handle 重载。第三方加载器默认保留旧行为，需要自行实现隔离发现。

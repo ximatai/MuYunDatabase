@@ -1,6 +1,6 @@
 # 事务内结构发现与迁移
 
-适用版本：3.26.23-SNAPSHOT（开发版，尚未发布正式版本）。
+适用版本：3.26.23。
 
 ## 问题与修复
 
@@ -63,7 +63,7 @@ List<String> columnNames = loader.withFreshDBInfo(handle, info ->
 - A reset 后、规划发现前，等待 B 在线程内完成刷新后再继续 A；无需压力测试或 sleep 猜测交错。
 - 主动回滚后物理表不存在，新事务可重新创建，提交后其他连接可发现。
 - 延迟读取列、索引、主键、唯一约束和外键时仍能看到未提交 DDL，且共享快照不被写入事务结构。
-- 显式 `JdbiTransactionRunner` Handle、配置默认 schema、dry-run、strict 拒绝和迁移执行失败后的恢复。
+- 显式 `JdbiTransactionRunner` Handle、未绑定的显式 Handle 及回调失败后的事务所有权、配置默认 schema、dry-run、strict 拒绝和迁移执行失败后的恢复。
 
 ```bash
 ./gradlew :muyun-database-spring-boot-starter:test \
@@ -73,21 +73,20 @@ List<String> columnNames = loader.withFreshDBInfo(handle, info ->
 
 需要 Docker。临时将 `SchemaManager` 的发现入口恢复为 `operations.getDBInfo()`，两个交错用例均会报 PostgreSQL `relation already exists`，用于确认用例确实能捕获原缺陷。
 
-2026-10-18 本地验证：完整 `test -Pmuyun.postgres.it.required=true` 通过，445 项测试，0 失败、0 错误、0 跳过，包含上述 7 项回归、PostgreSQL／MySQL 和 Quarkus PostgreSQL JVM 测试。未执行 Quarkus native 测试。
+2026-10-18 本地验证：完整 `test -Pmuyun.postgres.it.required=true` 通过，446 项测试，0 失败、0 错误、0 跳过，包含上述 8 项回归、PostgreSQL／MySQL 和 Quarkus PostgreSQL JVM 测试。未执行 Quarkus native 测试。
 
-## 本地接入版本
+## 接入版本
 
-六个发布模块的 `3.26.23-SNAPSHOT` 已通过 `./gradlew publishToMavenLocal` 安装到本机 Maven 本地仓库。MuYunSpring 可在本机启用 `mavenLocal()` 后使用：
+发布到 Maven Central 后，MuYunSpring 使用以下依赖，显式声明的其他 MuYunDatabase 模块也应统一到 3.26.23：
 
 ```kotlin
 repositories {
-    mavenLocal()
     mavenCentral()
 }
 
 dependencies {
-    implementation("net.ximatai.muyun.database:muyun-database-spring-boot-starter:3.26.23-SNAPSHOT")
+    implementation("net.ximatai.muyun.database:muyun-database-spring-boot-starter:3.26.23")
 }
 ```
 
-显式声明的其他 MuYunDatabase 模块也应统一到该版本。该快照尚未上传远端仓库；其他机器需从本分支构建并安装。正式版本号建议使用 3.26.23，不覆盖已发布的 3.26.22；正式发布及远端获取方式待发布流程完成后提供。
+发布记录见 [v3.26.23](https://github.com/ximatai/MuYunDatabase/releases/tag/v3.26.23)。本版本不覆盖 3.26.22。发布前可从源码执行 `./gradlew publishToMavenLocal`，并在接入方启用 `mavenLocal()` 进行本机验证。
