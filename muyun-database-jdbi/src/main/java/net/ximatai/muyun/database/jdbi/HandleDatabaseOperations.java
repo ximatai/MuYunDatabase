@@ -1,6 +1,7 @@
 package net.ximatai.muyun.database.jdbi;
 
 import net.ximatai.muyun.database.core.IMetaDataLoader;
+import net.ximatai.muyun.database.core.metadata.DBInfo;
 import org.jdbi.v3.core.Handle;
 import org.jdbi.v3.core.mapper.RowMapper;
 import org.jdbi.v3.core.statement.PreparedBatch;
@@ -12,6 +13,7 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
 class HandleDatabaseOperations<K> extends AbstractJdbiDatabaseOperations<K> {
 
@@ -25,6 +27,21 @@ class HandleDatabaseOperations<K> extends AbstractJdbiDatabaseOperations<K> {
     public HandleDatabaseOperations<K> setRowMapper(RowMapper<Map<String, Object>> rowMapper) {
         setRowMapperInternal(rowMapper);
         return this;
+    }
+
+    @Override
+    public String getDefaultSchemaName() {
+        return metaDataLoader instanceof JdbiMetaDataLoader loader
+                ? loader.getDefaultSchemaName(handle)
+                : super.getDefaultSchemaName();
+    }
+
+    @Override
+    public <R> R withFreshDBInfo(Function<DBInfo, R> callback) {
+        if (metaDataLoader instanceof JdbiMetaDataLoader loader) {
+            return loader.withFreshDBInfo(handle, callback);
+        }
+        return super.withFreshDBInfo(callback);
     }
 
     @Override

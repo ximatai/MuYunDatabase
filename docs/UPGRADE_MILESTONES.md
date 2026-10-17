@@ -2,7 +2,13 @@
 
 本文档记录基于架构审视讨论确认的升级方向与跟踪计划。
 
-## 当前升级：索引迁移契约收口（3.26.22）
+## 当前升级：事务内结构发现隔离（3.26.23）
+
+- `SchemaManager` 自动按调用独立发现结构，Jdbi 的表、列、索引及约束读取绑定同一 Handle，避免共享快照导致事务内重复建表。
+- Spring 继续使用事务感知数据源，显式 Jdbi 事务使用 `TxContext.getOperations()`；单独发现可调用 `withFreshDBInfo`。
+- 接入示例及边界见 [`TRANSACTIONAL_SCHEMA_DISCOVERY.md`](TRANSACTIONAL_SCHEMA_DISCOVERY.md)。
+
+## 已完成：索引迁移契约收口（3.26.22）
 
 - 分离 `Index` 目标定义与 `IndexDrop` 删除选择器，精确删除改为 `dropIndexByName`，移除 `dropIndex(Index)`。
 - 统一方言身份比较，拒绝矛盾与重复目标声明；不再认领历史截断名或推断普通／唯一索引替换关系。

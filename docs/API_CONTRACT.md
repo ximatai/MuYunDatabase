@@ -118,6 +118,8 @@ MySQL 的 `UNIQUE` 约束与其唯一索引共用物理对象，因此 `UniqueCo
 
 1. `@Transactional` 下，`EntityDao` 约定方法与 Jdbi SQL 注解方法必须共用同一事务边界。
 2. 同一事务内任一步抛异常，全部回滚。
+3. Jdbi 实现的 `SchemaManager.ensureTable` 每次使用独立的结构发现作用域，列、索引、主键、唯一约束和外键的延迟查询使用同一 Handle，不读写共享 `DBInfo` 快照。Spring 事务须使用事务感知数据源；显式 Jdbi 事务须使用 `TxContext.getOperations()`。
+4. `withFreshDBInfo` 的元数据及延迟加载对象只在回调内有效。第三方 `IMetaDataLoader` 的默认实现保留旧行为，隔离发现需自行覆盖；此能力不提供并发 DDL 串行化。详见 [`TRANSACTIONAL_SCHEMA_DISCOVERY.md`](TRANSACTIONAL_SCHEMA_DISCOVERY.md)。
 
 ## 8. 边界声明
 

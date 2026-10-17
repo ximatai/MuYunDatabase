@@ -9,6 +9,7 @@ import net.ximatai.muyun.database.core.metadata.DBUniqueConstraint;
 
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
 public interface IMetaDataLoader {
 
@@ -19,6 +20,19 @@ public interface IMetaDataLoader {
      * to avoid repeated comment DDL.
      */
     DBInfo getDBInfo();
+
+    /**
+     * Runs discovery and its lazy metadata reads within one invocation scope.
+     * Connection-backed implementations should override this to bypass shared
+     * caches and keep all reads on the current transaction connection. The
+     * metadata and its lazy tables must not escape the callback.
+     *
+     * The default preserves legacy behavior for third-party loaders; it does
+     * not provide connection isolation or fresh discovery guarantees.
+     */
+    default <R> R withFreshDBInfo(Function<DBInfo, R> callback) {
+        return callback.apply(getDBInfo());
+    }
 
     void resetInfo();
 

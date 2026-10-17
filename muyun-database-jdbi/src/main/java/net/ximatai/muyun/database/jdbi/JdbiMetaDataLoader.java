@@ -13,6 +13,8 @@ import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.*;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 import static net.ximatai.muyun.database.core.exception.MuYunDatabaseException.Type.READ_METADATA_ERROR;
 
@@ -24,17 +26,73 @@ public class JdbiMetaDataLoader implements IMetaDataLoader {
 
     private DBInfo info;
     private final Jdbi jdbi;
+    private final Handle discoveryHandle;
 
     public Jdbi getJdbi() {
         return jdbi;
     }
 
     /**
-     * 构造函数
-     * 初始化时自动加载数据库元信息
+     * 构造函数；数据库元信息按需加载。
      */
     public JdbiMetaDataLoader(Jdbi jdbi) {
-        this.jdbi = jdbi;
+        this(jdbi, null);
+    }
+
+    private JdbiMetaDataLoader(Jdbi jdbi, Handle discoveryHandle) {
+        this.jdbi = Objects.requireNonNull(jdbi);
+        this.discoveryHandle = discoveryHandle;
+    }
+
+    /**
+     * Uses Jdbi's current handle (including Spring's transaction-aware
+     * connection) and a private loader. No snapshot is read from or written to
+     * this loader's shared cache. Lazy table reads are valid only in callback.
+     */
+    @Override
+    public <R> R withFreshDBInfo(Function<DBInfo, R> callback) {
+        Objects.requireNonNull(callback, "callback must not be null");
+        return withHandle(handle -> withFreshDBInfo(handle, callback));
+    }
+
+    /**
+     * Discovers on an explicitly supplied handle without closing it. The caller
+     * owns the handle and transaction; neither metadata nor lazy tables may
+     * escape the callback. All metadata reads use this handle.
+     */
+    public <R> R withFreshDBInfo(Handle handle, Function<DBInfo, R> callback) {
+        Objects.requireNonNull(handle, "handle must not be null");
+        Objects.requireNonNull(callback, "callback must not be null");
+        JdbiMetaDataLoader isolated = new JdbiMetaDataLoader(jdbi, handle);
+        return callback.apply(isolated.getDBInfo());
+    }
+
+    /** Resolves the database default without populating the shared schema cache. */
+    public String getDefaultSchemaName() {
+        return withHandle(this::getDefaultSchemaName);
+    }
+
+    String getDefaultSchemaName(Handle handle) {
+        try {
+            Connection connection = handle.getConnection();
+            return new DBInfo(connection.getMetaData().getDatabaseProductName())
+                    .setName(connection.getCatalog()).getDefaultSchemaName();
+        } catch (SQLException e) {
+            throw new MuYunDatabaseException(e.getMessage(), READ_METADATA_ERROR, e);
+        }
+    }
+
+    private <R> R withHandle(Function<Handle, R> callback) {
+        return discoveryHandle == null
+                ? jdbi.withHandle(handle -> callback.apply(handle))
+                : callback.apply(discoveryHandle);
+    }
+
+    private void useHandle(Consumer<Handle> callback) {
+        withHandle(handle -> {
+            callback.accept(handle);
+            return null;
+        });
     }
 
     /**
@@ -42,7 +100,7 @@ public class JdbiMetaDataLoader implements IMetaDataLoader {
      * 加载数据库类型、模式、表结构等元数据
      */
     private void initInfo() {
-        info = getJdbi().withHandle(handle -> {
+        info = withHandle(handle -> {
             Connection connection = handle.getConnection();
             try {
                 DatabaseMetaData metaData = connection.getMetaData();
@@ -138,20 +196,21 @@ public class JdbiMetaDataLoader implements IMetaDataLoader {
     @Override
     public List<DBIndex> getIndexList(String schema, String table) {
         Map<String, DBIndex> indexesByName = new LinkedHashMap<>();
-        jdbi.useHandle(handle -> {
+        useHandle(handle -> {
             Connection connection = handle.getConnection();
             try {
                 DatabaseMetaData metaData = connection.getMetaData();
+                DBInfo databaseInfo = new DBInfo(metaData.getDatabaseProductName());
                 String catalog = null;
                 String schemaPattern = null;
 
                 // 设置数据库特定的参数
-                if (info.getDatabaseType().equals(DBInfo.Type.MYSQL)) {
+                if (databaseInfo.getDatabaseType().equals(DBInfo.Type.MYSQL)) {
                     catalog = schema;
                 } else {
                     schemaPattern = schema;
                 }
-                Set<String> constraintOwnedIndexes = loadConstraintOwnedIndexNames(handle, schema, table);
+                Set<String> constraintOwnedIndexes = loadConstraintOwnedIndexNames(handle, schema, table, databaseInfo);
 
                 // 获取索引信息
                 try (ResultSet rs = metaData.getIndexInfo(catalog, schemaPattern, table, false, false)) {
@@ -185,7 +244,7 @@ public class JdbiMetaDataLoader implements IMetaDataLoader {
                         index.setUnique(!rs.getBoolean("NON_UNIQUE"));
                     }
                 }
-                if ("PostgreSQL".equalsIgnoreCase(info.getTypeName())) {
+                if ("PostgreSQL".equalsIgnoreCase(databaseInfo.getTypeName())) {
                     Map<String, String> predicates = handle.createQuery("""
                                     select idx.relname as index_name,
                                            pg_get_expr(i.indpred, i.indrelid) as predicate
@@ -210,8 +269,8 @@ public class JdbiMetaDataLoader implements IMetaDataLoader {
         return List.copyOf(indexesByName.values());
     }
 
-    private Set<String> loadConstraintOwnedIndexNames(Handle handle, String schema, String table) {
-        if (info.getDatabaseType() == DBInfo.Type.MYSQL) {
+    private Set<String> loadConstraintOwnedIndexNames(Handle handle, String schema, String table, DBInfo databaseInfo) {
+        if (databaseInfo.getDatabaseType() == DBInfo.Type.MYSQL) {
             // MySQL does not distinguish a UNIQUE constraint from its UNIQUE index.
             // PRIMARY is the only index that is always owned by a table constraint.
             return new HashSet<>(handle.createQuery("""
@@ -226,7 +285,7 @@ public class JdbiMetaDataLoader implements IMetaDataLoader {
                     .mapTo(String.class)
                     .list());
         }
-        if ("PostgreSQL".equalsIgnoreCase(info.getTypeName())) {
+        if ("PostgreSQL".equalsIgnoreCase(databaseInfo.getTypeName())) {
             return new HashSet<>(handle.createQuery("""
                             select idx.relname
                             from pg_constraint constraint_def
@@ -247,11 +306,12 @@ public class JdbiMetaDataLoader implements IMetaDataLoader {
 
     @Override
     public DBPrimaryKey getPrimaryKey(String schema, String table) {
-        return jdbi.withHandle(handle -> {
+        return withHandle(handle -> {
             try {
                 DatabaseMetaData metaData = handle.getConnection().getMetaData();
-                String catalog = info.getDatabaseType().equals(DBInfo.Type.MYSQL) ? schema : null;
-                String schemaPattern = info.getDatabaseType().equals(DBInfo.Type.MYSQL) ? null : schema;
+                DBInfo databaseInfo = new DBInfo(metaData.getDatabaseProductName());
+                String catalog = databaseInfo.getDatabaseType().equals(DBInfo.Type.MYSQL) ? schema : null;
+                String schemaPattern = databaseInfo.getDatabaseType().equals(DBInfo.Type.MYSQL) ? null : schema;
                 String name = null;
                 TreeMap<Integer, String> columns = new TreeMap<>();
                 try (ResultSet rs = metaData.getPrimaryKeys(catalog, schemaPattern, table)) {
@@ -269,7 +329,7 @@ public class JdbiMetaDataLoader implements IMetaDataLoader {
 
     @Override
     public List<DBUniqueConstraint> getUniqueConstraints(String schema, String table) {
-        return jdbi.withHandle(handle -> handle.createQuery("""
+        return withHandle(handle -> handle.createQuery("""
                         select tc.constraint_name, kcu.column_name, kcu.ordinal_position
                         from information_schema.table_constraints tc
                         join information_schema.key_column_usage kcu
@@ -296,11 +356,12 @@ public class JdbiMetaDataLoader implements IMetaDataLoader {
 
     @Override
     public List<DBForeignKey> getForeignKeys(String schema, String table) {
-        return jdbi.withHandle(handle -> {
+        return withHandle(handle -> {
             try {
                 DatabaseMetaData metaData = handle.getConnection().getMetaData();
-                String catalog = info.getDatabaseType().equals(DBInfo.Type.MYSQL) ? schema : null;
-                String schemaPattern = info.getDatabaseType().equals(DBInfo.Type.MYSQL) ? null : schema;
+                DBInfo databaseInfo = new DBInfo(metaData.getDatabaseProductName());
+                String catalog = databaseInfo.getDatabaseType().equals(DBInfo.Type.MYSQL) ? schema : null;
+                String schemaPattern = databaseInfo.getDatabaseType().equals(DBInfo.Type.MYSQL) ? null : schema;
                 Map<String, ForeignKeyAccumulator> foreignKeys = new LinkedHashMap<>();
                 try (ResultSet rs = metaData.getImportedKeys(catalog, schemaPattern, table)) {
                     while (rs.next()) {
@@ -383,19 +444,20 @@ public class JdbiMetaDataLoader implements IMetaDataLoader {
         // 使用不区分大小写的TreeMap存储列信息
         Map<String, DBColumn> columnMap = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
 
-        getJdbi().useHandle(handle -> {
+        useHandle(handle -> {
             Connection connection = handle.getConnection();
             try {
                 DatabaseMetaData metaData = connection.getMetaData();
+                DBInfo databaseInfo = new DBInfo(metaData.getDatabaseProductName());
                 String catalog = null;
                 String schemaPattern = null;
 
-                if (info.getDatabaseType().equals(DBInfo.Type.MYSQL)) {
+                if (databaseInfo.getDatabaseType().equals(DBInfo.Type.MYSQL)) {
                     catalog = schema;
                 } else {
                     schemaPattern = schema;
                 }
-                Map<String, String> columnComments = info.getDatabaseType().equals(DBInfo.Type.MYSQL)
+                Map<String, String> columnComments = databaseInfo.getDatabaseType().equals(DBInfo.Type.MYSQL)
                         ? loadMySqlColumnComments(handle, schema, table)
                         : Map.of();
 
@@ -419,7 +481,7 @@ public class JdbiMetaDataLoader implements IMetaDataLoader {
                             column.setSequence();
                         }
                         // MySQL自增字段特殊处理
-                        if (column.isSequence() && info.getDatabaseType().equals(DBInfo.Type.MYSQL) && defaultValue == null) {
+                        if (column.isSequence() && databaseInfo.getDatabaseType().equals(DBInfo.Type.MYSQL) && defaultValue == null) {
                             column.setDefaultValue("AUTO_INCREMENT");
                         }
 

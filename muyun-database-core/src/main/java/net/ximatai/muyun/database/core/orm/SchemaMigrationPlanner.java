@@ -19,9 +19,9 @@ class SchemaMigrationPlanner {
     private final MigrationSqlDialect dialect;
     private final IndexIdentity indexIdentity;
 
-    SchemaMigrationPlanner(IDatabaseOperations<?> operations) {
+    SchemaMigrationPlanner(IDatabaseOperations<?> operations, DBInfo info) {
         this.operations = operations;
-        this.info = operations.getDBInfo();
+        this.info = Objects.requireNonNull(info);
         this.dialect = createDialect(info.getDatabaseType());
         this.indexIdentity = new IndexIdentity(info.getDatabaseType());
     }

@@ -2,6 +2,7 @@ package net.ximatai.muyun.database.core.orm;
 
 import net.ximatai.muyun.database.core.IDatabaseOperations;
 import net.ximatai.muyun.database.core.builder.TableWrapper;
+import net.ximatai.muyun.database.core.metadata.DBInfo;
 
 import java.util.Objects;
 
@@ -19,7 +20,11 @@ public class SchemaManager {
     public MigrationResult ensureTable(TableWrapper table, MigrationOptions options) {
         Objects.requireNonNull(table, "table must not be null");
         MigrationOptions safeOptions = options == null ? MigrationOptions.execute() : options;
-        SchemaMigrationPlanner.Plan plan = new SchemaMigrationPlanner(operations).plan(table);
+        return operations.withFreshDBInfo(info -> ensureTable(table, safeOptions, info));
+    }
+
+    private MigrationResult ensureTable(TableWrapper table, MigrationOptions safeOptions, DBInfo info) {
+        SchemaMigrationPlanner.Plan plan = new SchemaMigrationPlanner(operations, info).plan(table);
         if (!plan.isChanged()) {
             return MigrationResult.empty(safeOptions);
         }

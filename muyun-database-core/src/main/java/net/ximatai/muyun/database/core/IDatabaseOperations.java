@@ -9,6 +9,7 @@ import net.ximatai.muyun.database.core.sql.SqlPlanBuilder;
 
 import java.sql.Array;
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -28,6 +29,15 @@ public interface IDatabaseOperations<K> {
      */
     default DBInfo getDBInfo() {
         return getMetaDataLoader().getDBInfo();
+    }
+
+    /**
+     * Discovers metadata for one callback on this operation's connection scope.
+     * See {@link IMetaDataLoader#withFreshDBInfo(Function)} for loader guarantees
+     * and the callback lifetime.
+     */
+    default <R> R withFreshDBInfo(Function<DBInfo, R> callback) {
+        return getMetaDataLoader().withFreshDBInfo(callback);
     }
 
     /**

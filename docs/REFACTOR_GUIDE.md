@@ -114,3 +114,5 @@ interface UserDao extends EntityDao<UserEntity, String> {
 3. `repository-schema-mode` 与 `alignTable` 组合行为符合预期。
 
 下一步：迁移完成后，回到 [`ROADMAP.md`](ROADMAP.md) 对齐后续能力优先级与技术债计划。
+
+事务内动态结构协调应通过现有 `SchemaManager` 门面，并使用 3.26.23 及以上版本的独立元数据发现能力；事务与连接边界见 [`TRANSACTIONAL_SCHEMA_DISCOVERY.md`](TRANSACTIONAL_SCHEMA_DISCOVERY.md)。

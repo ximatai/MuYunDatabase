@@ -46,6 +46,13 @@ abstract class AbstractJdbiDatabaseOperations<K> implements IDatabaseOperations<
     }
 
     @Override
+    public String getDefaultSchemaName() {
+        return metaDataLoader instanceof JdbiMetaDataLoader loader
+                ? loader.getDefaultSchemaName()
+                : getDBInfo().getDefaultSchemaName();
+    }
+
+    @Override
     public String getPKName() {
         return pkName;
     }
