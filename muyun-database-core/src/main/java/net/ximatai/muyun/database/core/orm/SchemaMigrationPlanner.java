@@ -310,6 +310,12 @@ class SchemaMigrationPlanner {
     }
 
     private static final String SQL_IDENTIFIER = "(?:\"(?:\"\"|[^\"])+\"|[A-Za-z_][A-Za-z0-9_]*)";
+    private static final Pattern SIMPLE_BOOLEAN_PREDICATE = Pattern.compile(
+            "^\\(?(" + SQL_IDENTIFIER + ")\\)?\\s*=\\s*(true|false)$");
+    private static final Pattern SIMPLE_NULL_PREDICATE = Pattern.compile(
+            "^\\(?(" + SQL_IDENTIFIER + ")\\)? (is (?:not )?null)$");
+    private static final Pattern SIMPLE_LITERAL_EQUALITY = Pattern.compile(
+            "^\\(?(" + SQL_IDENTIFIER + ")\\)?\\s*=\\s*('(?:''|[^'])*')$");
     private static final Pattern SIMPLE_IN_PREDICATE = Pattern.compile(
             "^(" + SQL_IDENTIFIER + ")\\s+in\\s*\\((.*)\\)$", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
     private static final Pattern SIMPLE_ANY_PREDICATE = Pattern.compile(
@@ -327,6 +333,27 @@ class SchemaMigrationPlanner {
             return "";
         }
         String normalized = stripOuterParentheses(removePostgresTypeCasts(normalizeSqlOutsideLiterals(predicate)));
+        // PostgreSQL deparses every boolean term separately. Keep grouping/precedence intact.
+        for (String operator : List.of("or", "and")) {
+            List<String> terms = splitBooleanTerms(normalized, operator);
+            if (terms.size() > 1) {
+                return terms.stream().map(this::normalizePredicate)
+                        .map(term -> "(" + term + ")").collect(java.util.stream.Collectors.joining(" " + operator + " "));
+            }
+        }
+        Matcher booleanComparison = SIMPLE_BOOLEAN_PREDICATE.matcher(normalized);
+        if (booleanComparison.matches()) {
+            String identifier = canonicalIdentifier(booleanComparison.group(1));
+            return booleanComparison.group(2).equals("true") ? identifier : "not (" + identifier + ")";
+        }
+        if (normalized.startsWith("not ")) {
+            return "not (" + normalizePredicate(normalized.substring(4)) + ")";
+        }
+        Matcher nullCheck = SIMPLE_NULL_PREDICATE.matcher(normalized);
+        if (nullCheck.matches()) return canonicalIdentifier(nullCheck.group(1)) + " " + nullCheck.group(2);
+        if (normalized.matches(SQL_IDENTIFIER)) return canonicalIdentifier(normalized);
+        Matcher equality = SIMPLE_LITERAL_EQUALITY.matcher(normalized);
+        if (equality.matches()) return canonicalIdentifier(equality.group(1)) + " in (" + equality.group(2) + ")";
         Matcher inMatcher = SIMPLE_IN_PREDICATE.matcher(normalized);
         if (inMatcher.matches()) {
             List<String> literals = parseStringLiteralList(inMatcher.group(2));
@@ -336,7 +363,7 @@ class SchemaMigrationPlanner {
         }
         Matcher anyMatcher = SIMPLE_ANY_PREDICATE.matcher(normalized);
         if (anyMatcher.matches()) {
-            Matcher arrayMatcher = ARRAY_EXPRESSION.matcher(anyMatcher.group(2).trim());
+            Matcher arrayMatcher = ARRAY_EXPRESSION.matcher(stripOuterParentheses(anyMatcher.group(2)));
             if (arrayMatcher.matches()) {
                 List<String> literals = parseStringLiteralList(arrayMatcher.group(1));
                 if (literals != null) {
@@ -345,6 +372,33 @@ class SchemaMigrationPlanner {
             }
         }
         return normalized;
+    }
+
+    private List<String> splitBooleanTerms(String expression, String operator) {
+        List<String> terms = new ArrayList<>();
+        int depth = 0, start = 0;
+        char quote = 0;
+        for (int i = 0; i < expression.length(); i++) {
+            char ch = expression.charAt(i);
+            if (quote != 0) {
+                if (ch == quote) {
+                    if (i + 1 < expression.length() && expression.charAt(i + 1) == quote) i++;
+                    else quote = 0;
+                }
+            } else if (ch == '\'' || ch == '"') {
+                quote = ch;
+            } else if (ch == '(' || ch == '[') {
+                depth++;
+            } else if (ch == ')' || ch == ']') {
+                depth--;
+            } else if (depth == 0 && expression.startsWith(" " + operator + " ", i)) {
+                terms.add(expression.substring(start, i));
+                start = i + operator.length() + 2;
+                i = start - 1;
+            }
+        }
+        terms.add(expression.substring(start));
+        return terms;
     }
 
     private String normalizeSqlOutsideLiterals(String sql) {
@@ -403,21 +457,22 @@ class SchemaMigrationPlanner {
 
     private String removePostgresTypeCasts(String expression) {
         StringBuilder result = new StringBuilder(expression.length());
-        boolean quoted = false;
+        char quote = 0;
         for (int i = 0; i < expression.length(); ) {
             char ch = expression.charAt(i);
-            if (ch == '\'') {
+            if (quote != 0) {
                 result.append(ch);
-                if (quoted && i + 1 < expression.length() && expression.charAt(i + 1) == '\'') {
-                    result.append(expression.charAt(i + 1));
-                    i += 2;
-                    continue;
+                if (ch == quote) {
+                    if (i + 1 < expression.length() && expression.charAt(i + 1) == quote) {
+                        result.append(expression.charAt(++i));
+                    } else quote = 0;
                 }
-                quoted = !quoted;
                 i++;
                 continue;
             }
-            if (!quoted && ch == ':' && i + 1 < expression.length() && expression.charAt(i + 1) == ':') {
+            if (ch == '\'' || ch == '"') {
+                quote = ch;
+            } else if (ch == ':' && i + 1 < expression.length() && expression.charAt(i + 1) == ':') {
                 Matcher cast = POSTGRES_TYPE_CAST.matcher(expression.substring(i));
                 if (cast.find()) {
                     i += cast.end();
@@ -432,22 +487,23 @@ class SchemaMigrationPlanner {
 
     private boolean enclosesWholeExpression(String expression) {
         int depth = 0;
-        boolean quoted = false;
+        char quote = 0;
         for (int i = 0; i < expression.length(); i++) {
             char ch = expression.charAt(i);
-            if (ch == '\'') {
-                if (quoted && i + 1 < expression.length() && expression.charAt(i + 1) == '\'') {
-                    i++;
-                    continue;
+            if (quote != 0) {
+                if (ch == quote) {
+                    if (i + 1 < expression.length() && expression.charAt(i + 1) == quote) i++;
+                    else quote = 0;
                 }
-                quoted = !quoted;
-            } else if (!quoted && ch == '(') {
+            } else if (ch == '\'' || ch == '"') {
+                quote = ch;
+            } else if (ch == '(') {
                 depth++;
-            } else if (!quoted && ch == ')' && --depth == 0 && i < expression.length() - 1) {
+            } else if (ch == ')' && --depth == 0 && i < expression.length() - 1) {
                 return false;
             }
         }
-        return depth == 0 && !quoted;
+        return depth == 0 && quote == 0;
     }
 
     private List<String> parseStringLiteralList(String expression) {
@@ -486,6 +542,7 @@ class SchemaMigrationPlanner {
     }
 
     private String canonicalIdentifier(String identifier) {
+        if (identifier.matches("\"[a-z_][a-z0-9_]*\"")) return identifier.substring(1, identifier.length() - 1);
         return identifier.startsWith("\"") ? identifier : identifier.toLowerCase(Locale.ROOT);
     }
 

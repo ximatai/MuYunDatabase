@@ -647,6 +647,43 @@ class SchemaManagerTest {
     }
 
     @Test
+    void shouldNormalizeGroupedPostgresPredicatesWithoutLosingTheirMeaning() {
+        assertFalse(predicateChanged("((status)::text = 'ACTIVE'::text)", "\"status\" IN ('ACTIVE')"));
+        String expected = "\"deleted\" = FALSE AND \"status\" IN ('ACTIVE', 'WAITING')";
+        String actual = "((NOT deleted) AND ((status)::text = ANY ((ARRAY['ACTIVE'::character varying, 'WAITING'::character varying])::text[])))";
+        assertFalse(predicateChanged(actual, expected));
+        assertFalse(predicateChanged("(ended_at IS NULL)", "\"ended_at\" IS NULL"));
+        assertFalse(predicateChanged("((deleted = true) OR (ended_at IS NOT NULL))", "deleted OR ended_at IS NOT NULL"));
+        assertFalse(predicateChanged("((NOT deleted) AND ((ended_at IS NULL) OR (status IN ('A and B', 'C'))))",
+                "deleted = false AND (ended_at IS NULL OR status IN ('A and B', 'C'))"));
+        assertFalse(predicateChanged("(\"odd)name\" IS NULL)", "\"odd)name\" IS NULL"));
+        assertTrue(predicateChanged("\"value::text\" IS NULL", "\"value\" IS NULL"));
+        for (String changed : List.of(
+                "\"deleted\" = TRUE AND \"status\" IN ('ACTIVE', 'WAITING')",
+                "\"deleted\" = FALSE OR \"status\" IN ('ACTIVE', 'WAITING')",
+                "\"deleted\" = FALSE AND \"status\" IN ('active', 'WAITING')",
+                "\"deleted\" = FALSE AND \"Status\" IN ('ACTIVE', 'WAITING')")) {
+            assertTrue(predicateChanged(actual, changed), changed);
+        }
+        assertTrue(predicateChanged("deleted AND (status = 'A' OR status = 'B')",
+                "(deleted AND status = 'A') OR status = 'B'"));
+    }
+
+    private boolean predicateChanged(String actualPredicate, String expectedPredicate) {
+        FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("POSTGRESQL"));
+        existingInfo(loader);
+        loader.columns.get("public.contract").put("status", varcharColumn("status", 32));
+        loader.indexes.put("public.contract", List.of(index("ix_contract_status", false, "status").setPredicate(actualPredicate)));
+        TableWrapper table = TableWrapper.withName("contract")
+                .setPrimaryKey(Column.of("id").setType(ColumnType.VARCHAR).setLength(32).setPrimaryKey())
+                .addColumn(Column.of("status").setType(ColumnType.VARCHAR).setLength(32))
+                .addIndex(new Index("status", false).named("ix_contract_status").predicate(expectedPredicate));
+        return new SchemaManager(new FakeOperations(loader)).ensureTable(table, MigrationOptions.dryRun())
+                .getChanges().stream().anyMatch(change -> change.getType() == MigrationChange.Type.DROP_INDEX
+                        || change.getType() == MigrationChange.Type.CREATE_INDEX);
+    }
+
+    @Test
     void shouldMatchOnlyTheDeterministicIndexNameWhenColumnsOverlap() {
         FakeMetaDataLoader loader = new FakeMetaDataLoader(new DBInfo("POSTGRESQL"));
         existingInfo(loader);
