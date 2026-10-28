@@ -649,6 +649,12 @@ class SchemaManagerTest {
     @Test
     void shouldNormalizeGroupedPostgresPredicatesWithoutLosingTheirMeaning() {
         assertFalse(predicateChanged("((status)::text = 'ACTIVE'::text)", "\"status\" IN ('ACTIVE')"));
+        assertTrue(predicateChanged("\"true\"", "TRUE"));
+        assertTrue(predicateChanged("\"true\" = false", "TRUE = false"));
+        assertTrue(predicateChanged("\"null\" IS NULL", "NULL IS NULL"));
+        assertTrue(predicateChanged("(\"null\" = 'a'::text)", "NULL IN ('a')"));
+        assertTrue(predicateChanged("((status)::integer = '1'::integer)", "status = '1'"));
+        assertTrue(predicateChanged("amount::text = '01'", "amount = '01'"));
         String expected = "\"deleted\" = FALSE AND \"status\" IN ('ACTIVE', 'WAITING')";
         String actual = "((NOT deleted) AND ((status)::text = ANY ((ARRAY['ACTIVE'::character varying, 'WAITING'::character varying])::text[])))";
         assertFalse(predicateChanged(actual, expected));

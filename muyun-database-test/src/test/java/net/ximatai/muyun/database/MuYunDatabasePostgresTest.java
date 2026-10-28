@@ -309,6 +309,7 @@ public class MuYunDatabasePostgresTest extends MuYunDatabaseUsageExamplesTestBas
                 .addColumn(Column.of("status").setType(ColumnType.VARCHAR).setLength(32))
                 .addColumn(Column.of("deleted").setType(ColumnType.BOOLEAN))
                 .addColumn(Column.of("ended_at").setType(ColumnType.TIMESTAMP))
+                .addColumn(Column.of("true").setType(ColumnType.BOOLEAN))
                 .addIndex(new Index("status", false).named("ix_compound_recovery")
                         .predicate("\"deleted\" = FALSE AND \"status\" IN ('ACTIVE', 'WAITING')"))
                 .addIndex(new Index("status", false).named("ix_compound_single")
@@ -327,6 +328,15 @@ public class MuYunDatabasePostgresTest extends MuYunDatabaseUsageExamplesTestBas
                 () -> manager.ensureTable(table, MigrationOptions.strict()));
         table.getIndexes().getFirst().predicate("\"deleted\" = FALSE AND \"status\" IN ('ACTIVE', 'WAITING')");
         assertFalse(manager.ensureTable(table, MigrationOptions.dryRun()).isChanged());
+        // Numeric coercion changes which textual values match; do not erase it as a display cast.
+        table.getIndexes().getFirst().predicate("status::integer = '1'::integer");
+        manager.ensureTable(table, MigrationOptions.execute());
+        table.getIndexes().getFirst().predicate("status = '1'");
+        assertTrue(manager.ensureTable(table, MigrationOptions.dryRun()).hasNonAdditiveChanges());
+        table.getIndexes().getFirst().predicate("\"true\"");
+        manager.ensureTable(table, MigrationOptions.execute());
+        table.getIndexes().getFirst().predicate("TRUE");
+        assertTrue(manager.ensureTable(table, MigrationOptions.dryRun()).hasNonAdditiveChanges());
     }
 
     @Test

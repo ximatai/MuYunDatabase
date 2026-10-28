@@ -244,7 +244,7 @@ class SchemaMigrationPlanner {
 
         if (hit.isPresent()) {
             DBIndex dbIndex = hit.get();
-            if (sameIndex(dbIndex, index)) {
+            if (sameIndex(table, dbIndex, index)) {
                 return;
             }
 
@@ -286,7 +286,7 @@ class SchemaMigrationPlanner {
         );
     }
 
-    private boolean sameIndex(DBIndex actual, Index expected) {
+    private boolean sameIndex(DBTable table, DBIndex actual, Index expected) {
         if (actual.isUnique() != expected.isUnique()) {
             return false;
         }
@@ -306,7 +306,7 @@ class SchemaMigrationPlanner {
                 }
             }
         }
-        return normalizePredicate(actual.getPredicate()).equals(normalizePredicate(expected.getPredicate()));
+        return normalizePredicate(actual.getPredicate(), table).equals(normalizePredicate(expected.getPredicate(), table));
     }
 
     private static final String SQL_IDENTIFIER = "(?:\"(?:\"\"|[^\"])+\"|[A-Za-z_][A-Za-z0-9_]*)";
@@ -314,64 +314,79 @@ class SchemaMigrationPlanner {
             "^\\(?(" + SQL_IDENTIFIER + ")\\)?\\s*=\\s*(true|false)$");
     private static final Pattern SIMPLE_NULL_PREDICATE = Pattern.compile(
             "^\\(?(" + SQL_IDENTIFIER + ")\\)? (is (?:not )?null)$");
-    private static final Pattern SIMPLE_LITERAL_EQUALITY = Pattern.compile(
-            "^\\(?(" + SQL_IDENTIFIER + ")\\)?\\s*=\\s*('(?:''|[^'])*')$");
+    private static final Pattern TEXT_CAST = Pattern.compile("^(.*)::\\s*(text|character varying|varchar)$", Pattern.DOTALL);
+    private static final Pattern TEXT_ARRAY_CAST = Pattern.compile("^(.*)::\\s*(text|character varying|varchar)\\[\\]$", Pattern.DOTALL);
+    private static final Pattern LITERAL_TEXT_CAST = Pattern.compile("^::\\s*(?:character varying|varchar|text)(?![a-z0-9_\\[(])");
+    private static final Pattern STRING_LITERAL = Pattern.compile("'(?:''|[^'])*'", Pattern.DOTALL);
     private static final Pattern SIMPLE_IN_PREDICATE = Pattern.compile(
-            "^(" + SQL_IDENTIFIER + ")\\s+in\\s*\\((.*)\\)$", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
-    private static final Pattern SIMPLE_ANY_PREDICATE = Pattern.compile(
-            "^\\(?(" + SQL_IDENTIFIER + ")\\)?(?:\\s*::\\s*[A-Za-z_][A-Za-z0-9_ ]*)?\\s*=\\s*any\\s*\\((.*)\\)$",
-            Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
-    private static final Pattern ARRAY_EXPRESSION = Pattern.compile(
-            "^\\(?\\s*array\\s*\\[(.*?)]\\s*\\)?(?:\\s*::\\s*[A-Za-z_][A-Za-z0-9_ ]*\\[\\])?$",
-            Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
-    private static final Pattern POSTGRES_TYPE_CAST = Pattern.compile(
-            "^::\\s*(?:character varying|timestamp (?:with|without) time zone|double precision|[a-z_][a-z0-9_]*)(?:\\[\\])?",
-            Pattern.CASE_INSENSITIVE);
+            "^(" + SQL_IDENTIFIER + ")\\s+in\\s*\\((.*)\\)$", Pattern.DOTALL);
+    private static final Pattern EQUALITY = Pattern.compile("^(.+?)\\s*=\\s*(.+)$", Pattern.DOTALL);
+    private static final Pattern ARRAY_EXPRESSION = Pattern.compile("^array\\s*\\[(.*)]$", Pattern.DOTALL);
 
-    private String normalizePredicate(String predicate) {
-        if (predicate == null || predicate.isBlank()) {
-            return "";
-        }
-        String normalized = stripOuterParentheses(removePostgresTypeCasts(normalizeSqlOutsideLiterals(predicate)));
-        // PostgreSQL deparses every boolean term separately. Keep grouping/precedence intact.
+    private String normalizePredicate(String predicate, DBTable table) {
+        if (predicate == null || predicate.isBlank()) return "";
+        String normalized = stripOuterParentheses(normalizeSqlOutsideLiterals(predicate));
+        // Preserve boolean grouping; only normalize recognized, semantics-preserving forms.
         for (String operator : List.of("or", "and")) {
             List<String> terms = splitBooleanTerms(normalized, operator);
             if (terms.size() > 1) {
-                return terms.stream().map(this::normalizePredicate)
+                return terms.stream().map(term -> normalizePredicate(term, table))
                         .map(term -> "(" + term + ")").collect(java.util.stream.Collectors.joining(" " + operator + " "));
             }
         }
         Matcher booleanComparison = SIMPLE_BOOLEAN_PREDICATE.matcher(normalized);
-        if (booleanComparison.matches()) {
+        if (booleanComparison.matches() && !List.of("true", "false", "null").contains(booleanComparison.group(1))) {
             String identifier = canonicalIdentifier(booleanComparison.group(1));
             return booleanComparison.group(2).equals("true") ? identifier : "not (" + identifier + ")";
         }
-        if (normalized.startsWith("not ")) {
-            return "not (" + normalizePredicate(normalized.substring(4)) + ")";
-        }
+        if (normalized.startsWith("not ")) return "not (" + normalizePredicate(normalized.substring(4), table) + ")";
         Matcher nullCheck = SIMPLE_NULL_PREDICATE.matcher(normalized);
-        if (nullCheck.matches()) return canonicalIdentifier(nullCheck.group(1)) + " " + nullCheck.group(2);
+        if (nullCheck.matches() && !List.of("true", "false", "null").contains(nullCheck.group(1))) return canonicalIdentifier(nullCheck.group(1)) + " " + nullCheck.group(2);
+        if (List.of("true", "false", "null").contains(normalized)) return normalized;
         if (normalized.matches(SQL_IDENTIFIER)) return canonicalIdentifier(normalized);
-        Matcher equality = SIMPLE_LITERAL_EQUALITY.matcher(normalized);
-        if (equality.matches()) return canonicalIdentifier(equality.group(1)) + " in (" + equality.group(2) + ")";
-        Matcher inMatcher = SIMPLE_IN_PREDICATE.matcher(normalized);
-        if (inMatcher.matches()) {
-            List<String> literals = parseStringLiteralList(inMatcher.group(2));
-            if (literals != null) {
-                return canonicalIdentifier(inMatcher.group(1)) + " in (" + String.join(",", literals) + ")";
-            }
+        Matcher in = SIMPLE_IN_PREDICATE.matcher(normalized);
+        if (in.matches() && !List.of("true", "false", "null").contains(in.group(1))) {
+            List<String> values = parseStringLiteralList(in.group(2));
+            if (values != null) return canonicalIdentifier(in.group(1)) + " in (" + String.join(",", values) + ")";
         }
-        Matcher anyMatcher = SIMPLE_ANY_PREDICATE.matcher(normalized);
-        if (anyMatcher.matches()) {
-            Matcher arrayMatcher = ARRAY_EXPRESSION.matcher(stripOuterParentheses(anyMatcher.group(2)));
-            if (arrayMatcher.matches()) {
-                List<String> literals = parseStringLiteralList(arrayMatcher.group(1));
-                if (literals != null) {
-                    return canonicalIdentifier(anyMatcher.group(1)) + " in (" + String.join(",", literals) + ")";
+        Matcher equality = EQUALITY.matcher(normalized);
+        if (equality.matches()) {
+            String left = textOperand(equality.group(1), table);
+            String right = stripOuterParentheses(equality.group(2));
+            if (left != null && right.startsWith("any (") && right.endsWith(")")) {
+                String array = stripOuterParentheses(right.substring(4));
+                Matcher cast = TEXT_ARRAY_CAST.matcher(array);
+                while (cast.matches()) {
+                    array = stripOuterParentheses(cast.group(1));
+                    cast = TEXT_ARRAY_CAST.matcher(array);
                 }
+                Matcher values = ARRAY_EXPRESSION.matcher(array);
+                List<String> literals = values.matches() ? parseStringLiteralList(values.group(1)) : null;
+                if (literals != null) return left + " in (" + String.join(",", literals) + ")";
             }
+            String literal = textOperand(right, table);
+            if (left != null && literal != null && STRING_LITERAL.matcher(literal).matches())
+                return left + " in (" + literal + ")";
         }
         return normalized;
+    }
+
+    /** Casts on non-text columns, typmods, functions and non-text literals retain their meaning. */
+    private String textOperand(String expression, DBTable table) {
+        String value = stripOuterParentheses(expression);
+        boolean casted = false;
+        Matcher cast = TEXT_CAST.matcher(value);
+        while (cast.matches()) {
+            casted = true;
+            value = stripOuterParentheses(cast.group(1));
+            cast = TEXT_CAST.matcher(value);
+        }
+        if (STRING_LITERAL.matcher(value).matches()) return value;
+        if (!value.matches(SQL_IDENTIFIER) || List.of("true", "false", "null").contains(value)) return null;
+        String name = value.startsWith("\"") ? value.substring(1, value.length() - 1).replace("\"\"", "\"") : value;
+        if (casted && (!table.contains(name) || !List.of("varchar", "character varying", "text")
+                .contains(table.getColumn(name).getType().toLowerCase(Locale.ROOT)))) return null;
+        return canonicalIdentifier(value);
     }
 
     private List<String> splitBooleanTerms(String expression, String operator) {
@@ -455,36 +470,6 @@ class SchemaMigrationPlanner {
         return result;
     }
 
-    private String removePostgresTypeCasts(String expression) {
-        StringBuilder result = new StringBuilder(expression.length());
-        char quote = 0;
-        for (int i = 0; i < expression.length(); ) {
-            char ch = expression.charAt(i);
-            if (quote != 0) {
-                result.append(ch);
-                if (ch == quote) {
-                    if (i + 1 < expression.length() && expression.charAt(i + 1) == quote) {
-                        result.append(expression.charAt(++i));
-                    } else quote = 0;
-                }
-                i++;
-                continue;
-            }
-            if (ch == '\'' || ch == '"') {
-                quote = ch;
-            } else if (ch == ':' && i + 1 < expression.length() && expression.charAt(i + 1) == ':') {
-                Matcher cast = POSTGRES_TYPE_CAST.matcher(expression.substring(i));
-                if (cast.find()) {
-                    i += cast.end();
-                    continue;
-                }
-            }
-            result.append(ch);
-            i++;
-        }
-        return result.toString().trim();
-    }
-
     private boolean enclosesWholeExpression(String expression) {
         int depth = 0;
         char quote = 0;
@@ -531,8 +516,9 @@ class SchemaMigrationPlanner {
             literals.add(expression.substring(start, position));
             while (position < expression.length() && Character.isWhitespace(expression.charAt(position))) position++;
             if (position + 1 < expression.length() && expression.startsWith("::", position)) {
-                position += 2;
-                while (position < expression.length() && expression.charAt(position) != ',') position++;
+                Matcher cast = LITERAL_TEXT_CAST.matcher(expression.substring(position));
+                if (!cast.find()) return null;
+                position += cast.end();
             }
             while (position < expression.length() && Character.isWhitespace(expression.charAt(position))) position++;
             if (position == expression.length()) break;
@@ -542,8 +528,7 @@ class SchemaMigrationPlanner {
     }
 
     private String canonicalIdentifier(String identifier) {
-        if (identifier.matches("\"[a-z_][a-z0-9_]*\"")) return identifier.substring(1, identifier.length() - 1);
-        return identifier.startsWith("\"") ? identifier : identifier.toLowerCase(Locale.ROOT);
+        return identifier.startsWith("\"") ? identifier : "\"" + identifier.toLowerCase(Locale.ROOT) + "\"";
     }
 
     private String indexTarget(String tableName, Index index) {
