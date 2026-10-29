@@ -302,6 +302,44 @@ public class MuYunDatabasePostgresTest extends MuYunDatabaseUsageExamplesTestBas
     }
 
     @Test
+    void testCompoundPartialIndexesRemainIdempotentAndDetectChanges() {
+        String name = "compound_partial_index";
+        TableWrapper table = TableWrapper.withName(name)
+                .setPrimaryKey(Column.of("id").setType(ColumnType.VARCHAR).setLength(32).setPrimaryKey())
+                .addColumn(Column.of("status").setType(ColumnType.VARCHAR).setLength(32))
+                .addColumn(Column.of("deleted").setType(ColumnType.BOOLEAN))
+                .addColumn(Column.of("ended_at").setType(ColumnType.TIMESTAMP))
+                .addColumn(Column.of("true").setType(ColumnType.BOOLEAN))
+                .addIndex(new Index("status", false).named("ix_compound_recovery")
+                        .predicate("\"deleted\" = FALSE AND \"status\" IN ('ACTIVE', 'WAITING')"))
+                .addIndex(new Index("status", false).named("ix_compound_single")
+                        .predicate("\"deleted\" = TRUE AND \"status\" IN ('ACTIVE')"))
+                .addIndex(new Index("status", true).named("ux_compound_active")
+                        .predicate("\"ended_at\" IS NULL"));
+        SchemaManager manager = new SchemaManager(db);
+        manager.ensureTable(table, MigrationOptions.execute());
+        db.resetDBInfo();
+        MigrationResult unchanged = manager.ensureTable(table, MigrationOptions.dryRun());
+        assertFalse(unchanged.isChanged(), unchanged.getStatements().toString());
+        assertFalse(manager.ensureTable(table, MigrationOptions.strict()).isChanged());
+        table.getIndexes().getFirst().predicate("\"deleted\" = TRUE AND \"status\" IN ('ACTIVE', 'WAITING')");
+        assertTrue(manager.ensureTable(table, MigrationOptions.dryRun()).hasNonAdditiveChanges());
+        assertThrows(net.ximatai.muyun.database.core.orm.OrmException.class,
+                () -> manager.ensureTable(table, MigrationOptions.strict()));
+        table.getIndexes().getFirst().predicate("\"deleted\" = FALSE AND \"status\" IN ('ACTIVE', 'WAITING')");
+        assertFalse(manager.ensureTable(table, MigrationOptions.dryRun()).isChanged());
+        // Numeric coercion changes which textual values match; do not erase it as a display cast.
+        table.getIndexes().getFirst().predicate("status::integer = '1'::integer");
+        manager.ensureTable(table, MigrationOptions.execute());
+        table.getIndexes().getFirst().predicate("status = '1'");
+        assertTrue(manager.ensureTable(table, MigrationOptions.dryRun()).hasNonAdditiveChanges());
+        table.getIndexes().getFirst().predicate("\"true\"");
+        manager.ensureTable(table, MigrationOptions.execute());
+        table.getIndexes().getFirst().predicate("TRUE");
+        assertTrue(manager.ensureTable(table, MigrationOptions.dryRun()).hasNonAdditiveChanges());
+    }
+
+    @Test
     void testPostgresArrayCriteriaAgainstDatabase() {
         orm.ensureTable(OrmPgArrayCriteriaEntity.class);
         db.resetDBInfo();
