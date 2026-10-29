@@ -13,6 +13,12 @@ java {
 }
 
 repositories {
+    providers.gradleProperty("muyun.consumer.repository").orNull?.let { repository ->
+        exclusiveContent {
+            forRepository { maven { url = uri(repository) } }
+            filter { includeGroup("net.ximatai.muyun.database") }
+        }
+    }
     mavenCentral()
 }
 
@@ -23,7 +29,8 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-jdbc:4.1.0")
     implementation("org.postgresql:postgresql:42.7.11")
 
-    implementation("net.ximatai.muyun.database:muyun-database-spring-boot-starter:3.26.24")
+    val databaseVersion = providers.gradleProperty("muyun.consumer.version").getOrElse("3.26.25")
+    implementation("net.ximatai.muyun.database:muyun-database-spring-boot-starter:$databaseVersion")
 }
 
 tasks.test {

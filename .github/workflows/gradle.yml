@@ -28,6 +28,16 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Verify publication tooling
+        run: |
+          node --test scripts/*.test.mjs
+          ./gradlew reportMavenPublication verifyPublishedConsumers
+
       - name: Fast test
         run: ./gradlew test -Pmuyun.test.excludeTags=db,quarkus-it -x :muyun-database-quarkus-integration-test:test
 

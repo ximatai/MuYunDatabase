@@ -6,14 +6,14 @@
 
 ```kotlin
 dependencies {
-    implementation("net.ximatai.muyun.database:muyun-database-quarkus:3.26.24")
+    implementation("net.ximatai.muyun.database:muyun-database-quarkus:3.26.25")
 }
 ```
 
 扩展 runtime 会声明对应的 deployment artifact：
 
 ```properties
-deployment-artifact=net.ximatai.muyun.database:muyun-database-quarkus-deployment::jar:3.26.24
+deployment-artifact=net.ximatai.muyun.database:muyun-database-quarkus-deployment::jar:3.26.25
 ```
 
 ## 配置项
@@ -202,10 +202,10 @@ MUYUN_NATIVE_POSTGRES_PASSWORD=testpass \
 bash scripts/quarkus-release-gate.sh release
 ```
 
-Quarkus artifact 发布前还应跑白名单本地发布验证。不要用根级 `publishAllPublicationsToMavenRepository` 作为 release gate，因为它会尝试发布 integration-test 等非发布模块：
+Quarkus artifact 发布前还应验证白名单本地发布及真实 Maven 坐标消费者；统一入口不发布 integration-test 等内部模块：
 
 ```bash
-./gradlew publishReleaseToLocalRepository
+./gradlew reportMavenPublication verifyPublishedConsumers
 ```
 
 本机执行需要与当前 Quarkus 兼容的 GraalVM `native-image`（当前使用 GraalVM 25）；可通过 `GRAALVM_HOME` 指向独立工具链，无需切换全局 Java 默认版本。旧 GraalVM 21 可能无法读取 Jdbi 的新 reachability metadata，导致 native 启动时报缺失代理注册；不要通过复制依赖元数据绕过工具链要求。也可以按 Quarkus 原生镜像工具链要求改用容器构建参数。

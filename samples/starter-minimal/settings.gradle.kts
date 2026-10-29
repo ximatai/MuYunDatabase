@@ -1,2 +1,4 @@
 rootProject.name = "starter-minimal"
-includeBuild("../..")
+if (!providers.gradleProperty("muyun.consumer.repository").isPresent) {
+    includeBuild("../..")
+}
