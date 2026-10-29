@@ -46,10 +46,10 @@ fun Project.releaseSigningSecretKey(): String? {
     }
 }
 
-fun Project.releaseCredentialValues(): Map<String, String?> {
+val mavenCentralReleaseMode = providers.gradleProperty("muyun.mavenCentralRelease").map(String::toBoolean).orElse(false)
+
+fun Project.releaseSigningCredentials(): Map<String, String?> {
     return mapOf(
-        "sonatype.token or SONATYPE_TOKEN" to releaseValue("sonatype.token", "SONATYPE_TOKEN"),
-        "sonatype.password or SONATYPE_PASSWORD" to releaseValue("sonatype.password", "SONATYPE_PASSWORD"),
         "signing.keyId or SIGNING_KEY_ID" to releaseValue("signing.keyId", "SIGNING_KEY_ID"),
         "signing.secretKey/signing.secretKeyBase64 or SIGNING_SECRET_KEY/SIGNING_SECRET_KEY_BASE64" to
                 releaseSigningSecretKey(),
@@ -58,7 +58,10 @@ fun Project.releaseCredentialValues(): Map<String, String?> {
 }
 
 fun Project.requireReleaseCredentials() {
-    val missing = releaseCredentialValues().filterValues { it.isNullOrBlank() }.keys
+    val missing = (releaseSigningCredentials() + mapOf(
+        "SONATYPE_TOKEN" to releaseValue("sonatype.token", "SONATYPE_TOKEN"),
+        "SONATYPE_PASSWORD" to releaseValue("sonatype.password", "SONATYPE_PASSWORD")
+    )).filterValues { it.isNullOrBlank() }.keys
     require(missing.isEmpty()) {
         "Missing required Gradle properties for Sonatype publish: ${missing.joinToString(", ")}"
     }
@@ -67,25 +70,11 @@ fun Project.requireReleaseCredentials() {
 allprojects {
     group = "net.ximatai.muyun.database"
 //    version = "1.0.0-SNAPSHOT"
-    version = "3.26.24"
+    version = "3.26.25"
 
     repositories {
         maven { url = uri("https://mirrors.cloud.tencent.com/repository/maven") }
         mavenCentral()
-    }
-}
-
-tasks.register("publishReleaseToSonatype") {
-    group = "publishing"
-    description = "Publish release modules (core/jdbi/starter/quarkus) to Sonatype."
-
-    dependsOn("verifyReleaseCredentials")
-    dependsOn(releasePublishModules.map { ":$it:clean" })
-    dependsOn("cleanLocalDeploymentDir")
-    dependsOn(releasePublishModules.map { ":$it:publishToSonatype" })
-
-    doFirst {
-        requireReleaseCredentials()
     }
 }
 
@@ -112,11 +101,116 @@ tasks.register("verifyReleaseTagVersion") {
     }
 }
 
+tasks.register("verifyMavenCentralReleaseMode") {
+    doLast {
+        require(mavenCentralReleaseMode.get()) { "Maven Central staging requires -Pmuyun.mavenCentralRelease=true" }
+    }
+}
+
+tasks.register("verifyReleaseSigningCredentials") {
+    doLast {
+        val missing = releaseSigningCredentials().filterValues { it.isNullOrBlank() }.keys
+        require(missing.isEmpty()) { "Missing signing credentials: ${missing.joinToString()}" }
+    }
+}
+
+val centralRepository = layout.buildDirectory.dir("maven-central/repository")
+val centralCoordinates = project.group.toString().replace('.', '/')
+
+tasks.register<Sync>("stageMavenCentralRelease") {
+    group = "publishing"
+    description = "Stages signed public artifacts for Maven Central without uploading them."
+    dependsOn("verifyMavenCentralReleaseMode")
+    dependsOn("verifyReleaseSigningCredentials")
+    dependsOn("verifyReleaseTagVersion")
+    dependsOn(releasePublishModules.map { ":$it:publishAllPublicationsToSonatypeStagingRepository" })
+    into(centralRepository)
+    duplicatesStrategy = DuplicatesStrategy.FAIL
+    releasePublishModules.forEach { artifact ->
+        val coordinate = "$centralCoordinates/$artifact/${project.version}"
+        from(project(":$artifact").layout.buildDirectory.dir("repo/$coordinate")) {
+            into(coordinate)
+        }
+    }
+}
+
 tasks.register("publishReleaseToLocalRepository") {
     group = "publishing"
-    description = "Publish release modules (core/jdbi/starter/quarkus) to the local build repositories."
+    description = "Publishes unsigned release modules to the local consumer repository."
+    dependsOn("publishReleaseToConsumerRepository")
+}
 
-    dependsOn(releasePublishModules.map { ":$it:publishAllPublicationsToMavenRepository" })
+tasks.register("publishReleaseToConsumerRepository") {
+    group = "publishing"
+    description = "Publishes all public artifacts to one repository consumable by an external sample application."
+    dependsOn(releasePublishModules.map { ":$it:publishAllPublicationsToConsumerRepository" })
+}
+
+tasks.register<Exec>("verifyPublishedConsumers") {
+    group = "verification"
+    description = "Builds Spring Boot and Quarkus samples using only the local published coordinates."
+    dependsOn("publishReleaseToConsumerRepository")
+    commandLine("bash", "scripts/verify-published-consumers.sh", project.version.toString())
+}
+
+tasks.register<Exec>("reportMavenPublication") {
+    group = "publishing"
+    description = "Reports the current unsigned Maven consumer publication without contacting a registry."
+    dependsOn("publishReleaseToConsumerRepository")
+    commandLine("node", "scripts/maven-publication-report.mjs",
+        layout.buildDirectory.dir("consumer-repo").get().asFile.path,
+        project.group.toString(), project.version.toString(), releasePublishModules.joinToString(","),
+        "unsigned", layout.buildDirectory.file("maven-publication-report.json").get().asFile.path)
+}
+
+tasks.register<Exec>("verifyMavenCentralBundle") {
+    group = LifecycleBasePlugin.VERIFICATION_GROUP
+    description = "Verifies the complete signed release inventory and reports its publishing usage."
+    dependsOn("stageMavenCentralRelease")
+    commandLine("node", "scripts/maven-publication-report.mjs",
+        centralRepository.get().asFile.path,
+        project.group.toString(), project.version.toString(), releasePublishModules.joinToString(","),
+        "signed", layout.buildDirectory.file("maven-central/report.json").get().asFile.path)
+}
+
+tasks.register<Zip>("bundleMavenCentralRelease") {
+    group = "publishing"
+    description = "Creates an inspectable signed release bundle without contacting Maven Central."
+    dependsOn("verifyMavenCentralBundle")
+    from(centralRepository)
+    destinationDirectory.set(layout.buildDirectory.dir("maven-central"))
+    archiveFileName.set("MuYunDatabase-${project.version}.zip")
+    isPreserveFileTimestamps = false
+    isReproducibleFileOrder = true
+}
+
+extensions.configure<io.github.jeadyx.UploaderExtension> {
+    repositoryPath = centralRepository.get().asFile.path
+    bundleName = "MuYunDatabase-${project.version}"
+    tokenName = releaseValue("sonatype.token", "SONATYPE_TOKEN").orEmpty()
+    tokenPasswd = releaseValue("sonatype.password", "SONATYPE_PASSWORD").orEmpty()
+}
+
+tasks.named("2.uploadDeploymentDir") {
+    dependsOn("verifyMavenCentralReleaseMode", "verifyReleaseCredentials", "verifyReleaseTagVersion")
+    dependsOn("verifyMavenCentralBundle")
+}
+
+tasks.register<Exec>("publishReleaseToSonatype") {
+    group = "publishing"
+    description = "Publishes all public MuYunDatabase artifacts to Maven Central through Sonatype."
+    dependsOn("2.uploadDeploymentDir")
+    environment("SONATYPE_TOKEN", releaseValue("sonatype.token", "SONATYPE_TOKEN").orEmpty())
+    environment("SONATYPE_PASSWORD", releaseValue("sonatype.password", "SONATYPE_PASSWORD").orEmpty())
+    commandLine("node", "scripts/wait-maven-central.mjs",
+        layout.buildDirectory.file("sonayUploader/uploaderId").get().asFile.path, "--publish")
+}
+
+// Keep the plugin's familiar entry point, but retire its unbounded status/publish loop.
+tasks.named("publishToSonatype") {
+    actions.clear()
+    setDependsOn(listOf("publishReleaseToSonatype"))
+    description = "Compatibility alias for the bounded platform release flow."
 }
 
 subprojects {
@@ -126,7 +220,6 @@ subprojects {
         apply {
             plugin("maven-publish")
             plugin("signing")
-            plugin("io.github.jeadyx.sonatype-uploader")
         }
     }
 
@@ -172,24 +265,42 @@ subprojects {
             }
             repositories {
                 maven {
+                    name = "sonatypeStaging"
                     url = uri(layout.buildDirectory.dir("repo"))
+                }
+                maven {
+                    name = "consumer"
+                    url = uri(rootProject.layout.buildDirectory.dir("consumer-repo"))
                 }
             }
         }
 
-        sonatypeUploader {
-            repositoryPath = layout.buildDirectory.dir("repo").get().asFile.path
-            tokenName = releaseValue("sonatype.token", "SONATYPE_TOKEN").orEmpty()
-            tokenPasswd = releaseValue("sonatype.password", "SONATYPE_PASSWORD").orEmpty()
-        }
-
         signing {
-            sign(publishing.publications["mavenJava"])
-            useInMemoryPgpKeys(
-                releaseValue("signing.keyId", "SIGNING_KEY_ID").orEmpty(),
-                releaseSigningSecretKey().orEmpty(),
-                releaseValue("signing.password", "SIGNING_PASSWORD").orEmpty()
-            )
+            if (mavenCentralReleaseMode.get()) {
+                isRequired = true
+                val keyId = releaseValue("signing.keyId", "SIGNING_KEY_ID")
+                val secretKey = releaseSigningSecretKey()
+                val password = releaseValue("signing.password", "SIGNING_PASSWORD")
+                if (keyId != null && secretKey != null && password != null) {
+                    useInMemoryPgpKeys(keyId, secretKey, password)
+                }
+                sign(publishing.publications["mavenJava"])
+            }
+        }
+        tasks.withType<Sign>().configureEach {
+            // A rotated public key ID must invalidate signatures even when the payload is unchanged.
+            inputs.property("releaseSigningKeyId", releaseValue("signing.keyId", "SIGNING_KEY_ID").orEmpty())
+            dependsOn(rootProject.tasks.named("verifyMavenCentralReleaseMode"),
+                rootProject.tasks.named("verifyReleaseTagVersion"),
+                rootProject.tasks.named("verifyReleaseSigningCredentials"))
+        }
+        tasks.matching {
+            it.name == "publishMavenJavaPublicationToSonatypeStagingRepository" ||
+                it.name == "publishAllPublicationsToSonatypeStagingRepository"
+        }.configureEach {
+            dependsOn(rootProject.tasks.named("verifyMavenCentralReleaseMode"),
+                rootProject.tasks.named("verifyReleaseTagVersion"),
+                rootProject.tasks.named("verifyReleaseSigningCredentials"))
         }
     }
 
@@ -218,12 +329,4 @@ subprojects {
         }
     }
 
-    if (name in releasePublishModules) {
-        tasks.matching { it.name == "publishToSonatype" }.configureEach {
-            dependsOn("publishAllPublicationsToMavenRepository")
-        }
-        tasks.matching { it.name == "1.createDeploymentDir" || it.name == "2.uploadDeploymentDir" }.configureEach {
-            dependsOn("publishAllPublicationsToMavenRepository")
-        }
-    }
 }

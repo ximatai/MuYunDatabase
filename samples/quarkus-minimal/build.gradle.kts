@@ -8,7 +8,7 @@ version = "0.0.1-SNAPSHOT"
 
 allprojects {
     group = "net.ximatai.muyun.database"
-    version = "3.26.24"
+    version = "3.26.25"
 }
 
 java {
@@ -21,7 +21,12 @@ dependencies {
     implementation(enforcedPlatform("io.quarkus.platform:quarkus-bom:3.37.0"))
     implementation("io.quarkus:quarkus-rest")
     implementation("io.quarkus:quarkus-jdbc-h2")
-    implementation(project(":muyun-database-quarkus"))
+    if (providers.gradleProperty("muyun.consumer.repository").isPresent) {
+        val databaseVersion = providers.gradleProperty("muyun.consumer.version").get()
+        implementation("net.ximatai.muyun.database:muyun-database-quarkus:$databaseVersion")
+    } else {
+        implementation(project(":muyun-database-quarkus"))
+    }
 }
 
 tasks.test {
